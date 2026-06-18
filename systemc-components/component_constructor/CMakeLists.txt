@@ -1,1 +1,0 @@
-gs_create_dymod(component_constructor)

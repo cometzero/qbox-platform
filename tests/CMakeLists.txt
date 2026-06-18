@@ -17,8 +17,3 @@ if(WIN32)
 endif()
 
 add_subdirectory(components)
-add_subdirectory(sync)
-add_subdirectory(utils)
-if(NOT WITHOUT_QEMU)
-    add_subdirectory(qbox)
-endif()

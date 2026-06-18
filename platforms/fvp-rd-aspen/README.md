@@ -85,7 +85,7 @@ The RSE-oriented bring-up path is the maintained RD-Aspen runtime path. Its Lua
 configuration is:
 
 ```text
-tools/qbox/platforms/fvp-rd-aspen-rse/conf.lua
+tools/qbox-platform/platforms/fvp-rd-aspen-rse/conf.lua
 ```
 
 Run a file-backed trace smoke with:

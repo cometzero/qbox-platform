@@ -3,38 +3,39 @@
 This platform contains Apollo QBox entrypoints for primary-compute direct boot,
 SI CL1 isolated boot, and the full RSE-first Apollo QVP.
 
-This is not the full Apollo firmware chain. RSE, TF-A, OP-TEE, and U-Boot are
-bypassed by the QBox AArch64 direct-boot stub. Use the RSE-oriented QBox
-platform when firmware-chain fidelity is required.
+The primary-compute direct-boot entrypoint is not the full Apollo firmware
+chain: RSE, TF-A, OP-TEE, and U-Boot are bypassed by the QBox AArch64
+direct-boot stub. Use `apollo-qvp.lua` when firmware-chain fidelity is
+required.
 
 The primary-compute direct-boot entrypoint is:
 
 ```text
-tools/qbox/platforms/apollo/apollo-pc.lua
+tools/qbox-platform/platforms/apollo/apollo-pc.lua
 ```
 
 The SI CL1 isolated Zephyr entrypoint is:
 
 ```text
-tools/qbox/platforms/apollo/apollo-si-cl1.lua
+tools/qbox-platform/platforms/apollo/apollo-si-cl1.lua
 ```
 
 The full-system QBox virtual platform entrypoint is:
 
 ```text
-tools/qbox/platforms/apollo/apollo-qvp.lua
+tools/qbox-platform/platforms/apollo/apollo-qvp.lua
 ```
 
 The full-system RSE/AP base topology is owned by the Apollo platform:
 
 ```text
-tools/qbox/platforms/apollo/hw-block/rse.lua
+tools/qbox-platform/platforms/apollo/hw-block/rse.lua
 ```
 
 Hardware-block helpers used by the full-system entrypoint live under:
 
 ```text
-tools/qbox/platforms/apollo/hw-block/
+tools/qbox-platform/platforms/apollo/hw-block/
 ```
 
 The current full-system block helpers are:
@@ -65,12 +66,16 @@ surfaces. RSE secure boot and RSE-local security peripherals remain in
 ./local-build.sh build
 ```
 
-The QBox runner consumes:
+The direct-boot runner consumes:
 
 ```text
 build/local-apollo-fvp/deploy/boot/Image
 build/local-apollo-fvp/deploy/boot/initramfs.cpio.gz
 ```
+
+The full-system runner also consumes the local firmware deploy artifacts under
+`build/local-apollo-fvp/deploy/firmware/`, including RSE ROM/flash/OTP, AP
+flash, SI CL0 firmware, and SI CL1 Zephyr images.
 
 The runner generates a QBox-specific DTB at:
 

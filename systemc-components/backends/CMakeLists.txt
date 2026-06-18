@@ -1,7 +1,0 @@
-add_subdirectory(char_backend_socket)
-add_subdirectory(char_backend_stdio)
-add_subdirectory(loop_back_backend)
-add_subdirectory(char_backend_file)
-if (NOT WIN32)
-    add_subdirectory(legacy_char_backend_stdio)
-endif()

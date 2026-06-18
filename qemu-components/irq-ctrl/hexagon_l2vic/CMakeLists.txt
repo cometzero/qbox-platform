@@ -1,1 +1,0 @@
-gs_create_dymod(hexagon_l2vic)

@@ -1,2 +1,0 @@
-gs_create_dymod(arm_gicv3_its)
-target_link_libraries(arm_gicv3_its PRIVATE arm_gicv3)
