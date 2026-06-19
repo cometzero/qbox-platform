@@ -20,21 +20,21 @@ set_tests_properties(qemu_cc3xx-tests PROPERTIES TIMEOUT 20)
 
 add_executable(rse_lms_accel-tests rse_lms_accel-tests.cc)
 target_include_directories(rse_lms_accel-tests PRIVATE
-    ${QBOX_CORE_SOURCE_DIR}/qemu-components/common/include)
+    ${QBOX_PLATFORM_SOURCE_DIR}/qemu-components/rse_cpu_accel/include)
 target_link_libraries(rse_lms_accel-tests PRIVATE gtest_main gmock)
 add_test(NAME rse_lms_accel-tests COMMAND rse_lms_accel-tests)
 set_tests_properties(rse_lms_accel-tests PROPERTIES TIMEOUT 20)
 
 add_executable(rse_mcuboot_image-tests rse_mcuboot_image-tests.cc)
 target_include_directories(rse_mcuboot_image-tests PRIVATE
-    ${QBOX_CORE_SOURCE_DIR}/qemu-components/common/include)
+    ${QBOX_PLATFORM_SOURCE_DIR}/qemu-components/rse_cpu_accel/include)
 target_link_libraries(rse_mcuboot_image-tests PRIVATE gtest_main gmock)
 add_test(NAME rse_mcuboot_image-tests COMMAND rse_mcuboot_image-tests)
 set_tests_properties(rse_mcuboot_image-tests PROPERTIES TIMEOUT 20)
 
 add_executable(rse_p256_ecdsa-tests rse_p256_ecdsa-tests.cc)
 target_include_directories(rse_p256_ecdsa-tests PRIVATE
-    ${QBOX_CORE_SOURCE_DIR}/qemu-components/common/include)
+    ${QBOX_PLATFORM_SOURCE_DIR}/qemu-components/rse_cpu_accel/include)
 target_link_libraries(rse_p256_ecdsa-tests PRIVATE gtest_main gmock)
 add_test(NAME rse_p256_ecdsa-tests COMMAND rse_p256_ecdsa-tests)
 set_tests_properties(rse_p256_ecdsa-tests PROPERTIES TIMEOUT 20)

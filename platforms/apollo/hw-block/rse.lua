@@ -244,6 +244,12 @@ rse_direct_si_sram_alias =
     getenv_or("QBOX_RDASPEN_RSE_DIRECT_SI_SRAM_ALIAS", "false") == "true"
 rse_direct_file_aliases =
     getenv_or("QBOX_RDASPEN_RSE_DIRECT_FILE_ALIASES", "")
+rse_mmio_read_fastpath = getenv_or(
+    "QBOX_RDASPEN_RSE_MMIO_READ_FASTPATH",
+    getenv_or("QBOX_MMIO_READ_FASTPATH", ""))
+rse_mmio_direct_fastpath_ranges = getenv_or(
+    "QBOX_RDASPEN_RSE_MMIO_DIRECT_FASTPATH_RANGES",
+    getenv_or("QBOX_MMIO_DIRECT_FASTPATH_RANGES", ""))
 rse_direct_si_sram_code_alias_size = getenv_number_or(
     "QBOX_RDASPEN_RSE_DIRECT_SI_SRAM_CODE_ALIAS_SIZE",
     "0x00100000")
@@ -337,7 +343,7 @@ rse_dma_boot_addr = getenv_number_or(
     "0x00000000")
 local remote_cpu_exec = getenv_or(
     "QBOX_REMOTE_CPU_EXEC",
-    root.."tools/qbox/build/remote_cpu")
+    root.."build/local-apollo-fvp/work/qbox-platform/apollo_rse_remote_cpu")
 
 local RSE_ROM_BASE_S = 0x11000000
 local RSE_ROM_SIZE = 0x00020000
@@ -1374,6 +1380,7 @@ platform = {
             address = ap_virtio.block_base[1];
             size = ap_virtio.mmio_size;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[1]};
         blkdev_str = "file="..ap_virtio.disk_image..",format=raw,if=none,cache=writeback";
@@ -1390,6 +1397,7 @@ platform = {
             address = ap_virtio.block_base[2];
             size = ap_virtio.mmio_size;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[2]};
         blkdev_str = "file="..ap_virtio.extra_disk_images[1]..",format=raw,if=none,cache=writeback";
@@ -1406,6 +1414,7 @@ platform = {
             address = ap_virtio.block_base[3];
             size = ap_virtio.mmio_size;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[3]};
         blkdev_str = "file="..ap_virtio.extra_disk_images[2]..",format=raw,if=none,cache=writeback";
@@ -1422,6 +1431,7 @@ platform = {
             address = ap_virtio.block_base[4];
             size = ap_virtio.mmio_size;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[4]};
         blkdev_str = "file="..ap_virtio.extra_disk_images[3]..",format=raw,if=none,cache=writeback";
@@ -1438,6 +1448,7 @@ platform = {
             address = ap_virtio.net_base;
             size = ap_virtio.mmio_size;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.net_irq};
         netdev_str = ap_virtio.netdev;
@@ -1454,6 +1465,7 @@ platform = {
             address = ap_virtio.rng_base;
             size = ap_virtio.mmio_size;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.rng_irq};
         trace = ap_virtio.trace;
@@ -1469,6 +1481,7 @@ platform = {
             address = 0x300D0000;
             size = 0x00010000;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_268"};
     } or nil,
@@ -1480,11 +1493,13 @@ platform = {
             address = 0x1A420000;
             size = 0x00010000;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         control_mem = {
             address = 0x1A430000;
             size = 0x00010000;
             bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_50"};
     } or nil,
@@ -1510,6 +1525,7 @@ platform = {
     ap_secure_uart = enable_ap_cpus and {
         moduletype = "Pl011";
         dylib_path = "uart-pl011";
+        id_register_mirror_mask = 0xfff;
         target_socket = {
             address = AP_SECURE_UART_BASE;
             size = 0x00010000;
@@ -1522,6 +1538,7 @@ platform = {
     ap_primary_uart = enable_ap_cpus and {
         moduletype = "Pl011";
         dylib_path = "uart-pl011";
+        id_register_mirror_mask = 0xfff;
         target_socket = {
             address = AP_PRIMARY_UART_BASE;
             size = 0x00010000;
@@ -2289,6 +2306,7 @@ platform = {
     rse_host_uart0_s = {
         moduletype = "Pl011";
         dylib_path = "uart-pl011";
+        id_register_mirror_mask = 0xfff;
         target_socket = {
             address = RSE_HOST_UART0_BASE_S;
             size = 0x00010000;
@@ -2433,7 +2451,7 @@ platform = {
                                 "&remote_main_router.target_socket") or nil,
 
         cpu_0 = {
-            moduletype = "RemoteCPU";
+            moduletype = "ApolloRseRemoteCPU";
             args = {"&qemu_inst"};
             cpu = {
                 init_svtor = RSE_ROM_BASE_S;
@@ -2495,6 +2513,8 @@ platform = {
                 bl2_delay_max_cycles = rse_bl2_delay_max_cycles;
                 bl2_delay_expected_hits = rse_bl2_delay_expected_hits;
                 direct_file_aliases = rse_direct_file_aliases;
+                mmio_read_fastpath = rse_mmio_read_fastpath;
+                mmio_direct_fastpath_ranges = rse_mmio_direct_fastpath_ranges;
                 nvic = {
                     mem = {
                         address = RSE_NVIC_BASE;

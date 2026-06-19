@@ -79,9 +79,13 @@ set(TARGET_LIBS qbox)
 
 add_subdirectory(systemc-components)
 add_subdirectory(qemu-components)
+add_subdirectory(platforms/cortex-m55-remote)
 
 if(BUILD_TESTING)
     add_subdirectory(tests/components/host_scr)
+    add_subdirectory(tests/components/cc3xx)
+    add_subdirectory(tests/components/uart)
+    add_subdirectory(tests/platforms)
 endif()
 
 set(
@@ -118,7 +122,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     sbsa_gwdt
     cpu_arm_cortexM55
     nvic_armv7m
-    remote_cpu
+    apollo_rse_remote_cpu
     qemu_cc3xx
     qemu_hexagon_qtimer
     mhu320ae

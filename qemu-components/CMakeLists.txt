@@ -1,4 +1,5 @@
 add_subdirectory(cc3xx_native)
+add_subdirectory(rse_cpu_accel)
 add_subdirectory(arm_smmuv3)
 add_subdirectory(cpu_arm/cpu_arm_cortex_a720ae)
 add_subdirectory(cpu_arm/cpu_arm_cortex_r82)
@@ -7,6 +8,7 @@ add_subdirectory(virtio_mmio_rng)
 
 foreach(qbox_platform_qemu_target
     arm_smmuv3
+    rse_cpu_accel
     cpu_arm_cortexA720AE
     cpu_arm_cortexR82
     sbsa_gwdt
