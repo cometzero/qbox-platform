@@ -41,7 +41,12 @@ Apollo-specific wrappers under:
 
 ```text
 systemc-components/
+qemu-components/arm_smmuv3/
 qemu-components/cc3xx_native/
+qemu-components/cpu_arm/cpu_arm_cortex_a720ae/
+qemu-components/cpu_arm/cpu_arm_cortex_r82/
+qemu-components/sbsa_gwdt/
+qemu-components/virtio_mmio_rng/
 tests/components/
 ```
 

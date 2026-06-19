@@ -1,8 +1,16 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 project(qbox_platform VERSION 0.1)
+include(CTest)
 
 get_filename_component(_qbox_platform_source_dir "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 get_filename_component(_qbox_platform_tools_dir "${_qbox_platform_source_dir}/.." ABSOLUTE)
+set(
+    QBOX_PLATFORM_SOURCE_DIR
+    "${_qbox_platform_source_dir}"
+    CACHE PATH
+    "Path to the qbox-platform overlay source tree"
+    FORCE
+)
 
 set(_qbox_platform_default_core_source_dir "")
 if(EXISTS "${_qbox_platform_tools_dir}/qbox/CMakeLists.txt")
@@ -70,7 +78,11 @@ endif()
 set(TARGET_LIBS qbox)
 
 add_subdirectory(systemc-components)
-add_subdirectory(qemu-components/cc3xx_native)
+add_subdirectory(qemu-components)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests/components/host_scr)
+endif()
 
 set(
     QBOX_APOLLO_BUILD_TARGET

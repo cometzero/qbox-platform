@@ -1,9 +1,9 @@
 macro(gs_add_test test)
     add_executable(${test} ${test}.cc)
     target_include_directories(${test} PRIVATE
-        ${PROJECT_SOURCE_DIR}/tests/qbox/include
-        ${PROJECT_SOURCE_DIR}/systemc-components/common/include
-        ${PROJECT_SOURCE_DIR}/systemc-components/common/include/tests
+        ${QBOX_CORE_SOURCE_DIR}/tests/qbox/include
+        ${QBOX_CORE_SOURCE_DIR}/systemc-components/common/include
+        ${QBOX_CORE_SOURCE_DIR}/systemc-components/common/include/tests
     )
     target_link_libraries(${test} PRIVATE gtest gmock router pass ${TARGET_LIBS})
     add_test(NAME ${test} COMMAND ${test})
