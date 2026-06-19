@@ -203,6 +203,7 @@ function si_cl1.enable(ctx, platform)
 
     platform.si_cl1_loader = {
         moduletype = "loader";
+        load_at_elaboration = false;
         initiator_socket = {bind = "&host_router.target_socket"};
         { bin_file = si_cl1_image, address = SI_CL1_SRAM_BASE };
     }
@@ -215,8 +216,8 @@ function si_cl1.enable(ctx, platform)
             has_el2 = true;
             psci_conduit = "smc";
             start_powered_off = false;
-            start_in_reset = false;
-            reset_power_on = false;
+            start_in_reset = true;
+            reset_power_on = true;
             rvbar = SI_CL1_ENTRY;
             mp_affinity = 0x10000 + (i * 0x100);
             irq_timer_sec_out = {

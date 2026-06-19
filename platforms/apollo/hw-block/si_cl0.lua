@@ -535,7 +535,7 @@ function si_cl0.enable(ctx, platform)
 
     platform.si_cl1_cluster_ppu = {
         moduletype = "host_ppu";
-        initial_power_status = 0x8;
+        initial_power_status = 0x0;
         target_socket = {
             address = SI_CL1_CLUSTER_PPU_BASE;
             size = SI_CL_PPU_SIZE;
@@ -548,7 +548,11 @@ function si_cl0.enable(ctx, platform)
     for i=0,(SI_CL1_CORE_PPU_COUNT - 1) do
         platform["si_cl1_core"..i.."_ppu"] = {
             moduletype = "host_ppu";
-            initial_power_status = 0x8;
+            initial_power_status = 0x0;
+            assert_power_on_reset = ctx.apollo_live_cl1;
+            power_on_reset = ctx.apollo_live_cl1 and {
+                bind = "&si_cl1_cpu_"..i..".reset";
+            } or nil;
             target_socket = {
                 address = SI_CL1_CORE_PPU0_BASE +
                     (i * SI_CL1_CORE_PPU_STRIDE);
@@ -670,6 +674,7 @@ function si_cl0.enable(ctx, platform)
 
     platform.si_cl0_loader = {
         moduletype = "loader";
+        load_at_elaboration = false;
         initiator_socket = {bind = "&host_router.target_socket"};
         { bin_file = si_cl0_image, address = SI_CL0_SRAM_BASE };
     }
@@ -681,6 +686,8 @@ function si_cl0.enable(ctx, platform)
         has_el2 = true;
         psci_conduit = "smc";
         start_powered_off = false;
+        start_in_reset = true;
+        reset_power_on = true;
         rvbar = SI_CL0_ENTRY;
         mp_affinity = 0x0;
         trace_pc = ctx.getenv_bool_or("QBOX_APOLLO_FULL_SI_CL0_PC_TRACE", false);

@@ -136,6 +136,13 @@ local ap_pc_trace_interval = tonumber(getenv_or("QBOX_RDASPEN_AP_PC_TRACE_INTERV
 local ap_pc_trace_limit = tonumber(getenv_or("QBOX_RDASPEN_AP_PC_TRACE_LIMIT", "4096"))
 local ap_exception_trace = getenv_or("QBOX_RDASPEN_AP_EXCEPTION_TRACE", "false") == "true"
 local enable_ap_cpus = getenv_or("QBOX_RDASPEN_ENABLE_AP_CPUS", "false") == "true"
+local apollo_si_mode = getenv_or("QBOX_APOLLO_FULL_SI_MODE", "service-model")
+local apollo_live_cl1 =
+    getenv_or("QBOX_APOLLO_FULL_LIVE_CL1", "false") == "true" or
+    apollo_si_mode == "live-cl1" or apollo_si_mode == "live-cl0-cl1"
+local apollo_live_cl0 =
+    getenv_or("QBOX_APOLLO_FULL_LIVE_CL0", "false") == "true" or
+    apollo_si_mode == "live-cl0-cl1"
 local rse_pc_trace = getenv_or("QBOX_RDASPEN_RSE_PC_TRACE", "false") == "true"
 local rse_pc_trace_file = getenv_or(
     "QBOX_RDASPEN_RSE_PC_TRACE_FILE",
@@ -1776,6 +1783,10 @@ platform = {
         moduletype = "host_ppu";
         trace = host_ppu_trace;
         trace_limit = host_ppu_trace_limit;
+        assert_power_on_reset = apollo_live_cl0;
+        assert_power_on_load = apollo_live_cl0;
+        power_on_load = apollo_live_cl0 and {bind = "&si_cl0_loader.reset"} or nil;
+        power_on_reset = apollo_live_cl0 and {bind = "&si_cl0_cpu_0.reset"} or nil;
         target_socket = {
             address = HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CORE0_PPU_OFFSET;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
@@ -1789,6 +1800,8 @@ platform = {
         moduletype = "host_ppu";
         trace = host_ppu_trace;
         trace_limit = host_ppu_trace_limit;
+        assert_power_on_load = apollo_live_cl1;
+        power_on_load = apollo_live_cl1 and {bind = "&si_cl1_loader.reset"} or nil;
         target_socket = {
             address = HOST_SI_CL1_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
