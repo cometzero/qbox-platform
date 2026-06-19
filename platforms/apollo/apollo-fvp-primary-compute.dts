@@ -184,7 +184,7 @@
 
 		soc_serial0: serial@1a400000 {
 			compatible = "arm,pl011", "arm,primecell";
-			reg = <0x0 0x1a400000 0x0 0x1000>;
+			reg = <0x0 0x1a400000 0x0 0x10000>;
 			interrupts = <0 52 4>;
 			clocks = <&soc_clk24mhz>, <&soc_clk24mhz>;
 			clock-names = "uartclk", "apb_pclk";

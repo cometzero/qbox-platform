@@ -461,7 +461,6 @@ platform = {
     pl011_uart_0 = {
         moduletype = "Pl011",
         dylib_path = "uart-pl011",
-        id_register_mirror_mask = 0xfff,
         target_socket = {
             address = 0x1a400000,
             size = 0x10000,
