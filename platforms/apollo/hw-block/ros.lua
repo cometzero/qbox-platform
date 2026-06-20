@@ -18,7 +18,6 @@ function ros.define(ctx, platform)
         trace_filter = ap_virtio.trace_filter;
     } or nil
 
-
     platform.ap_virtioblk_1 = enable_ap_cpus and {
         moduletype = "virtio_mmio_blk";
         args = {"&platform.ap_qemu_inst"};
@@ -35,7 +34,6 @@ function ros.define(ctx, platform)
         trace_limit = ap_virtio.trace_limit;
         trace_filter = ap_virtio.trace_filter;
     } or nil
-
 
     platform.ap_virtioblk_2 = enable_ap_cpus and {
         moduletype = "virtio_mmio_blk";
@@ -54,7 +52,6 @@ function ros.define(ctx, platform)
         trace_filter = ap_virtio.trace_filter;
     } or nil
 
-
     platform.ap_virtioblk_3 = enable_ap_cpus and {
         moduletype = "virtio_mmio_blk";
         args = {"&platform.ap_qemu_inst"};
@@ -71,7 +68,6 @@ function ros.define(ctx, platform)
         trace_limit = ap_virtio.trace_limit;
         trace_filter = ap_virtio.trace_filter;
     } or nil
-
 
     platform.ap_virtionet_0 = enable_ap_cpus and {
         moduletype = "virtio_mmio_net";
@@ -90,7 +86,6 @@ function ros.define(ctx, platform)
         trace_filter = ap_virtio.trace_filter;
     } or nil
 
-
     platform.ap_virtiorng_0 = enable_ap_cpus and {
         moduletype = "virtio_mmio_rng";
         args = {"&platform.ap_qemu_inst"};
@@ -107,7 +102,6 @@ function ros.define(ctx, platform)
         trace_filter = ap_virtio.trace_filter;
     } or nil
 
-
     platform.ap_rtc_0 = enable_ap_cpus and {
         moduletype = "pl031";
         args = {"&platform.ap_qemu_inst"};
@@ -120,9 +114,7 @@ function ros.define(ctx, platform)
         irq_out = {bind = "&ap_gic.spi_in_268"};
     } or nil
 
-
 end
-
 
 ros.peripherals = {
     system = {

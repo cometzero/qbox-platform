@@ -5,7 +5,6 @@ function ap_compute.define(ctx, platform)
         moduletype = "QemuInstanceManager";
     } or nil
 
-
     platform.ap_qemu_inst = enable_ap_cpus and {
         moduletype = "QemuInstance";
         args = {"&platform.ap_qemu_inst_mgr", "AARCH64"};
@@ -14,7 +13,6 @@ function ap_compute.define(ctx, platform)
         sync_policy = "multithread-freerunning";
         qemu_args = ap_qemu_args;
     } or nil
-
 
     platform.ap_reset_gpio = enable_ap_cpus and {
         moduletype = "reset_gpio";
@@ -30,7 +28,6 @@ function ap_compute.define(ctx, platform)
         args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
         global_initiator = {bind = "&host_router.target_socket"};
     } or nil
-
 
     platform.ap_gpex_0 = enable_ap_cpus and {
         moduletype = "qemu_gpex";
@@ -78,7 +75,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.ap_bl2_reset_loader = enable_ap_cpus and {
         moduletype = "loader";
         load_at_elaboration = false;
@@ -114,7 +110,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.host_ap_mhu_ns_shared_sram = {
         moduletype = "gs_memory";
         dmi_allow = host_memory_dmi;
@@ -126,7 +121,6 @@ function ap_compute.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     }
-
 
     platform.host_ap_bl2_header_sram = {
         moduletype = "gs_memory";
@@ -142,7 +136,6 @@ function ap_compute.define(ctx, platform)
         init_mem = host_ap_bl2_header_sram_map_file == "";
         log_level = 0;
     }
-
 
     platform.host_ap_flash = {
         moduletype = "strata_flash_j3";
@@ -168,7 +161,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_ap_fip_logical = host_sram_shared_memory and {
         moduletype = "gs_memory";
         read_only = true;
@@ -188,7 +180,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_ap_trusted_nvctr = {
         moduletype = "gs_memory";
         read_only = true;
@@ -202,7 +193,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_ap_dram1 = enable_ap_cpus and {
         moduletype = "gs_memory";
         dmi_allow = host_memory_dmi;
@@ -213,7 +203,6 @@ function ap_compute.define(ctx, platform)
         };
         log_level = 0;
     } or nil
-
 
     platform.host_ap_ffa_mm_comm_buffer = enable_ap_cpus and {
         moduletype = "gs_memory";
@@ -227,7 +216,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.host_ap_spmc_sdram = enable_ap_cpus and {
         moduletype = "gs_memory";
         dmi_allow = host_memory_dmi;
@@ -238,7 +226,6 @@ function ap_compute.define(ctx, platform)
         };
         log_level = 0;
     } or nil
-
 
     platform.host_ap_dram2 = enable_ap_cpus and {
         moduletype = "gs_memory";
@@ -272,7 +259,6 @@ function ap_compute.define(ctx, platform)
         num_spi = 512;
     } or nil
 
-
     platform.ap_gic_its = enable_ap_cpus and {
         moduletype = "arm_gicv3_its";
         args = {"&platform.ap_qemu_inst", "&platform.ap_gic"};
@@ -283,9 +269,7 @@ function ap_compute.define(ctx, platform)
         };
     } or nil
 
-
     platform.ap_smmu_0 = enable_ap_cpus and ap_smmu_component() or nil
-
 
     platform.ap_watchdog_0 = enable_ap_cpus and {
         moduletype = "sbsa_gwdt";
@@ -305,14 +289,12 @@ function ap_compute.define(ctx, platform)
         irq_out = {bind = "&ap_gic.spi_in_50"};
     } or nil
 
-
     platform.ap_secure_console_file = enable_ap_cpus and {
         moduletype = "char_backend_file";
         read_file = "/dev/null";
         write_file = secure_console_log;
         baudrate = 0;
     } or nil
-
 
     platform.ap_primary_console_file = enable_ap_cpus and {
         moduletype = "char_backend_file";
@@ -324,7 +306,6 @@ function ap_compute.define(ctx, platform)
             "100"));
         baudrate = 0;
     } or nil
-
 
     platform.ap_secure_uart = enable_ap_cpus and {
         moduletype = "Pl011";
@@ -338,7 +319,6 @@ function ap_compute.define(ctx, platform)
         backend_socket = {bind = "&ap_secure_console_file.biflow_socket"};
     } or nil
 
-
     platform.ap_primary_uart = enable_ap_cpus and {
         moduletype = "Pl011";
         dylib_path = "uart-pl011";
@@ -350,7 +330,6 @@ function ap_compute.define(ctx, platform)
         irq = {bind = "&ap_gic.spi_in_"..AP_PRIMARY_UART_IRQ};
         backend_socket = {bind = "&ap_primary_console_file.biflow_socket"};
     } or nil
-
 
     platform.ap_timer_mem = enable_ap_cpus and {
         moduletype = "qemu_hexagon_qtimer";
@@ -372,7 +351,6 @@ function ap_compute.define(ctx, platform)
             {bind = "&ap_gic.spi_in_"..AP_SYS_TIMER_IRQ};
         };
     } or nil
-
 
     platform.ap_secure_timer_frame = enable_ap_cpus and {
         moduletype = "gs_memory";
@@ -400,7 +378,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.ap_secure_wdog_refresh = enable_ap_cpus and {
         moduletype = "gs_memory";
         target_socket = {
@@ -411,7 +388,6 @@ function ap_compute.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     } or nil
-
 
     platform.ap_sid = enable_ap_cpus and {
         moduletype = "host_scr";
@@ -464,7 +440,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.ap_cl1_ni710ae_fmu = enable_ap_cpus and {
         moduletype = "zena_fmu";
         bank_count = 5;
@@ -477,7 +452,6 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.ap_cl2_ni710ae_fmu = enable_ap_cpus and {
         moduletype = "zena_fmu";
         bank_count = 5;
@@ -489,7 +463,6 @@ function ap_compute.define(ctx, platform)
         };
         log_level = 0;
     } or nil
-
 
     platform.ap_cl3_ni710ae_fmu = enable_ap_cpus and {
         moduletype = "zena_fmu";
@@ -576,7 +549,6 @@ if enable_ap_cpus then
 end
 
 end
-
 
 function ap_compute.enable_ap_view_router(ctx, platform)
     if platform.ap_cpu_0 == nil then
@@ -681,6 +653,5 @@ function ap_compute.enable_ap_view_router(ctx, platform)
         end
     end
 end
-
 
 return ap_compute

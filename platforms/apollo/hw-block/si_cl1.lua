@@ -16,7 +16,6 @@ function si_cl1.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_si_cl1_cub = {
         moduletype = "gs_memory";
         target_socket = {
@@ -28,7 +27,6 @@ function si_cl1.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     }
-
 
     platform.host_si_cl1_clus_ppu = {
         moduletype = "host_ppu";
@@ -46,7 +44,6 @@ function si_cl1.define(ctx, platform)
     }
 
 end
-
 
 function si_cl1.enable(ctx, platform)
     print("Apollo FVP live SI CL1 block enabled...")
@@ -314,6 +311,5 @@ function si_cl1.enable(ctx, platform)
     print("si-cl1 log:   "..si_cl1_log)
     print("si-cl1 entry: 0x"..string.format("%x", SI_CL1_ENTRY))
 end
-
 
 return si_cl1

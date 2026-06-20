@@ -49,7 +49,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_si_scr = {
         moduletype = "host_scr";
         cl1_present = true;
@@ -60,7 +59,6 @@ function system_mgmt.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.host_si_atu = {
         moduletype = "rse_atu";
@@ -77,7 +75,6 @@ function system_mgmt.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.host_rse_si_mhu_pbx = {
         moduletype = "mhu320ae";
@@ -103,7 +100,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_rse_si_mhu_mbx = {
         moduletype = "mhu320ae";
         frame = "mbx";
@@ -127,7 +123,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_rse_si_ssram = {
         moduletype = "gs_memory";
         dmi_allow = host_memory_dmi;
@@ -139,7 +134,6 @@ function system_mgmt.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     }
-
 
     platform.host_ap_atu = {
         moduletype = "rse_atu";
@@ -166,7 +160,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_ap_si_ns_scmi_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "pbx";
@@ -188,7 +181,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.host_ap_si_ns_scmi_mhu_mbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "mbx";
@@ -209,7 +201,6 @@ function system_mgmt.define(ctx, platform)
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_MBX_IRQ};
         log_level = 0;
     } or nil
-
 
     platform.host_ap_si_scmi_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
@@ -242,7 +233,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.host_ap_si_scmi_mhu_mbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "mbx";
@@ -263,7 +253,6 @@ function system_mgmt.define(ctx, platform)
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_MBX_IRQ};
         log_level = 0;
     } or nil
-
 
     platform.host_ap_si_cl1_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
@@ -309,7 +298,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.host_ap_si_cl1_mhu_mbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "mbx";
@@ -327,7 +315,6 @@ function system_mgmt.define(ctx, platform)
         irq = {bind = "&ap_gic.spi_in_121"};
         log_level = 0;
     } or nil
-
 
     platform.host_ap_si_pfdi_monitor_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
@@ -352,7 +339,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.host_smdexp2smd_atu = {
         moduletype = "rse_atu";
         trace = atu_trace;
@@ -369,7 +355,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_systop_pik = {
         moduletype = "gs_memory";
         target_socket = {
@@ -380,7 +365,6 @@ function system_mgmt.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     }
-
 
     platform.host_css_counters_timers = {
         moduletype = "gs_memory";
@@ -393,7 +377,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_smcf_sram = {
         moduletype = "gs_memory";
         target_socket = {
@@ -404,7 +387,6 @@ function system_mgmt.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     }
-
 
     platform.host_ap_rse_mhu_pbx = {
         moduletype = "mhu320ae";
@@ -426,7 +408,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.host_ap_rse_mhu_mbx = {
         moduletype = "mhu320ae";
         frame = "mbx";
@@ -446,7 +427,6 @@ function system_mgmt.define(ctx, platform)
         initiator_socket = {bind = "&host_router.target_socket"};
         log_level = 0;
     }
-
 
     platform.host_ap_rse_mailbox = {
         moduletype = "gs_memory";

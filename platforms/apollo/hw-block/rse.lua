@@ -8,11 +8,9 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.qemu_inst_mgr = {
         moduletype = "QemuInstanceManager";
     }
-
 
     platform.qemu_inst = {
         moduletype = "QemuInstance";
@@ -20,7 +18,6 @@ function rse.define(ctx, platform)
         sync_policy = "multithread-freerunning";
         qemu_args = qemu_args;
     }
-
 
     platform.rse_rom = {
         moduletype = "gs_memory";
@@ -35,7 +32,6 @@ function rse.define(ctx, platform)
         load = {bin_file = rse_rom, offset = 0};
         log_level = 0;
     }
-
 
     platform.rse_itcm = {
         moduletype = "gs_memory";
@@ -57,7 +53,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_itcm_cpu0 = rse_split_cpu0_itcm_alias and {
         moduletype = "gs_memory";
         shared_memory = true;
@@ -77,7 +72,6 @@ function rse.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     } or nil
-
 
     platform.rse_dtcm = {
         moduletype = "gs_memory";
@@ -99,7 +93,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_dtcm_cpu0 = rse_split_cpu0_dtcm_alias and {
         moduletype = "gs_memory";
         shared_memory = true;
@@ -120,7 +113,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     } or nil
 
-
     platform.rse_vm0 = {
         moduletype = "gs_memory";
         shared_memory = true;
@@ -134,7 +126,6 @@ function rse.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     }
-
 
     platform.rse_vm1 = {
         moduletype = "gs_memory";
@@ -150,7 +141,6 @@ function rse.define(ctx, platform)
         load = {bin_file = provisioning_bundle, offset = RSE_PROVISIONING_OFFSET};
         log_level = 0;
     }
-
 
     platform.rse_boot_flash = (not rse_local_boot_flash) and {
         moduletype = "strata_flash_j3";
@@ -189,7 +179,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_cpu0_secctrl_regs = {
         moduletype = "gs_memory";
         target_socket = {
@@ -200,7 +189,6 @@ function rse.define(ctx, platform)
         init_mem = true;
         log_level = 0;
     }
-
 
     platform.rse_cpu0_pwrctrl_regs = {
         moduletype = "gs_memory";
@@ -219,7 +207,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_cpu0_identity_regs = {
         moduletype = "gs_memory";
         target_socket = {
@@ -237,7 +224,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_nsacfg_regs = {
         moduletype = "rse_protection_ctrl";
         target_socket = {
@@ -247,7 +233,6 @@ function rse.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.rse_dma350 = {
         moduletype = "dma350";
@@ -264,7 +249,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_sacfg_regs = {
         moduletype = "rse_protection_ctrl";
         target_socket = {
@@ -274,7 +258,6 @@ function rse.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.rse_kmu_regs = (not rse_local_crypto) and {
         moduletype = "rse_kmu";
@@ -293,7 +276,6 @@ function rse.define(ctx, platform)
         initiator_socket = {bind = "&rse_router.target_socket"};
         log_level = 0;
     } or nil
-
 
     platform.rse_lcm_regs = {
         moduletype = "rse_lcm";
@@ -315,7 +297,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_sam_regs = {
         moduletype = "rse_sam";
         trace = sam_trace;
@@ -328,7 +309,6 @@ function rse.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.rse_mpc_vm0_regs = {
         moduletype = "rse_protection_ctrl";
@@ -343,7 +323,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_mpc_vm1_regs = {
         moduletype = "rse_protection_ctrl";
         profile = 1;
@@ -356,7 +335,6 @@ function rse.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.rse_atu_regs = {
         moduletype = "rse_atu";
@@ -389,7 +367,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_sic_regs = {
         moduletype = "rse_protection_ctrl";
         target_socket = {
@@ -399,7 +376,6 @@ function rse.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.rse_mpc_sic_regs = {
         moduletype = "rse_protection_ctrl";
@@ -414,11 +390,9 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_cc3xx = (not rse_local_crypto) and
         rse_cc3xx_component("&rse_router.initiator_socket",
                             "&rse_router.target_socket") or nil
-
 
     platform.rse_syscntr_cntrl_regs = {
         moduletype = "gs_memory";
@@ -430,7 +404,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_syscntr_read_regs = {
         moduletype = "gs_memory";
         target_socket = {
@@ -440,7 +413,6 @@ function rse.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.rse_integrity_checker_regs = {
         moduletype = "rse_integrity_checker";
@@ -454,7 +426,6 @@ function rse.define(ctx, platform)
         };
         log_level = 0;
     }
-
 
     platform.rse_tram = {
         moduletype = "gs_memory";
@@ -485,7 +456,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_mhu0_receiver_s = {
         moduletype = "mhu320ae";
         frame = "mbx";
@@ -506,7 +476,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_mhu2_sender_s = {
         moduletype = "mhu320ae";
         frame = "pbx";
@@ -524,7 +493,6 @@ function rse.define(ctx, platform)
         initiator_socket = {bind = "&host_router.target_socket"};
         log_level = 0;
     }
-
 
     platform.rse_mhu2_receiver_s = {
         moduletype = "mhu320ae";
@@ -546,7 +514,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_sysctrl = {
         moduletype = "rse_sysctrl";
         trace = sysctrl_trace;
@@ -563,7 +530,6 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_integ_layer_regs = {
         moduletype = "gs_memory";
         target_socket = {
@@ -575,14 +541,12 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
-
     platform.rse_uart_file = {
         moduletype = "char_backend_file";
         read_file = rse_uart_read_file;
         write_file = rse_log;
         baudrate = 0;
     }
-
 
     platform.rse_host_uart0_s = {
         moduletype = "Pl011";
@@ -601,7 +565,6 @@ function rse.define(ctx, platform)
         irq = {bind = "&rse_cpu_pass.target_signal_socket_0"};
         backend_socket = {bind = "&rse_uart_file.biflow_socket"};
     }
-
 
     platform.rse_cpu_pass = {
         moduletype = rse_cpu_local and
