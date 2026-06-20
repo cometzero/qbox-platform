@@ -64,6 +64,4 @@ private:
     qbox::platform::rse_cpu_accel::RseCpuAccel m_rse_accel;
 };
 
-GSC_MODULE_REGISTER(ApolloRseRemoteCPU, sc_core::sc_object*);
-
 #endif

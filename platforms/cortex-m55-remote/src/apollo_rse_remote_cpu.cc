@@ -6,6 +6,8 @@
 #include <keep_alive/include/keep_alive.h>
 #include <module_factory_container.h>
 
+GSC_MODULE_REGISTER(ApolloRseRemoteCPU, sc_core::sc_object*);
+
 class RemotePlatform : public gs::ModuleFactory::ContainerDeferModulesConstruct
 {
     SCP_LOGGER(());

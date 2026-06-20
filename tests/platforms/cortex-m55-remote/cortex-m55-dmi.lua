@@ -17,6 +17,14 @@ local function getenv_or(name, default)
     return value
 end
 
+local function get_pass_mode()
+    local mode = getenv_or("QBOX_CORTEX_M55_PASS_MODE", "remote")
+    if mode == "remote" or mode == "local" then
+        return mode
+    end
+    error("QBOX_CORTEX_M55_PASS_MODE must be remote or local")
+end
+
 EXECUTABLE_PATH = GET("executable_path")
 if EXECUTABLE_PATH == nil then
     print("Error: executable_path is not set")
@@ -33,6 +41,10 @@ end
 
 local firmware = getenv_or("QBOX_CORTEX_M55_DMI_FW", "")
 local dmi_allow = getenv_or("QBOX_CORTEX_M55_DMI_ENABLE", "true") == "true"
+local pass_mode = get_pass_mode()
+local pass_local = pass_mode == "local"
+
+print("Cortex-M55 pass mode: "..pass_mode)
 
 platform = {
     moduletype = "ContainerDeferModulesConstruct";
@@ -104,9 +116,10 @@ platform = {
     },
 
     plugin_0 = {
-        moduletype = "RemotePass";
-        exec_path = EXECUTABLE_PATH..formatExecutable("remote_cpu");
-        remote_argv = {"--param", "log_level=0"};
+        moduletype = pass_local and "Container" or "RemotePass";
+        exec_path = not pass_local and
+            EXECUTABLE_PATH..formatExecutable("remote_cpu") or nil;
+        remote_argv = not pass_local and {"--param", "log_level=0"} or nil;
         tlm_initiator_ports_num = 2;
         tlm_target_ports_num = 0;
         target_signals_num = 4;
@@ -115,7 +128,7 @@ platform = {
         initiator_socket_1 = {bind = "&router.target_socket"};
 
         plugin_pass = {
-            moduletype = "RemotePass";
+            moduletype = pass_local and "LocalPass" or "RemotePass";
             tlm_initiator_ports_num = 0;
             tlm_target_ports_num = 2;
             target_signals_num = 0;

@@ -45,25 +45,24 @@ if(TARGET cortex-m55-vp AND ARM_NONE_EABI_GCC AND ARM_NONE_EABI_OBJCOPY)
         DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/cortex-m55-remote-dmi-byte-store.bin)
     add_dependencies(cortex-m55-vp cortex-m55-remote-dmi-byte-store-firmware)
 
-    add_test(
-        NAME cortex_m55_remote_dmi_byte_store_on
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/cortex_m55_dmi.py
-                -e $<TARGET_FILE:cortex-m55-vp>
-                -l ${CMAKE_CURRENT_SOURCE_DIR}/cortex-m55-dmi.lua
-                -f ${CMAKE_CURRENT_BINARY_DIR}/cortex-m55-remote-dmi-byte-store.bin
-                --dmi true)
-    set_tests_properties(cortex_m55_remote_dmi_byte_store_on PROPERTIES TIMEOUT 15)
+    function(add_cortex_m55_dmi_test pass_mode dmi_name dmi_value)
+        set(test_name "cortex_m55_${pass_mode}_pass_dmi_${dmi_name}_byte_store")
+        add_test(
+            NAME ${test_name}
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/cortex_m55_dmi.py
+                    -e $<TARGET_FILE:cortex-m55-vp>
+                    -l ${CMAKE_CURRENT_SOURCE_DIR}/cortex-m55-dmi.lua
+                    -f ${CMAKE_CURRENT_BINARY_DIR}/cortex-m55-remote-dmi-byte-store.bin
+                    --dmi ${dmi_value}
+                    --pass-mode ${pass_mode})
+        set_tests_properties(${test_name} PROPERTIES TIMEOUT 15)
+    endfunction()
 
-    add_test(
-        NAME cortex_m55_remote_dmi_byte_store_off
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/cortex_m55_dmi.py
-                -e $<TARGET_FILE:cortex-m55-vp>
-                -l ${CMAKE_CURRENT_SOURCE_DIR}/cortex-m55-dmi.lua
-                -f ${CMAKE_CURRENT_BINARY_DIR}/cortex-m55-remote-dmi-byte-store.bin
-                --dmi false)
-    set_tests_properties(cortex_m55_remote_dmi_byte_store_off PROPERTIES TIMEOUT 15)
+    add_cortex_m55_dmi_test(remote on true)
+    add_cortex_m55_dmi_test(remote off false)
+    add_cortex_m55_dmi_test(local on true)
+    add_cortex_m55_dmi_test(local off false)
 else()
     message(WARNING "Skipping cortex-m55 remote DMI byte-store tests")
 endif()

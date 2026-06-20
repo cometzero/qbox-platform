@@ -18,6 +18,20 @@ local function getenv_or(name, default)
     return value
 end
 
+local function get_rse_cpu_mode()
+    local mode = getenv_or("QBOX_RSE_CPU_MODE", "remote")
+    if mode == "default" then
+        return "remote"
+    end
+    if mode == "inprocess" then
+        return "local"
+    end
+    if mode == "remote" then
+        return mode
+    end
+    error("QBOX_RSE_CPU_MODE must be remote or inprocess")
+end
+
 function getenv_number_or(name, default)
     local value = tonumber(getenv_or(name, default))
     assert(value ~= nil, name.." must be numeric")
@@ -298,6 +312,12 @@ local mhu_trace_file = getenv_or(
     root.."build/qbox-fvp-rd-aspen/mhuv3-trace.log")
 remotepass_dmi_cache =
     getenv_or("QBOX_RDASPEN_REMOTEPASS_DMI_CACHE", "false") == "true"
+local rse_cpu_mode = get_rse_cpu_mode()
+local rse_cpu_local = rse_cpu_mode == "local"
+local rse_pass_dmi_cache = nil
+if not rse_cpu_local then
+    rse_pass_dmi_cache = remotepass_dmi_cache
+end
 local ap_power_domain_reset_delay_ns = tonumber(
     getenv_or("QBOX_RDASPEN_AP_POWER_DOMAIN_RESET_DELAY_NS", "1"))
 rse_local_crypto = getenv_or("QBOX_RDASPEN_RSE_LOCAL_CRYPTO", "true") == "true"
@@ -2168,20 +2188,21 @@ platform = {
     },
 
     rse_cpu_pass = {
-        moduletype = "RemotePass";
-        exec_path = remote_cpu_exec;
-        remote_argv = {
+        moduletype = rse_cpu_local and
+            "Container" or "RemotePass";
+        exec_path = not rse_cpu_local and remote_cpu_exec or nil;
+        remote_argv = not rse_cpu_local and {
             "--param",
             "log_level=0",
             "--param",
             "remote_platform.quantum_ns="..
                 tonumber(getenv_or("QBOX_RDASPEN_RSE_REMOTE_QUANTUM_NS", "1000000")),
-        };
+        } or nil;
         tlm_initiator_ports_num = 2;
         tlm_target_ports_num = 0;
         target_signals_num = RSE_REMOTE_SIGNAL_COUNT;
         initiator_signals_num = 0;
-        dmi_cache = remotepass_dmi_cache;
+        dmi_cache = rse_pass_dmi_cache;
         initiator_socket_0 = {bind = "&rse_router.target_socket"};
         initiator_socket_1 = {bind = "&rse_router.target_socket"};
 
@@ -2216,12 +2237,12 @@ platform = {
         } or nil,
 
         plugin_pass = {
-            moduletype = "RemotePass";
+            moduletype = rse_cpu_local and "LocalPass" or "RemotePass";
             tlm_initiator_ports_num = 0;
             tlm_target_ports_num = 2;
             target_signals_num = 0;
             initiator_signals_num = RSE_REMOTE_SIGNAL_COUNT;
-            dmi_cache = remotepass_dmi_cache;
+            dmi_cache = rse_pass_dmi_cache;
             target_socket_0 = {
                 address = 0x00000000;
                 size = RSE_NVIC_BASE;
@@ -2382,6 +2403,7 @@ print("rse log:      "..rse_log)
 print("secure log:   "..secure_console_log)
 print("primary log:  "..primary_console_log)
 print("remote cpu:   "..remote_cpu_exec)
+print("rse cpu mode: "..rse_cpu_mode)
 print("ap cpus:      "..tostring(AP_NUM_CPUS))
 print("rse rom base: 0x"..string.format("%x", RSE_ROM_BASE_S))
 print("rse vmaddrwidth: "..tostring(rse_vmaddrwidth))

@@ -122,6 +122,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     sbsa_gwdt
     cpu_arm_cortexM55
     nvic_armv7m
+    ApolloRseRemoteCPU
     apollo_rse_remote_cpu
     qemu_cc3xx
     qemu_hexagon_qtimer

@@ -23,6 +23,7 @@ def main() -> int:
     parser.add_argument("-l", "--lua", required=True, help="Path to Lua configuration")
     parser.add_argument("-f", "--firmware", required=True, help="Path to test firmware binary")
     parser.add_argument("--dmi", choices=("true", "false"), default="true")
+    parser.add_argument("--pass-mode", choices=("remote", "local"), default="remote")
     args = parser.parse_args()
 
     vp_path = Path(args.exe)
@@ -31,6 +32,7 @@ def main() -> int:
     env = os.environ.copy()
     env["QBOX_CORTEX_M55_DMI_FW"] = fw_path.as_posix()
     env["QBOX_CORTEX_M55_DMI_ENABLE"] = args.dmi
+    env["QBOX_CORTEX_M55_PASS_MODE"] = args.pass_mode
 
     if IS_WINDOWS:
         child = PopenSpawn(f'"{vp_path.as_posix()}" --gs_luafile "{lua_path.as_posix()}"', env=env)
