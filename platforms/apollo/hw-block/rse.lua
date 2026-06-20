@@ -1,4 +1,4 @@
--- RD-Aspen RSE-oriented boot skeleton for QBox.
+-- Apollo RSE-oriented boot skeleton for QBox.
 
 function top()
     local str = debug.getinfo(2, "S").source:sub(2)
@@ -71,7 +71,7 @@ function ap_system_reset_bind_targets()
     return table.concat(targets, ";")
 end
 
-print("RD-Aspen RSE QBox skeleton config running...")
+print("Apollo RSE QBox skeleton config running...")
 
 local root = top().."../../../../../"
 local deploy = root.."build/tmp_baremetal/deploy/images/fvp-rd-aspen/"
