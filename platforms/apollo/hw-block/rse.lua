@@ -93,7 +93,9 @@ local ap_virtio = {
         getenv_or("QBOX_RDASPEN_EXTRA_BLK2", root.."build/qbox-fvp-rd-aspen/rd-aspen-extra-blk2.raw");
         getenv_or("QBOX_RDASPEN_EXTRA_BLK3", root.."build/qbox-fvp-rd-aspen/rd-aspen-extra-blk3.raw");
     };
-    netdev = getenv_or("QBOX_RDASPEN_NETDEV", "type=user,hostfwd=tcp::2222-:22");
+    netdev = getenv_or(
+        "QBOX_APOLLO_NETDEV",
+        getenv_or("QBOX_RDASPEN_NETDEV", "type=user,hostfwd=tcp::2222-:22"));
     mmio_size = 0x00010000;
     block_base = {0x30020000; 0x30030000; 0x30040000; 0x30050000};
     block_irq = {257; 258; 259; 260};
