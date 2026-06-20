@@ -1,5 +1,70 @@
 local si_cl0 = {}
 
+function si_cl0.define(ctx, platform)
+    platform.host_si_cl0_sram = {
+        moduletype = "gs_memory";
+        dmi_allow = host_si_sram_dmi;
+        target_socket = {
+            address = HOST_SI_CL0_SRAM_PHYS_BASE;
+            size = HOST_SI_SRAM_WINDOW_SIZE;
+            bind = "&host_router.initiator_socket";
+        };
+        map_file = host_si_cl0_sram_map_file;
+        shared_memory = host_sram_shared_memory_enabled(host_si_cl0_sram_map_file);
+        shared_memory_prefix = "ra-si0-";
+        init_mem = host_si_cl0_sram_map_file == "";
+        log_level = 0;
+    }
+
+
+    platform.host_si_cl0_cub = {
+        moduletype = "gs_memory";
+        target_socket = {
+            address = HOST_SI_CL0_CL_UTIL_BASE;
+            size = HOST_SI_CL_UTIL_SIZE;
+            bind = "&host_router.initiator_socket";
+            priority = 20;
+        };
+        init_mem = true;
+        log_level = 0;
+    }
+
+
+    platform.host_si_cl0_clus_ppu = {
+        moduletype = "host_ppu";
+        trace = host_ppu_trace;
+        trace_limit = host_ppu_trace_limit;
+        target_socket = {
+            address = HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
+            size = HOST_SI_CONTROL_WINDOW_SIZE;
+            bind = "&host_router.initiator_socket";
+            priority = 10;
+        };
+        log_level = 0;
+    }
+
+
+    platform.host_si_cl0_core0_ppu = {
+        moduletype = "host_ppu";
+        trace = host_ppu_trace;
+        trace_limit = host_ppu_trace_limit;
+        assert_power_on_reset = apollo_live_cl0;
+        assert_power_on_load = apollo_live_cl0;
+        power_on_load = apollo_live_cl0 and {bind = "&si_cl0_loader.reset"} or nil;
+        power_on_reset = apollo_live_cl0 and {bind = "&si_cl0_cpu_0.reset"} or nil;
+        target_socket = {
+            address = HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CORE0_PPU_OFFSET;
+            size = HOST_SI_CONTROL_WINDOW_SIZE;
+            bind = "&host_router.initiator_socket";
+            priority = 10;
+        };
+        log_level = 0;
+    }
+
+
+end
+
+
 function si_cl0.enable(ctx, platform)
     print("Apollo FVP live SI CL0 block enabled...")
 

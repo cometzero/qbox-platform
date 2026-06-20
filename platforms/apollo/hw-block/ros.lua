@@ -1,5 +1,129 @@
 local ros = {}
 
+function ros.define(ctx, platform)
+    platform.ap_virtioblk_0 = enable_ap_cpus and {
+        moduletype = "virtio_mmio_blk";
+        args = {"&platform.ap_qemu_inst"};
+        mem = {
+            address = ap_virtio.block_base[1];
+            size = ap_virtio.mmio_size;
+            bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
+        };
+        irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[1]};
+        blkdev_str = "file="..ap_virtio.disk_image..",format=raw,if=none,cache=writeback";
+        trace = ap_virtio.trace;
+        trace_file = ap_virtio.trace_file;
+        trace_limit = ap_virtio.trace_limit;
+        trace_filter = ap_virtio.trace_filter;
+    } or nil
+
+
+    platform.ap_virtioblk_1 = enable_ap_cpus and {
+        moduletype = "virtio_mmio_blk";
+        args = {"&platform.ap_qemu_inst"};
+        mem = {
+            address = ap_virtio.block_base[2];
+            size = ap_virtio.mmio_size;
+            bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
+        };
+        irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[2]};
+        blkdev_str = "file="..ap_virtio.extra_disk_images[1]..",format=raw,if=none,cache=writeback";
+        trace = ap_virtio.trace;
+        trace_file = ap_virtio.trace_file;
+        trace_limit = ap_virtio.trace_limit;
+        trace_filter = ap_virtio.trace_filter;
+    } or nil
+
+
+    platform.ap_virtioblk_2 = enable_ap_cpus and {
+        moduletype = "virtio_mmio_blk";
+        args = {"&platform.ap_qemu_inst"};
+        mem = {
+            address = ap_virtio.block_base[3];
+            size = ap_virtio.mmio_size;
+            bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
+        };
+        irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[3]};
+        blkdev_str = "file="..ap_virtio.extra_disk_images[2]..",format=raw,if=none,cache=writeback";
+        trace = ap_virtio.trace;
+        trace_file = ap_virtio.trace_file;
+        trace_limit = ap_virtio.trace_limit;
+        trace_filter = ap_virtio.trace_filter;
+    } or nil
+
+
+    platform.ap_virtioblk_3 = enable_ap_cpus and {
+        moduletype = "virtio_mmio_blk";
+        args = {"&platform.ap_qemu_inst"};
+        mem = {
+            address = ap_virtio.block_base[4];
+            size = ap_virtio.mmio_size;
+            bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
+        };
+        irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.block_irq[4]};
+        blkdev_str = "file="..ap_virtio.extra_disk_images[3]..",format=raw,if=none,cache=writeback";
+        trace = ap_virtio.trace;
+        trace_file = ap_virtio.trace_file;
+        trace_limit = ap_virtio.trace_limit;
+        trace_filter = ap_virtio.trace_filter;
+    } or nil
+
+
+    platform.ap_virtionet_0 = enable_ap_cpus and {
+        moduletype = "virtio_mmio_net";
+        args = {"&platform.ap_qemu_inst"};
+        mem = {
+            address = ap_virtio.net_base;
+            size = ap_virtio.mmio_size;
+            bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
+        };
+        irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.net_irq};
+        netdev_str = ap_virtio.netdev;
+        trace = ap_virtio.trace;
+        trace_file = ap_virtio.trace_file;
+        trace_limit = ap_virtio.trace_limit;
+        trace_filter = ap_virtio.trace_filter;
+    } or nil
+
+
+    platform.ap_virtiorng_0 = enable_ap_cpus and {
+        moduletype = "virtio_mmio_rng";
+        args = {"&platform.ap_qemu_inst"};
+        mem = {
+            address = ap_virtio.rng_base;
+            size = ap_virtio.mmio_size;
+            bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
+        };
+        irq_out = {bind = "&ap_gic.spi_in_"..ap_virtio.rng_irq};
+        trace = ap_virtio.trace;
+        trace_file = ap_virtio.trace_file;
+        trace_limit = ap_virtio.trace_limit;
+        trace_filter = ap_virtio.trace_filter;
+    } or nil
+
+
+    platform.ap_rtc_0 = enable_ap_cpus and {
+        moduletype = "pl031";
+        args = {"&platform.ap_qemu_inst"};
+        mem = {
+            address = 0x300D0000;
+            size = 0x00010000;
+            bind = "&host_router.initiator_socket";
+            mirror_4k_aperture = true;
+        };
+        irq_out = {bind = "&ap_gic.spi_in_268"};
+    } or nil
+
+
+end
+
+
 ros.peripherals = {
     system = {
         registers = {base = 0x30000000, size = 0x10000, modeled = false};

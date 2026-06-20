@@ -26,10 +26,17 @@ The full-system QBox virtual platform entrypoint is:
 tools/qbox-platform/platforms/apollo/apollo-qvp.lua
 ```
 
-The full-system RSE/AP base topology is owned by the Apollo platform:
+The full-system entrypoint composes subsystem-owned Apollo hardware blocks:
 
 ```text
+tools/qbox-platform/platforms/apollo/hw-block/config.lua
+tools/qbox-platform/platforms/apollo/hw-block/fabric.lua
 tools/qbox-platform/platforms/apollo/hw-block/rse.lua
+tools/qbox-platform/platforms/apollo/hw-block/ap_compute.lua
+tools/qbox-platform/platforms/apollo/hw-block/ros.lua
+tools/qbox-platform/platforms/apollo/hw-block/system_mgmt.lua
+tools/qbox-platform/platforms/apollo/hw-block/si_cl0.lua
+tools/qbox-platform/platforms/apollo/hw-block/si_cl1.lua
 ```
 
 Hardware-block helpers used by the full-system entrypoint live under:
@@ -42,6 +49,8 @@ The current full-system block helpers are:
 
 ```text
 hw-block/rse.lua
+hw-block/config.lua
+hw-block/fabric.lua
 hw-block/primary_compute.lua
 hw-block/ap_compute.lua
 hw-block/si_cl0.lua
@@ -54,11 +63,13 @@ hw-block/system_mgmt.lua
 `hw-block/ros.lua` tracks the modeled Rest of System subset from the Arm Zena
 CSS FVP RoS peripheral table: AP-visible virtio block/net/rng and PL031 RTC.
 
-`hw-block/system_mgmt.lua` tracks cross-domain system-management ownership and
-helpers: AP/RSE MHU logical aliases, reset/power integration, SMD shared
-memory, SCMI/PFDI messaging, ATU windows, and CL0-visible safety/control
-surfaces. RSE secure boot and RSE-local security peripherals remain in
-`hw-block/rse.lua`.
+`hw-block/system_mgmt.lua` owns cross-domain system-management hardware:
+AP/SI/RSE MHU windows, AP/RSE logical aliases, reset/power integration, SMD
+shared memory, SCMI/PFDI messaging, ATU windows, and safety/control surfaces.
+RSE secure boot and RSE-local security peripherals remain in `hw-block/rse.lua`;
+AP firmware-chain and AP hardware construction live in `hw-block/ap_compute.lua`;
+SI host-visible SRAM/PPU windows live in `hw-block/si_cl0.lua` and
+`hw-block/si_cl1.lua`.
 
 ## Build Local Artifacts
 

@@ -1,5 +1,53 @@
 local si_cl1 = {}
 
+function si_cl1.define(ctx, platform)
+    platform.host_si_cl1_sram = {
+        moduletype = "gs_memory";
+        dmi_allow = host_si_sram_dmi;
+        target_socket = {
+            address = HOST_SI_CL1_SRAM_PHYS_BASE;
+            size = HOST_SI_SRAM_WINDOW_SIZE;
+            bind = "&host_router.initiator_socket";
+        };
+        map_file = host_si_cl1_sram_map_file;
+        shared_memory = host_sram_shared_memory_enabled(host_si_cl1_sram_map_file);
+        shared_memory_prefix = "ra-si1-";
+        init_mem = host_si_cl1_sram_map_file == "";
+        log_level = 0;
+    }
+
+
+    platform.host_si_cl1_cub = {
+        moduletype = "gs_memory";
+        target_socket = {
+            address = HOST_SI_CL1_CL_UTIL_BASE;
+            size = HOST_SI_CL_UTIL_SIZE;
+            bind = "&host_router.initiator_socket";
+            priority = 20;
+        };
+        init_mem = true;
+        log_level = 0;
+    }
+
+
+    platform.host_si_cl1_clus_ppu = {
+        moduletype = "host_ppu";
+        trace = host_ppu_trace;
+        trace_limit = host_ppu_trace_limit;
+        assert_power_on_load = apollo_live_cl1;
+        power_on_load = apollo_live_cl1 and {bind = "&si_cl1_loader.reset"} or nil;
+        target_socket = {
+            address = HOST_SI_CL1_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
+            size = HOST_SI_CONTROL_WINDOW_SIZE;
+            bind = "&host_router.initiator_socket";
+            priority = 10;
+        };
+        log_level = 0;
+    }
+
+end
+
+
 function si_cl1.enable(ctx, platform)
     print("Apollo FVP live SI CL1 block enabled...")
 
