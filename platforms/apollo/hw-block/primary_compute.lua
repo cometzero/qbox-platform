@@ -34,7 +34,7 @@ local kernel_image = getenv_or(
     root.."build/tmp_baremetal/deploy/images/apollo-fvp/Image")
 local dtb_image = getenv_or(
     "QBOX_APOLLO_DTB",
-    root.."build/qbox-apollo-fvp/apollo-fvp-primary-compute.dtb")
+    root.."build/qbox-apollo-fvp/apollo-fvp-direct.dtb")
 local initramfs_image = os.getenv("QBOX_APOLLO_INITRAMFS")
 local disk_image = os.getenv("QBOX_APOLLO_ROOTFS")
 local extra_disk_images = {

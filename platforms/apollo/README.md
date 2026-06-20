@@ -77,10 +77,14 @@ The full-system runner also consumes the local firmware deploy artifacts under
 `build/local-apollo-fvp/deploy/firmware/`, including RSE ROM/flash/OTP, AP
 flash, SI CL0 firmware, and SI CL1 Zephyr images.
 
-The runner generates a QBox-specific DTB at:
+The direct-boot runner uses the local-build Linux DTB as its base and applies a
+small `/chosen` overlay for direct bootargs and initrd addresses. Generated
+artifacts are written to:
 
 ```text
-build/qbox-apollo-fvp/apollo-fvp-primary-compute.dtb
+build/qbox-apollo-fvp/apollo-fvp-direct.dtb
+build/qbox-apollo-fvp/apollo-fvp-direct.overlay.dts
+build/qbox-apollo-fvp/apollo-fvp-direct.overlay.dtbo
 ```
 
 ## Build QBox Targets
