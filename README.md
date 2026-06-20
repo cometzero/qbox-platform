@@ -1,21 +1,20 @@
 # QBox Platform Overlay
 
-This repository is the Apollo/RD-Aspen platform overlay for QBox. It is built
-against a separate QBox core source tree and a separate QEMU/libqemu source
-tree.
+This repository is the Apollo full-system platform overlay for QBox. It is
+built against a separate QBox core source tree and a separate QEMU/libqemu
+source tree.
 
 In the Arm Auto Solutions workspace the expected topology is:
 
 ```text
 tools/qbox/            QBox core: platforms-vp, libqbox/libqemu integration,
                        reusable SystemC and QEMU-backed components
-tools/qbox-platform/   Apollo/RD-Aspen overlay: Lua platforms, Zena/RSE
-                       models, Apollo-specific wrappers and tests
+tools/qbox-platform/   Apollo overlay: Lua platforms, Zena/RSE models,
+                       Apollo-specific wrappers and tests
 tools/qemu/            checkout-local QEMU/libqemu source used by QBox
 ```
 
-Apollo and RD-Aspen platform source should live in this overlay, not in the
-QBox core tree.
+Apollo platform source should live in this overlay, not in the QBox core tree.
 
 ## Owned Surface
 
@@ -25,15 +24,12 @@ Primary platform entrypoints:
 platforms/apollo/apollo-qvp.lua
 platforms/apollo/apollo-pc.lua
 platforms/apollo/apollo-si-cl1.lua
-platforms/fvp-rd-aspen-rse/conf.lua
 ```
 
-Apollo and RD-Aspen hardware block helpers live under:
+Apollo hardware block helpers live under:
 
 ```text
 platforms/apollo/hw-block/
-platforms/fvp-rd-aspen/
-platforms/fvp-rd-aspen-rse/
 ```
 
 Overlay-owned component source includes Zena/RSE hardware models and
@@ -50,7 +46,12 @@ qemu-components/virtio_mmio_rng/
 tests/components/
 ```
 
-The Apollo and RD-Aspen direct-boot configurations also share the retained
+The `platforms/cortex-m55-remote/` directory is retained as Apollo support
+code. It builds the `ApolloRseRemoteCPU` module and `apollo_rse_remote_cpu`
+helper used by the Apollo full-system RSE CPU backend; it is not a standalone
+platform entrypoint.
+
+The Apollo direct-boot configurations also share the retained
 platform-neutral helper:
 
 ```text
@@ -152,4 +153,3 @@ To package existing local-build outputs into a QBox-runnable image set:
 - Root workspace guide: `README.md`
 - Agent/source ownership guide: `AGENTS.md`
 - Apollo platform guide: `platforms/apollo/README.md`
-- RD-Aspen platform guide: `platforms/fvp-rd-aspen/README.md`
