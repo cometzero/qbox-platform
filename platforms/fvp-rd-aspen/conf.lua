@@ -17,7 +17,7 @@ INITIAL_DDR_SPACE = 0x80000000
 _KERNEL64_LOAD_ADDR = INITIAL_DDR_SPACE + 0x01200000
 _DTB_LOAD_ADDR      = INITIAL_DDR_SPACE + 0x07600000
 
-dofile(top().."../ubuntu/fw/arm64_bootloader.lua")
+dofile(top().."../../fw/arm64_bootloader.lua")
 
 local function getenv_or(name, default)
     local value = os.getenv(name)

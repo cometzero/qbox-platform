@@ -51,10 +51,10 @@ tests/components/
 ```
 
 The Apollo and RD-Aspen direct-boot configurations also share the retained
-helper:
+platform-neutral helper:
 
 ```text
-platforms/ubuntu/fw/arm64_bootloader.lua
+fw/arm64_bootloader.lua
 ```
 
 Reusable core components should be upstreamed or kept in `tools/qbox`.

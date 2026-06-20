@@ -18,7 +18,7 @@ _KERNEL64_LOAD_ADDR = 0x80080000
 _DTB_LOAD_ADDR      = 0x8fc00000
 _INITRAMFS_LOAD_ADDR = 0x94000000
 
-dofile(top().."../../ubuntu/fw/arm64_bootloader.lua")
+dofile(top().."../../../fw/arm64_bootloader.lua")
 
 local function getenv_or(name, default)
     local value = os.getenv(name)
