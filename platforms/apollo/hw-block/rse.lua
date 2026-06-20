@@ -388,6 +388,8 @@ local RSE_BOOT_FLASH_SIZE = 0x04000000
 local RSE_HOST_ACCESS_BASE_NS = 0x60000000
 local RSE_HOST_ACCESS_BASE_S = 0x70000000
 local RSE_HOST_ACCESS_SIZE = 0x10000000
+
+-- RSE image aliases into host-visible SI SRAM
 HOST_SI_CL0_IMG_HDR_LOGICAL_BASE = 0x70083C00
 HOST_SI_CL0_IMG_CODE_LOGICAL_BASE = 0x70084000
 HOST_SI_CL0_HEADER_FILE_OFFSET = 0x000FFC00
@@ -532,6 +534,8 @@ AP_GIC_ACTIVE_REDIST_REGIONS = AP_GIC_NUM_CPUS
 AP_GIC_LEGACY_DIST_BASE = 0x20000000
 AP_GIC_LEGACY_REDIST_BASE = 0x200C0000
 AP_GIC_LEGACY_REDIST_SIZE = 0x00020000
+
+-- Host-visible Safety Island windows
 HOST_SI_CL0_CL_UTIL_BASE = 0x4000028000000
 HOST_SI_CL1_CL_UTIL_BASE = 0x4000028800000
 HOST_SI_CL_UTIL_SIZE = 0x00800000
@@ -685,6 +689,7 @@ platform = {
     moduletype = "Container";
     quantum_ns = 10000000;
 
+    -- Root fabric
     rse_router = {
         moduletype = "router";
         log_level = 0;
@@ -730,6 +735,7 @@ platform = {
         log_level = 0;
     } or nil,
 
+    -- AP CPU backend and PCIe root complex
     ap_global_peripheral_initiator = enable_ap_cpus and {
         moduletype = "global_peripheral_initiator";
         args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
@@ -766,6 +772,7 @@ platform = {
         irq_out_3 = {bind = "&ap_gic.spi_in_303"};
     } or nil,
 
+    -- RSE code and data memories
     rse_rom = {
         moduletype = "gs_memory";
         read_only = true;
@@ -913,6 +920,7 @@ platform = {
         log_level = 0;
     } or nil,
 
+    -- RSE local peripherals
     rse_otp_wrapper = {
         moduletype = "gs_memory";
         target_socket = {
@@ -1183,6 +1191,7 @@ platform = {
         log_level = 0;
     },
 
+    -- AP boot and memory windows
     host_ap_shared_sram = {
         moduletype = "gs_memory";
         dmi_allow = host_memory_dmi;
@@ -1362,6 +1371,7 @@ platform = {
         log_level = 0;
     } or nil,
 
+    -- AP interrupt controller and RoS peripherals
     ap_gic = enable_ap_cpus and {
         moduletype = "arm_gicv3";
         args = {"&platform.ap_qemu_inst"};
@@ -1710,6 +1720,7 @@ platform = {
         log_level = 0;
     } or nil,
 
+    -- Safety Island host-visible windows
     host_si_cl0_sram = {
         moduletype = "gs_memory";
         dmi_allow = host_si_sram_dmi;
@@ -1848,6 +1859,7 @@ platform = {
         log_level = 0;
     },
 
+    -- Cross-domain MHU and ATU windows
     host_rse_si_mhu_pbx = {
         moduletype = "mhu320ae";
         frame = "pbx";
@@ -2213,6 +2225,7 @@ platform = {
         log_level = 0;
     },
 
+    -- RSE CPU pass and local CPU-side peripherals
     rse_mhu0_sender_s = {
         moduletype = "mhu320ae";
         frame = "pbx";

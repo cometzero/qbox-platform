@@ -139,6 +139,7 @@ function si_cl0.enable(ctx, platform)
     local si_cmn_trace_limit =
         ctx.getenv_number_or("QBOX_APOLLO_FULL_SI_CMN_TRACE_LIMIT", "512")
 
+    -- CL0 interconnect and GIC multiviews
     platform.si_cl0_cmn_cyprus = {
         moduletype = "host_cmn_cyprus";
         trace = si_cmn_trace;
@@ -195,6 +196,7 @@ function si_cl0.enable(ctx, platform)
         }
     end
 
+    -- CL0 CPU backend and SRAM
     platform.si_cl0_qemu_inst_mgr = {
         moduletype = "QemuInstanceManager";
     }
@@ -219,6 +221,7 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
+    -- ATU reachability windows used by SCP firmware probes
     for _, window in ipairs(SI_CL0_ATU_CHECK_WINDOWS) do
         platform["si_cl0_atu_check_"..window.name] = {
             moduletype = "gs_memory";
@@ -249,6 +252,7 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
+    -- CL0 local control and safety IP
     platform.si_cl0_scr = {
         moduletype = "host_scr";
         cl1_present = true;
@@ -321,6 +325,7 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
+    -- NI-710AE register windows
     platform.si_cl0_ni710ae_primary_nci = {
         moduletype = "host_ni710ae_nci";
         topology = 4;
@@ -357,6 +362,7 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
+    -- SMD expansion and translated system windows
     platform.si_cl0_smd_expansion_window = {
         moduletype = "gs_memory";
         dmi = false;
@@ -522,6 +528,7 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
+    -- CL1 and AP power/reset control
     platform.si_cl0_sys0_ppu = {
         moduletype = "host_ppu";
         target_socket = {
@@ -633,6 +640,7 @@ function si_cl0.enable(ctx, platform)
         end
     end
 
+    -- CL0 interrupt controller and console
     platform.si_cl0_gic = {
         moduletype = "arm_gicv3";
         args = {"&platform.si_cl0_qemu_inst"};
@@ -672,6 +680,7 @@ function si_cl0.enable(ctx, platform)
         backend_socket = {bind = "&si_cl0_console_file.biflow_socket"};
     }
 
+    -- CL0 boot image and Cortex-R82 CPU
     platform.si_cl0_loader = {
         moduletype = "loader";
         load_at_elaboration = false;

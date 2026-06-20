@@ -60,6 +60,7 @@ platform = {
 
     quantum_ns = 10000000;
 
+    -- Fabric
     router = {
         moduletype="router";
         log_level=0;
@@ -69,6 +70,7 @@ platform = {
         moduletype = "keep_alive";
     },
 
+    -- Primary-compute memory map
     ram_0 = {
         moduletype="gs_memory";
         target_socket = {
@@ -149,6 +151,7 @@ platform = {
         log_level=0,
     };
 
+    -- AP CPU backend
     qemu_inst_mgr = {
         moduletype = "QemuInstanceManager";
     },
@@ -161,6 +164,7 @@ platform = {
         sync_policy = "multithread-unconstrained"
     },
 
+    -- Interrupt controller
     gic_0 = {
         moduletype = "arm_gicv3",
         args = {"&platform.qemu_inst"},
@@ -205,6 +209,7 @@ platform = {
         };
     };
 
+    -- RoS peripherals visible to Linux
     virtioblk_1 = {
         moduletype = "virtio_mmio_blk",
         args = {"&platform.qemu_inst"};
@@ -296,6 +301,7 @@ platform = {
         irq_out = {bind = "&gic_0.spi_in_50"}
     };
 
+    -- Console
     charbackend_stdio_0 = {
         moduletype = "char_backend_stdio";
         read_write = true;
@@ -319,6 +325,7 @@ platform = {
         global_initiator = {bind = "&router.target_socket"},
     };
 
+    -- Catch-all decode
     fallback_0 = {
         moduletype="gs_memory";
         target_socket = {
@@ -331,6 +338,7 @@ platform = {
         log_level = 0,
     };
 
+    -- Boot artifacts
     load = {
         moduletype = "loader",
         initiator_socket = {bind = "&router.target_socket"};
@@ -386,6 +394,7 @@ if ACCEL == "kvm" then
 end
 print("PSCI conduit: "..psci_conduit)
 
+-- CPU cluster and GIC CPU interfaces
 for i=0,(ARM_NUM_CPUS-1) do
     local cpu = {
         moduletype = "cpu_arm_cortexA720AE";

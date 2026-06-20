@@ -80,6 +80,7 @@ platform = {
     moduletype = "Container";
     quantum_ns = 10000000;
 
+    -- Fabric
     router = {
         moduletype = "router";
         log_level = 0;
@@ -89,6 +90,7 @@ platform = {
         moduletype = "keep_alive";
     };
 
+    -- CL1 CPU backend
     qemu_inst_mgr = {
         moduletype = "QemuInstanceManager";
     };
@@ -102,6 +104,7 @@ platform = {
         qemu_args = qemu_args;
     };
 
+    -- CL1 memory
     si_cl1_sram = {
         moduletype = "gs_memory";
         dmi = true;
@@ -135,6 +138,7 @@ platform = {
         log_level = 0;
     };
 
+    -- CL1 interrupt controller
     si_cl1_gic = {
         moduletype = "arm_gicv3";
         args = {"&platform.qemu_inst"};
@@ -148,6 +152,7 @@ platform = {
         num_spi = 128;
     };
 
+    -- CL1 console
     si_cl1_console_file = {
         moduletype = "char_backend_file";
         read_file = si_cl1_uart_read_file;
@@ -169,6 +174,7 @@ platform = {
         backend_socket = {bind = "&si_cl1_console_file.biflow_socket"};
     };
 
+    -- CL1 HIPC and PFDI MHU frames
     si_cl1_hipc_mhu_pbx = {
         moduletype = "mhu320ae";
         frame = "pbx";
@@ -233,6 +239,7 @@ platform = {
         log_level = 0;
     };
 
+    -- Catch-all decode
     fallback_0 = {
         moduletype = "gs_memory";
         target_socket = {
@@ -245,6 +252,7 @@ platform = {
         log_level = 0;
     };
 
+    -- CL1 boot image
     load = {
         moduletype = "loader";
         initiator_socket = {bind = "&router.target_socket"};
@@ -252,6 +260,7 @@ platform = {
     };
 };
 
+-- CL1 Cortex-R82 cluster
 for i=0,(SI_CL1_CPU_COUNT-1) do
     local cpu = {
         moduletype = "cpu_arm_cortexR82";

@@ -45,6 +45,8 @@ function si_cl1.enable(ctx, platform)
         ctx.apollo_root.."build/qbox-apollo-fvp/full-live-cl1/si-cl1-mhuv3-trace.log")
     local mhu_trace_limit =
         ctx.getenv_number_or("QBOX_APOLLO_FULL_SI_CL1_MHU_TRACE_LIMIT", "4096")
+
+    -- Merged host-router priority adjustments
     -- The first live CL1 integration still uses the RD-Aspen host_router as a
     -- temporary merged bus. CL1 local addresses overlap broad AP regions in
     -- that flattened view, so lower only those broad AP windows and let the
@@ -68,6 +70,7 @@ function si_cl1.enable(ctx, platform)
         }
     end
 
+    -- CL1 CPU backend
     platform.si_cl1_qemu_inst_mgr = {
         moduletype = "QemuInstanceManager";
     }
@@ -81,6 +84,7 @@ function si_cl1.enable(ctx, platform)
         qemu_args = si_cl1_qemu_args;
     }
 
+    -- CL1 memory
     platform.si_cl1_sram = {
         moduletype = "gs_memory";
         dmi = true;
@@ -103,6 +107,7 @@ function si_cl1.enable(ctx, platform)
         log_level = 0;
     }
 
+    -- CL1 interrupt controller
     platform.si_cl1_gic = {
         moduletype = "arm_gicv3";
         args = {"&platform.si_cl1_qemu_inst"};
@@ -116,6 +121,7 @@ function si_cl1.enable(ctx, platform)
         num_spi = 128;
     }
 
+    -- CL1 console
     platform.si_cl1_console_file = {
         moduletype = "char_backend_file";
         read_file = si_cl1_uart_read_file;
@@ -137,6 +143,7 @@ function si_cl1.enable(ctx, platform)
         backend_socket = {bind = "&si_cl1_console_file.biflow_socket"};
     }
 
+    -- CL1 HIPC and PFDI MHU frames
     platform.si_cl1_hipc_mhu_pbx = {
         moduletype = "mhu320ae";
         frame = "pbx";
@@ -201,6 +208,7 @@ function si_cl1.enable(ctx, platform)
         log_level = 0;
     }
 
+    -- CL1 boot image
     platform.si_cl1_loader = {
         moduletype = "loader";
         load_at_elaboration = false;
@@ -208,6 +216,7 @@ function si_cl1.enable(ctx, platform)
         { bin_file = si_cl1_image, address = SI_CL1_SRAM_BASE };
     }
 
+    -- CL1 Cortex-R82 cluster
     for i=0,(SI_CL1_CPU_COUNT-1) do
         local cpu = {
             moduletype = "cpu_arm_cortexR82";

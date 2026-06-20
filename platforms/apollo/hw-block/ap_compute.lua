@@ -7,6 +7,7 @@ function ap_compute.enable_ap_view_router(ctx, platform)
 
     print("Apollo FVP AP logical view router enabled...")
 
+    -- AP logical view
     platform.ap_view_router = {
         moduletype = "router";
         log_level = 0;
@@ -26,6 +27,7 @@ function ap_compute.enable_ap_view_router(ctx, platform)
         log_level = 0;
     }
 
+    -- Host-to-AP translation and AP masters
     local function bind_ap_target(target)
         if target ~= nil then
             target.bind = "&ap_view_router.initiator_socket"
@@ -60,6 +62,8 @@ function ap_compute.enable_ap_view_router(ctx, platform)
         bind_ap_target(platform.ap_gpex_0.ecam_iface)
         bind_ap_target(platform.ap_gpex_0.mmio_iface_high)
     end
+
+    -- Memory and interrupt controller windows
     bind_ap_socket(platform.host_ap_dram1, "target_socket")
     bind_ap_socket(platform.host_ap_dram2, "target_socket")
     bind_ap_socket(platform.host_ap_ffa_mm_comm_buffer, "target_socket")
@@ -72,6 +76,8 @@ function ap_compute.enable_ap_view_router(ctx, platform)
     end
     bind_ap_socket(platform.ap_gic_its, "mem")
     bind_ap_socket(platform.ap_smmu_0, "mem")
+
+    -- RoS and AP peripherals
     ctx.ros.bind_ap_view_targets(platform, bind_ap_target)
     bind_ap_socket(platform.ap_watchdog_0, "refresh_mem")
     bind_ap_socket(platform.ap_watchdog_0, "control_mem")
@@ -88,6 +94,8 @@ function ap_compute.enable_ap_view_router(ctx, platform)
     bind_ap_socket(platform.ap_cl1_ni710ae_fmu, "target_socket")
     bind_ap_socket(platform.ap_cl2_ni710ae_fmu, "target_socket")
     bind_ap_socket(platform.ap_cl3_ni710ae_fmu, "target_socket")
+
+    -- AP CPU initiator view
     for i=0,15 do
         local cpu = platform["ap_cpu_"..i]
         if cpu ~= nil then
