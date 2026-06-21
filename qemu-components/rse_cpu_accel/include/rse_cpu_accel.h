@@ -56,7 +56,6 @@ private:
     ConfigValue<uint64_t> p_hotpath_memcpy_addr;
     ConfigValue<uint64_t> p_hotpath_memset_addr;
     ConfigValue<uint64_t> p_hotpath_max_bytes;
-    ConfigValue<bool> p_hotpath_tlm_fallback;
     ConfigValue<std::string> p_hotpath_profile_file;
     ConfigValue<uint64_t> p_hotpath_profile_interval;
     ConfigValue<bool> p_lms_accel;
@@ -109,7 +108,6 @@ private:
     std::atomic<uint64_t> m_hotpath_memcpy_hits{ 0 };
     std::atomic<uint64_t> m_hotpath_memset_hits{ 0 };
     std::atomic<uint64_t> m_hotpath_fallbacks{ 0 };
-    std::atomic<uint64_t> m_hotpath_tlm_fallbacks{ 0 };
     std::atomic<uint64_t> m_hotpath_pc_misses{ 0 };
     std::atomic<uint64_t> m_hotpath_too_large_fails{ 0 };
     std::atomic<uint64_t> m_hotpath_dmi_fails{ 0 };
@@ -311,7 +309,6 @@ private:
         p_hotpath_memcpy_addr = param<uint64_t>("hotpath_memcpy_addr", 0);
         p_hotpath_memset_addr = param<uint64_t>("hotpath_memset_addr", 0);
         p_hotpath_max_bytes = param<uint64_t>("hotpath_max_bytes", 16 * 1024 * 1024);
-        p_hotpath_tlm_fallback = param("hotpath_tlm_fallback", false);
         p_hotpath_profile_file = param<std::string>("hotpath_profile_file", "");
         p_hotpath_profile_interval = param<uint64_t>("hotpath_profile_interval", 1024);
         p_lms_accel = param("lms_accel", false);
@@ -371,21 +368,18 @@ private:
 
     bool hotpath_read_u32(uint64_t address, uint32_t& value)
     {
-        return m_context.guest_read_u32(address, value,
-                                        p_hotpath_tlm_fallback.get_value());
+        return m_context.guest_read_u32(address, value);
     }
 
     bool hotpath_read_u8(uint64_t address, uint8_t& value)
     {
-        return m_context.guest_read_u8(address, value,
-                                       p_hotpath_tlm_fallback.get_value());
+        return m_context.guest_read_u8(address, value);
     }
 
     bool hotpath_read_bytes(uint64_t address, uint64_t size,
                             std::vector<uint8_t>& out)
     {
-        return m_context.guest_read_bytes(address, size, out,
-                                          p_hotpath_tlm_fallback.get_value());
+        return m_context.guest_read_bytes(address, size, out);
     }
 
     bool hotpath_read_bytes_or_alias(uint64_t address, uint64_t size,
@@ -393,28 +387,24 @@ private:
                                      bool& direct_file_alias)
     {
         return m_context.guest_read_bytes_or_alias(
-            address, size, out, direct_file_alias,
-            p_hotpath_tlm_fallback.get_value());
+            address, size, out, direct_file_alias);
     }
 
     bool hotpath_write_bytes(uint64_t address, const uint8_t* data, uint64_t size)
     {
-        return m_context.guest_write_bytes(
-            address, data, size, p_hotpath_tlm_fallback.get_value());
+        return m_context.guest_write_bytes(address, data, size);
     }
 
     bool hotpath_write_bytes_or_alias(uint64_t address, const uint8_t* data,
                                       uint64_t size, bool& direct_file_alias)
     {
         return m_context.guest_write_bytes_or_alias(
-            address, data, size, direct_file_alias,
-            p_hotpath_tlm_fallback.get_value());
+            address, data, size, direct_file_alias);
     }
 
     bool hotpath_write_u32(uint64_t address, uint32_t value)
     {
-        return m_context.guest_write_u32(
-            address, value, p_hotpath_tlm_fallback.get_value());
+        return m_context.guest_write_u32(address, value);
     }
 
     static std::string profile_hex_string(uint64_t value)
@@ -1680,8 +1670,6 @@ private:
             << "  \"memcpy_hits\": " << m_hotpath_memcpy_hits.load(std::memory_order_relaxed) << ",\n"
             << "  \"memset_hits\": " << m_hotpath_memset_hits.load(std::memory_order_relaxed) << ",\n"
             << "  \"fallbacks\": " << m_hotpath_fallbacks.load(std::memory_order_relaxed) << ",\n"
-            << "  \"tlm_fallback_enabled\": " << (p_hotpath_tlm_fallback.get_value() ? "true" : "false") << ",\n"
-            << "  \"tlm_fallbacks\": " << m_hotpath_tlm_fallbacks.load(std::memory_order_relaxed) << ",\n"
             << "  \"pc_misses\": " << m_hotpath_pc_misses.load(std::memory_order_relaxed) << ",\n"
             << "  \"too_large_failures\": " << m_hotpath_too_large_fails.load(std::memory_order_relaxed) << ",\n"
             << "  \"dmi_failures\": " << m_hotpath_dmi_fails.load(std::memory_order_relaxed) << ",\n"

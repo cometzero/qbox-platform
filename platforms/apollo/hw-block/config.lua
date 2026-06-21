@@ -18,20 +18,6 @@ function getenv_or(name, default)
     return value
 end
 
-function get_rse_cpu_mode()
-    local mode = getenv_or("QBOX_RSE_CPU_MODE", "remote")
-    if mode == "default" then
-        return "remote"
-    end
-    if mode == "inprocess" then
-        return "local"
-    end
-    if mode == "remote" then
-        return mode
-    end
-    error("QBOX_RSE_CPU_MODE must be remote or inprocess")
-end
-
 function getenv_number_or(name, default)
     local value = tonumber(getenv_or(name, default))
     assert(value ~= nil, name.." must be numeric")
@@ -175,7 +161,6 @@ rse_hotpath_accel = getenv_or("QBOX_RDASPEN_RSE_HOTPATH_ACCEL", "false") == "tru
 rse_hotpath_memcpy_addr = tonumber(getenv_or("QBOX_RDASPEN_RSE_HOTPATH_MEMCPY_ADDR", "0x11000488"))
 rse_hotpath_memset_addr = tonumber(getenv_or("QBOX_RDASPEN_RSE_HOTPATH_MEMSET_ADDR", "0x11000448"))
 rse_hotpath_max_bytes = tonumber(getenv_or("QBOX_RDASPEN_RSE_HOTPATH_MAX_BYTES", tostring(16 * 1024 * 1024)))
-rse_hotpath_tlm_fallback = getenv_or("QBOX_RDASPEN_RSE_HOTPATH_TLM_FALLBACK", "false") == "true"
 rse_hotpath_profile_file = getenv_or("QBOX_RDASPEN_RSE_HOTPATH_PROFILE_FILE", "")
 rse_hotpath_profile_interval = tonumber(getenv_or("QBOX_RDASPEN_RSE_HOTPATH_PROFILE_INTERVAL", "1024"))
 rse_lms_accel = getenv_or("QBOX_RDASPEN_RSE_LMS_ACCEL", "false") == "true"
@@ -329,14 +314,6 @@ mhu_trace_limit = tonumber(getenv_or("QBOX_RDASPEN_MHU_TRACE_LIMIT", "256"))
 mhu_trace_file = getenv_or(
     "QBOX_RDASPEN_MHU_TRACE_FILE",
     root.."build/qbox-fvp-rd-aspen/mhuv3-trace.log")
-remotepass_dmi_cache =
-    getenv_or("QBOX_RDASPEN_REMOTEPASS_DMI_CACHE", "false") == "true"
-rse_cpu_mode = get_rse_cpu_mode()
-rse_cpu_local = rse_cpu_mode == "local"
-rse_pass_dmi_cache = nil
-if not rse_cpu_local then
-    rse_pass_dmi_cache = remotepass_dmi_cache
-end
 ap_power_domain_reset_delay_ns = tonumber(
     getenv_or("QBOX_RDASPEN_AP_POWER_DOMAIN_RESET_DELAY_NS", "1"))
 rse_local_crypto = getenv_or("QBOX_RDASPEN_RSE_LOCAL_CRYPTO", "true") == "true"
@@ -368,10 +345,6 @@ rse_dma_boot_en = getenv_number_or(
 rse_dma_boot_addr = getenv_number_or(
     "QBOX_RDASPEN_RSE_DMA_BOOT_ADDR",
     "0x00000000")
-remote_cpu_exec = getenv_or(
-    "QBOX_REMOTE_CPU_EXEC",
-    root.."build/local-apollo-fvp/work/qbox-platform/apollo_rse_remote_cpu")
-
 RSE_ROM_BASE_S = 0x11000000
 RSE_ROM_SIZE = 0x00020000
 RSE_ITCM_BASE_NS = 0x00000000

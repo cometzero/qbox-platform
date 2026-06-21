@@ -46,11 +46,6 @@ qemu-components/virtio_mmio_rng/
 tests/components/
 ```
 
-The `platforms/cortex-m55-remote/` directory is retained as Apollo support
-code. It builds the `ApolloRseRemoteCPU` module and `apollo_rse_remote_cpu`
-helper used by the Apollo full-system RSE CPU backend; it is not a standalone
-platform entrypoint.
-
 The Apollo direct-boot configurations also share the retained
 platform-neutral helper:
 
@@ -108,8 +103,7 @@ cmake --build build/local-apollo-fvp/work/qbox-platform \
 ```
 
 For focused iteration, replace `apollo_fvp_full_system` with a component or
-test target, for example `mhu320ae-tests`, `mmu720ae`, `remote_cpu`, or
-`platforms-vp`.
+test target, for example `mhu320ae-tests`, `mmu720ae`, or `platforms-vp`.
 
 ## Run
 

@@ -567,21 +567,11 @@ function rse.define(ctx, platform)
     }
 
     platform.rse_cpu_pass = {
-        moduletype = rse_cpu_local and
-            "Container" or "RemotePass";
-        exec_path = not rse_cpu_local and remote_cpu_exec or nil;
-        remote_argv = not rse_cpu_local and {
-            "--param",
-            "log_level=0",
-            "--param",
-            "remote_platform.quantum_ns="..
-                tonumber(getenv_or("QBOX_RDASPEN_RSE_REMOTE_QUANTUM_NS", "1000000")),
-        } or nil;
+        moduletype = "Container";
         tlm_initiator_ports_num = 2;
         tlm_target_ports_num = 0;
         target_signals_num = RSE_REMOTE_SIGNAL_COUNT;
         initiator_signals_num = 0;
-        dmi_cache = rse_pass_dmi_cache;
         initiator_socket_0 = {bind = "&rse_router.target_socket"};
         initiator_socket_1 = {bind = "&rse_router.target_socket"};
 
@@ -616,12 +606,11 @@ function rse.define(ctx, platform)
         } or nil,
 
         plugin_pass = {
-            moduletype = rse_cpu_local and "LocalPass" or "RemotePass";
+            moduletype = "LocalPass";
             tlm_initiator_ports_num = 0;
             tlm_target_ports_num = 2;
             target_signals_num = 0;
             initiator_signals_num = RSE_REMOTE_SIGNAL_COUNT;
-            dmi_cache = rse_pass_dmi_cache;
             target_socket_0 = {
                 address = 0x00000000;
                 size = RSE_NVIC_BASE;
@@ -696,7 +685,7 @@ function rse.define(ctx, platform)
                                 "&remote_main_router.target_socket") or nil,
 
         cpu_0 = {
-            moduletype = "ApolloRseRemoteCPU";
+            moduletype = "ApolloRseCPU";
             args = {"&qemu_inst"};
             cpu = {
                 init_svtor = RSE_ROM_BASE_S;
@@ -711,7 +700,6 @@ function rse.define(ctx, platform)
                 hotpath_memcpy_addr = rse_hotpath_memcpy_addr;
                 hotpath_memset_addr = rse_hotpath_memset_addr;
                 hotpath_max_bytes = rse_hotpath_max_bytes;
-                hotpath_tlm_fallback = rse_hotpath_tlm_fallback;
                 hotpath_profile_file = rse_hotpath_profile_file;
                 hotpath_profile_interval = rse_hotpath_profile_interval;
                 lms_accel = rse_lms_accel;
@@ -780,8 +768,6 @@ print("provisioning: "..provisioning_bundle)
 print("rse log:      "..rse_log)
 print("secure log:   "..secure_console_log)
 print("primary log:  "..primary_console_log)
-print("remote cpu:   "..remote_cpu_exec)
-print("rse cpu mode: "..rse_cpu_mode)
 print("ap cpus:      "..tostring(AP_NUM_CPUS))
 print("rse rom base: 0x"..string.format("%x", RSE_ROM_BASE_S))
 print("rse vmaddrwidth: "..tostring(rse_vmaddrwidth))
