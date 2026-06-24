@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -57,6 +58,16 @@ constexpr uint32_t SCMI_MESSAGE_SYS_POWER_STATE_SET = 0x3;
 constexpr uint32_t SCMI_MESSAGE_SYS_POWER_STATE_NOTIFY = 0x5;
 constexpr uint32_t SCMI_SYS_POWER_COLD_RESET = 0x1;
 constexpr uint32_t SCMI_PFDI_MONITOR_VERSION = 0x00020000;
+constexpr uint8_t RSE_COMMS_PROTOCOL_EMBED = 0;
+constexpr uint8_t RSE_COMMS_PROTOCOL_POINTER_ACCESS = 1;
+constexpr uint32_t TFM_PROTECTED_STORAGE_SERVICE_HANDLE = 0x40000101;
+constexpr uint32_t TFM_PS_SET = 1001;
+constexpr uint32_t TFM_PS_GET = 1002;
+constexpr uint32_t TFM_PS_GET_INFO = 1003;
+constexpr uint32_t TFM_PS_REMOVE = 1004;
+constexpr uint32_t TFM_MEASURED_BOOT_HANDLE = 0x40000110;
+constexpr uint32_t TFM_MEASURED_BOOT_EXTEND = 1002;
+constexpr uint32_t PSA_ERROR_DOES_NOT_EXIST = 0xffffff74u;
 
 uint32_t scmi_header(uint32_t protocol, uint32_t message)
 {
@@ -119,6 +130,18 @@ public:
     uint8_t read8(uint64_t offset) const
     {
         return m_mem[offset];
+    }
+
+    std::vector<uint8_t> read_bytes(uint64_t offset, size_t len) const
+    {
+        std::vector<uint8_t> out(len);
+        std::memcpy(out.data(), &m_mem[offset], len);
+        return out;
+    }
+
+    void write_bytes(uint64_t offset, const std::vector<uint8_t>& value)
+    {
+        std::memcpy(&m_mem[offset], value.data(), value.size());
     }
 
     void write32(uint64_t offset, uint32_t value)
@@ -194,6 +217,145 @@ uint32_t read32(TestInitiator& initiator, uint64_t offset)
 void write32(TestInitiator& initiator, uint64_t offset, uint32_t value)
 {
     (void)access32(initiator, offset, tlm::TLM_WRITE_COMMAND, value);
+}
+
+uint32_t read_le32(const std::vector<uint8_t>& in, size_t offset)
+{
+    return static_cast<uint32_t>(in[offset]) |
+           (static_cast<uint32_t>(in[offset + 1]) << 8) |
+           (static_cast<uint32_t>(in[offset + 2]) << 16) |
+           (static_cast<uint32_t>(in[offset + 3]) << 24);
+}
+
+void append_le16(std::vector<uint8_t>& out, uint16_t value)
+{
+    out.push_back(value & 0xffu);
+    out.push_back((value >> 8) & 0xffu);
+}
+
+void append_le32(std::vector<uint8_t>& out, uint32_t value)
+{
+    out.push_back(value & 0xffu);
+    out.push_back((value >> 8) & 0xffu);
+    out.push_back((value >> 16) & 0xffu);
+    out.push_back((value >> 24) & 0xffu);
+}
+
+void append_le64(std::vector<uint8_t>& out, uint64_t value)
+{
+    append_le32(out, static_cast<uint32_t>(value));
+    append_le32(out, static_cast<uint32_t>(value >> 32));
+}
+
+std::vector<uint8_t> le64_bytes(uint64_t value)
+{
+    std::vector<uint8_t> out;
+    append_le64(out, value);
+    return out;
+}
+
+std::vector<uint8_t> le32_bytes(uint32_t value)
+{
+    std::vector<uint8_t> out;
+    append_le32(out, value);
+    return out;
+}
+
+uint32_t rse_ctrl(uint32_t type, uint32_t in_len, uint32_t out_len)
+{
+    return (type & 0xffffu) | ((out_len & 0x7u) << 16) |
+           ((in_len & 0x7u) << 24);
+}
+
+std::vector<uint8_t> build_embed_msg(
+    uint32_t handle,
+    uint8_t seq, uint32_t type, const std::vector<std::vector<uint8_t>>& in_vecs,
+    const std::vector<uint16_t>& out_sizes)
+{
+    std::vector<uint8_t> msg = {RSE_COMMS_PROTOCOL_EMBED, seq, 1, 0};
+    append_le32(msg, handle);
+    append_le32(msg, rse_ctrl(type, in_vecs.size(), out_sizes.size()));
+
+    for (const auto& in_vec : in_vecs) {
+        append_le16(msg, static_cast<uint16_t>(in_vec.size()));
+    }
+    for (auto out_size : out_sizes) {
+        append_le16(msg, out_size);
+    }
+    while (msg.size() < 20) {
+        append_le16(msg, 0);
+    }
+    for (const auto& in_vec : in_vecs) {
+        msg.insert(msg.end(), in_vec.begin(), in_vec.end());
+    }
+    return msg;
+}
+
+std::vector<uint8_t> build_embed_ps_msg(
+    uint8_t seq, uint32_t type, const std::vector<std::vector<uint8_t>>& in_vecs,
+    const std::vector<uint16_t>& out_sizes)
+{
+    return build_embed_msg(TFM_PROTECTED_STORAGE_SERVICE_HANDLE, seq, type,
+                           in_vecs, out_sizes);
+}
+
+std::vector<uint8_t> build_pointer_msg(
+    uint32_t handle,
+    uint8_t seq, uint32_t type, const std::vector<uint32_t>& io_sizes,
+    const std::vector<uint64_t>& host_ptrs, uint32_t in_len, uint32_t out_len)
+{
+    std::vector<uint8_t> msg = {RSE_COMMS_PROTOCOL_POINTER_ACCESS, seq, 1, 0};
+    append_le32(msg, handle);
+    append_le32(msg, rse_ctrl(type, in_len, out_len));
+    for (unsigned int i = 0; i < 4; ++i) {
+        append_le32(msg, i < io_sizes.size() ? io_sizes[i] : 0);
+    }
+    for (unsigned int i = 0; i < 4; ++i) {
+        append_le64(msg, i < host_ptrs.size() ? host_ptrs[i] : 0);
+    }
+    return msg;
+}
+
+std::vector<uint8_t> build_pointer_ps_msg(
+    uint8_t seq, uint32_t type, const std::vector<uint32_t>& io_sizes,
+    const std::vector<uint64_t>& host_ptrs, uint32_t in_len, uint32_t out_len)
+{
+    return build_pointer_msg(TFM_PROTECTED_STORAGE_SERVICE_HANDLE, seq, type,
+                             io_sizes, host_ptrs, in_len, out_len);
+}
+
+void write_doorbell_message(TestInitiator& initiator, uint32_t notify_channel,
+                            const std::vector<uint8_t>& msg)
+{
+    write32(initiator, DBCW_SET, msg.size());
+    for (size_t offset = 0, channel = 1; offset < msg.size() && channel < notify_channel;
+         offset += sizeof(uint32_t), ++channel) {
+        uint32_t word = 0;
+        const size_t chunk = std::min<size_t>(sizeof(word), msg.size() - offset);
+        for (size_t byte = 0; byte < chunk; ++byte) {
+            word |= static_cast<uint32_t>(msg[offset + byte]) << (byte * 8);
+        }
+        write32(initiator, DBCW_SET + (channel * DBCW_STRIDE), word);
+    }
+    write32(initiator, 0x1000 + (notify_channel * DBCW_STRIDE) +
+                           (DBCW_SET - DBCW_ST),
+            MHU_NOTIFY_VALUE);
+}
+
+std::vector<uint8_t> read_doorbell_message(TestInitiator& initiator,
+                                           uint32_t notify_channel)
+{
+    const uint32_t length = read32(initiator, DBCW_ST);
+    std::vector<uint8_t> msg;
+    msg.reserve(length);
+    for (size_t channel = 1; msg.size() < length && channel < notify_channel;
+         ++channel) {
+        const uint32_t word = read32(initiator, DBCW_ST + (channel * DBCW_STRIDE));
+        for (size_t byte = 0; byte < sizeof(word) && msg.size() < length; ++byte) {
+            msg.push_back((word >> (byte * 8)) & 0xffu);
+        }
+    }
+    return msg;
 }
 
 } // namespace
@@ -396,6 +558,14 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
                                 cci::cci_value(2u));
     broker.set_preset_cci_value("pfdi_pbx.scmi_channel_count",
                                 cci::cci_value(4u));
+    broker.set_preset_cci_value("ps_pbx.pair", cci::cci_value(std::string("ps")));
+    broker.set_preset_cci_value("ps_pbx.frame", cci::cci_value(std::string("pbx")));
+    broker.set_preset_cci_value("ps_pbx.protocol",
+                                cci::cci_value(std::string("rse-ps-proxy")));
+    broker.set_preset_cci_value("ps_mbx.pair", cci::cci_value(std::string("ps")));
+    broker.set_preset_cci_value("ps_mbx.frame", cci::cci_value(std::string("mbx")));
+    broker.set_preset_cci_value("ps_mbx.protocol",
+                                cci::cci_value(std::string("rse-ps-proxy")));
 
     TestMemory shmem("si_scmi_shmem");
     TestMemory unused("unused_shmem");
@@ -413,6 +583,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     TestMemory strict_pbx_unused("strict_pbx_unused_shmem");
     TestMemory strict_mbx_unused("strict_mbx_unused_shmem");
     TestMemory pfdi_shmem("pfdi_shmem");
+    TestMemory ps_shmem("ps_shmem");
+    TestMemory ps_mbx_unused("ps_mbx_unused_shmem");
     TestInitiator pbx_bus("pbx_bus");
     TestInitiator mbx_bus("mbx_bus");
     TestInitiator ap_pbx_bus("ap_pbx_bus");
@@ -429,6 +601,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     TestInitiator strict_pbx_bus("strict_pbx_bus");
     TestInitiator strict_mbx_bus("strict_mbx_bus");
     TestInitiator pfdi_bus("pfdi_bus");
+    TestInitiator ps_pbx_bus("ps_pbx_bus");
+    TestInitiator ps_mbx_bus("ps_mbx_bus");
     mhu320ae pbx("rse_si_pbx");
     mhu320ae mbx("rse_si_mbx");
     mhu320ae ap_pbx("ap_rse_pbx");
@@ -445,6 +619,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     mhu320ae strict_pbx("strict_pbx");
     mhu320ae strict_mbx("strict_mbx");
     mhu320ae pfdi_pbx("pfdi_pbx");
+    mhu320ae ps_pbx("ps_pbx");
+    mhu320ae ps_mbx("ps_mbx");
     ResetSink ap_reset("ap_reset");
     ResetSink system_reset("system_reset");
     ResetSink ap_domain1_reset("ap_domain1_reset");
@@ -469,6 +645,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     strict_pbx_bus.initiator_socket.bind(strict_pbx.target_socket);
     strict_mbx_bus.initiator_socket.bind(strict_mbx.target_socket);
     pfdi_bus.initiator_socket.bind(pfdi_pbx.target_socket);
+    ps_pbx_bus.initiator_socket.bind(ps_pbx.target_socket);
+    ps_mbx_bus.initiator_socket.bind(ps_mbx.target_socket);
     pbx.initiator_socket.bind(shmem.target_socket);
     mbx.initiator_socket.bind(unused.target_socket);
     ap_pbx.initiator_socket.bind(ap_pbx_unused.target_socket);
@@ -485,6 +663,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     strict_pbx.initiator_socket.bind(strict_pbx_unused.target_socket);
     strict_mbx.initiator_socket.bind(strict_mbx_unused.target_socket);
     pfdi_pbx.initiator_socket.bind(pfdi_shmem.target_socket);
+    ps_pbx.initiator_socket.bind(ps_shmem.target_socket);
+    ps_mbx.initiator_socket.bind(ps_mbx_unused.target_socket);
     pbx.power_on_reset.bind(ap_reset.reset);
     pbx.system_reset.bind(system_reset.reset);
     pbx.power_domain_reset[1].bind(ap_domain1_reset.reset);
@@ -698,6 +878,101 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
 
     write32(ap_mbx_bus, notify_base + (DBCW_CLR - 0x1000), MHU_NOTIFY_VALUE);
     EXPECT_EQ(read32(ap_mbx_bus, notify_base), 0u);
+
+    const uint32_t ps_notify_channel = read32(ps_pbx_bus, DBCH_CFG0);
+    const uint64_t ps_uid = 0x1122334455667788ULL;
+    const auto ps_uid_bytes = le64_bytes(ps_uid);
+    const auto ps_flags = le32_bytes(0);
+    const std::vector<uint8_t> ps_data = {0x10, 0x21, 0x32, 0x43};
+
+    std::vector<uint8_t> measurement_metadata(44, 0);
+    measurement_metadata[0] = 8;
+    measurement_metadata[1] = 1;
+    measurement_metadata[4] = 0x09;
+    measurement_metadata[5] = 0x00;
+    measurement_metadata[6] = 0x00;
+    measurement_metadata[7] = 0x02;
+    const std::string sw_type = "FW_CONFIG";
+    std::copy(sw_type.begin(), sw_type.end(), measurement_metadata.begin() + 8);
+    measurement_metadata[40] = static_cast<uint8_t>(sw_type.size());
+    write_doorbell_message(
+        ps_pbx_bus, ps_notify_channel,
+        build_embed_msg(TFM_MEASURED_BOOT_HANDLE, 0x40,
+                        TFM_MEASURED_BOOT_EXTEND,
+                        {measurement_metadata, std::vector<uint8_t>(32, 0x5a),
+                         {}, std::vector<uint8_t>(32, 0xa5)},
+                        {}));
+    auto ps_reply = read_doorbell_message(ps_mbx_bus, ps_notify_channel);
+    ASSERT_GE(ps_reply.size(), 16u);
+    EXPECT_EQ(read_le32(ps_reply, 4), 0u);
+
+    write_doorbell_message(ps_pbx_bus, ps_notify_channel,
+                           build_embed_ps_msg(0x41, TFM_PS_REMOVE,
+                                              {ps_uid_bytes}, {}));
+    ps_reply = read_doorbell_message(ps_mbx_bus, ps_notify_channel);
+    ASSERT_GE(ps_reply.size(), 16u);
+    EXPECT_EQ(ps_reply[0], RSE_COMMS_PROTOCOL_EMBED);
+    EXPECT_EQ(ps_reply[1], 0x41u);
+    EXPECT_EQ(read_le32(ps_reply, 4), PSA_ERROR_DOES_NOT_EXIST);
+
+    write_doorbell_message(ps_pbx_bus, ps_notify_channel,
+                           build_embed_ps_msg(0x42, TFM_PS_SET,
+                                              {ps_uid_bytes, ps_data, ps_flags}, {}));
+    ps_reply = read_doorbell_message(ps_mbx_bus, ps_notify_channel);
+    ASSERT_GE(ps_reply.size(), 16u);
+    EXPECT_EQ(read_le32(ps_reply, 4), 0u);
+
+    write_doorbell_message(ps_pbx_bus, ps_notify_channel,
+                           build_embed_ps_msg(0x43, TFM_PS_GET_INFO,
+                                              {ps_uid_bytes}, {12}));
+    ps_reply = read_doorbell_message(ps_mbx_bus, ps_notify_channel);
+    ASSERT_GE(ps_reply.size(), 28u);
+    EXPECT_EQ(read_le32(ps_reply, 4), 0u);
+    EXPECT_EQ(read_le32(ps_reply, 8), 12u);
+    EXPECT_EQ(read_le32(ps_reply, 16), ps_data.size());
+    EXPECT_EQ(read_le32(ps_reply, 20), ps_data.size());
+    EXPECT_EQ(read_le32(ps_reply, 24), 0u);
+
+    write_doorbell_message(ps_pbx_bus, ps_notify_channel,
+                           build_embed_ps_msg(0x44, TFM_PS_GET,
+                                              {ps_uid_bytes, le32_bytes(0)}, {32}));
+    ps_reply = read_doorbell_message(ps_mbx_bus, ps_notify_channel);
+    ASSERT_GE(ps_reply.size(), 20u);
+    EXPECT_EQ(read_le32(ps_reply, 4), 0u);
+    EXPECT_EQ(read_le32(ps_reply, 8), ps_data.size());
+    EXPECT_EQ(std::vector<uint8_t>(ps_reply.begin() + 16,
+                                   ps_reply.begin() + 16 + ps_data.size()),
+              ps_data);
+
+    const std::vector<uint8_t> pointer_data(64, 0xa5);
+    ps_shmem.write_bytes(0x100, ps_uid_bytes);
+    ps_shmem.write_bytes(0x120, pointer_data);
+    ps_shmem.write_bytes(0x180, ps_flags);
+    write_doorbell_message(
+        ps_pbx_bus, ps_notify_channel,
+        build_pointer_ps_msg(0x45, TFM_PS_SET,
+                             {8, static_cast<uint32_t>(pointer_data.size()), 4, 0},
+                             {SHMEM_BASE + 0x100, SHMEM_BASE + 0x120,
+                              SHMEM_BASE + 0x180, 0},
+                             3, 0));
+    ps_reply = read_doorbell_message(ps_mbx_bus, ps_notify_channel);
+    ASSERT_GE(ps_reply.size(), 24u);
+    EXPECT_EQ(ps_reply[0], RSE_COMMS_PROTOCOL_POINTER_ACCESS);
+    EXPECT_EQ(read_le32(ps_reply, 4), 0u);
+
+    ps_shmem.write32(0x1c0, 0);
+    write_doorbell_message(
+        ps_pbx_bus, ps_notify_channel,
+        build_pointer_ps_msg(0x46, TFM_PS_GET,
+                             {8, 4, static_cast<uint32_t>(pointer_data.size()), 0},
+                             {SHMEM_BASE + 0x100, SHMEM_BASE + 0x1c0,
+                              SHMEM_BASE + 0x200, 0},
+                             2, 1));
+    ps_reply = read_doorbell_message(ps_mbx_bus, ps_notify_channel);
+    ASSERT_GE(ps_reply.size(), 24u);
+    EXPECT_EQ(read_le32(ps_reply, 4), 0u);
+    EXPECT_EQ(read_le32(ps_reply, 8), pointer_data.size());
+    EXPECT_EQ(ps_shmem.read_bytes(0x200, pointer_data.size()), pointer_data);
 
     const uint32_t bridge_notify_channel = read32(bridge_ap_pbx_bus, DBCH_CFG0);
     const uint64_t bridge_notify_base = 0x1000 + (bridge_notify_channel * DBCW_STRIDE);

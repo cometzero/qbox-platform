@@ -388,11 +388,16 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
+    local ap_rse_ps_proxy = getenv_bool_or("QBOX_RDASPEN_RSE_PS_PROXY", true)
+    local ap_rse_mhu_protocol = ap_rse_ps_proxy and "rse-ps-proxy" or "doorbell-bridge"
+    local ap_rse_mhu_pbx_pair = ap_rse_ps_proxy and "ap_rse_ps_proxy" or "ap_s_to_rse"
+    local ap_rse_mhu_mbx_pair = ap_rse_ps_proxy and "ap_rse_ps_proxy" or "rse_to_ap_s"
+
     platform.host_ap_rse_mhu_pbx = {
         moduletype = "mhu320ae";
         frame = "pbx";
-        pair = "ap_s_to_rse";
-        protocol = "doorbell-bridge";
+        pair = ap_rse_mhu_pbx_pair;
+        protocol = ap_rse_mhu_protocol;
         tx_shmem = HOST_AP_RSE_MAILBOX_PHYS_BASE;
         rx_shmem = HOST_AP_RSE_MAILBOX_PHYS_BASE;
         init_shmem = false;
@@ -411,8 +416,8 @@ function system_mgmt.define(ctx, platform)
     platform.host_ap_rse_mhu_mbx = {
         moduletype = "mhu320ae";
         frame = "mbx";
-        pair = "rse_to_ap_s";
-        protocol = "doorbell-bridge";
+        pair = ap_rse_mhu_mbx_pair;
+        protocol = ap_rse_mhu_protocol;
         tx_shmem = HOST_AP_RSE_MAILBOX_PHYS_BASE;
         rx_shmem = HOST_AP_RSE_MAILBOX_PHYS_BASE;
         init_shmem = false;

@@ -94,6 +94,24 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint8_t RSE_COMMS_PROTOCOL_POINTER_ACCESS = 1;
     static constexpr unsigned int PSA_MAX_IOVEC = 4;
     static constexpr uint32_t PSA_SUCCESS = 0;
+    static constexpr uint32_t TFM_PROTECTED_STORAGE_SERVICE_HANDLE = 0x40000101;
+    static constexpr uint32_t TFM_PS_SET = 1001;
+    static constexpr uint32_t TFM_PS_GET = 1002;
+    static constexpr uint32_t TFM_PS_GET_INFO = 1003;
+    static constexpr uint32_t TFM_PS_REMOVE = 1004;
+    static constexpr uint32_t TFM_PS_GET_SUPPORT = 1005;
+    static constexpr uint32_t TFM_MEASURED_BOOT_HANDLE = 0x40000110;
+    static constexpr uint32_t TFM_MEASURED_BOOT_READ = 1001;
+    static constexpr uint32_t TFM_MEASURED_BOOT_EXTEND = 1002;
+    static constexpr unsigned int TFM_MEASUREMENT_SLOT_COUNT = 32;
+    static constexpr unsigned int TFM_MEASUREMENT_VALUE_MAX_SIZE = 64;
+    static constexpr unsigned int TFM_SIGNER_ID_MAX_SIZE = 64;
+    static constexpr unsigned int TFM_VERSION_MAX_SIZE = 14;
+    static constexpr unsigned int TFM_SW_TYPE_MAX_SIZE = 32;
+    static constexpr int32_t PSA_ERROR_NOT_SUPPORTED = -134;
+    static constexpr int32_t PSA_ERROR_INVALID_ARGUMENT = -135;
+    static constexpr int32_t PSA_ERROR_DOES_NOT_EXIST = -140;
+    static constexpr int32_t PSA_ERROR_COMMUNICATION_FAILURE = -145;
     static constexpr uint16_t VRING_DESC_F_WRITE = 2;
     static constexpr uint64_t VRING_DESC_SIZE = 16;
     static constexpr uint64_t VRING_AVAIL_HEADER_SIZE = 4;
@@ -400,6 +418,35 @@ private:
     cci::cci_param<unsigned int> p_trace_limit;
     cci::cci_param<std::string> p_trace_file;
 
+    struct ps_entry {
+        std::vector<uint8_t> data;
+        uint32_t flags = 0;
+    };
+
+    struct measurement_entry {
+        bool valid = false;
+        bool locked = false;
+        uint32_t algorithm = 0;
+        std::vector<uint8_t> sw_type;
+        std::vector<uint8_t> version;
+        std::vector<uint8_t> signer_id;
+        std::vector<uint8_t> measurement;
+    };
+
+    struct rse_ps_request {
+        uint8_t protocol = RSE_COMMS_PROTOCOL_EMBED;
+        uint8_t seq = 0;
+        uint16_t client_id = 0;
+        uint32_t handle = 0;
+        uint32_t ctrl = 0;
+        uint32_t type = 0;
+        unsigned int in_len = 0;
+        unsigned int out_len = 0;
+        std::array<std::vector<uint8_t>, PSA_MAX_IOVEC> inputs;
+        std::array<uint32_t, PSA_MAX_IOVEC> out_caps {};
+        std::array<uint64_t, PSA_MAX_IOVEC> out_ptrs {};
+    };
+
     struct synthetic_postbox_completion {
         unsigned int channel;
         uint32_t mask;
@@ -429,6 +476,8 @@ private:
     sc_core::sc_event m_synthetic_postbox_completion_event;
     std::ofstream m_trace_stream;
     std::mutex m_trace_lock;
+    std::unordered_map<uint64_t, ps_entry> m_ps_store;
+    std::array<measurement_entry, TFM_MEASUREMENT_SLOT_COUNT> m_measurements {};
 
     bool is_mbx() const { return p_frame.get_value() == "mbx"; }
 
@@ -814,6 +863,61 @@ private:
                (static_cast<uint32_t>(in[offset + 1]) << 8) |
                (static_cast<uint32_t>(in[offset + 2]) << 16) |
                (static_cast<uint32_t>(in[offset + 3]) << 24);
+    }
+
+    static uint16_t read_le16(const std::vector<uint8_t>& in, size_t offset)
+    {
+        if (offset + sizeof(uint16_t) > in.size()) {
+            return 0;
+        }
+
+        return static_cast<uint16_t>(in[offset]) |
+               (static_cast<uint16_t>(in[offset + 1]) << 8);
+    }
+
+    static uint64_t read_le64(const std::vector<uint8_t>& in, size_t offset)
+    {
+        if (offset + sizeof(uint64_t) > in.size()) {
+            return 0;
+        }
+
+        uint64_t value = 0;
+        for (unsigned int byte = 0; byte < sizeof(value); ++byte) {
+            value |= static_cast<uint64_t>(in[offset + byte]) << (byte * 8);
+        }
+        return value;
+    }
+
+    bool mem_read_bytes(uint64_t address, std::vector<uint8_t>& out)
+    {
+        if (out.empty()) {
+            return true;
+        }
+        return mem_access(tlm::TLM_READ_COMMAND, address, out.data(), out.size());
+    }
+
+    bool mem_write_bytes(uint64_t address, const std::vector<uint8_t>& in)
+    {
+        if (in.empty()) {
+            return true;
+        }
+        return mem_access(tlm::TLM_WRITE_COMMAND, address,
+                          const_cast<uint8_t*>(in.data()), in.size());
+    }
+
+    static unsigned int rse_ctrl_type(uint32_t ctrl)
+    {
+        return ctrl & 0xffffu;
+    }
+
+    static unsigned int rse_ctrl_out_len(uint32_t ctrl)
+    {
+        return (ctrl >> 16) & 0x7u;
+    }
+
+    static unsigned int rse_ctrl_in_len(uint32_t ctrl)
+    {
+        return (ctrl >> 24) & 0x7u;
     }
 
     uint64_t scmi_shmem(unsigned int channel) const
@@ -1458,6 +1562,22 @@ private:
                << " status=0x" << m_frame.status(channel) << std::dec;
         trace_event("postbox-doorbell-write", detail.str());
 
+        if (p_protocol.get_value() == "rse-ps-proxy") {
+            if (channel == notify_channel() && value == MHU_NOTIFY_VALUE) {
+                const auto request = read_doorbell_message();
+                std::ostringstream ps_detail;
+                ps_detail << "bytes=" << request.size();
+                trace_event("rse-ps-request", ps_detail.str());
+
+                const auto reply = build_rse_ps_reply(request);
+                clear_postbox_transfer();
+                if (auto mbx = paired_mbx()) {
+                    mbx->load_mbx_message(reply);
+                }
+            }
+            return;
+        }
+
         if (p_protocol.get_value() != "doorbell") {
             if (auto mbx = paired_mbx()) {
                 mbx->signal_doorbell_channel(channel, value);
@@ -1558,6 +1678,390 @@ private:
         }
 
         return msg;
+    }
+
+    static std::vector<uint8_t> le32_bytes(uint32_t value)
+    {
+        std::vector<uint8_t> out;
+        append_u32(out, value);
+        return out;
+    }
+
+    bool parse_rse_ps_embed_request(const std::vector<uint8_t>& request,
+                                    rse_ps_request& out,
+                                    int32_t& error_status)
+    {
+        if (request.size() < 4 + sizeof(uint32_t) * 2 +
+                                 sizeof(uint16_t) * PSA_MAX_IOVEC) {
+            error_status = PSA_ERROR_INVALID_ARGUMENT;
+            return false;
+        }
+
+        out.handle = read_le32(request, 4);
+        out.ctrl = read_le32(request, 8);
+        out.type = rse_ctrl_type(out.ctrl);
+        out.in_len = rse_ctrl_in_len(out.ctrl);
+        out.out_len = rse_ctrl_out_len(out.ctrl);
+        if (out.in_len > PSA_MAX_IOVEC || out.out_len > PSA_MAX_IOVEC ||
+            out.in_len + out.out_len > PSA_MAX_IOVEC) {
+            error_status = PSA_ERROR_INVALID_ARGUMENT;
+            return false;
+        }
+
+        std::array<uint32_t, PSA_MAX_IOVEC> io_sizes {};
+        size_t offset = 12;
+        for (unsigned int i = 0; i < PSA_MAX_IOVEC; ++i) {
+            io_sizes[i] = read_le16(request, offset);
+            offset += sizeof(uint16_t);
+        }
+
+        for (unsigned int i = 0; i < out.in_len; ++i) {
+            if (offset + io_sizes[i] > request.size()) {
+                error_status = PSA_ERROR_INVALID_ARGUMENT;
+                return false;
+            }
+            out.inputs[i].assign(request.begin() + offset,
+                                 request.begin() + offset + io_sizes[i]);
+            offset += io_sizes[i];
+        }
+        for (unsigned int i = 0; i < out.out_len; ++i) {
+            out.out_caps[i] = io_sizes[out.in_len + i];
+        }
+
+        return true;
+    }
+
+    bool parse_rse_ps_pointer_request(const std::vector<uint8_t>& request,
+                                      rse_ps_request& out,
+                                      int32_t& error_status)
+    {
+        const size_t min_size = 4 + sizeof(uint32_t) * 2 +
+                                sizeof(uint32_t) * PSA_MAX_IOVEC +
+                                sizeof(uint64_t) * PSA_MAX_IOVEC;
+        if (request.size() < min_size) {
+            error_status = PSA_ERROR_INVALID_ARGUMENT;
+            return false;
+        }
+
+        out.handle = read_le32(request, 4);
+        out.ctrl = read_le32(request, 8);
+        out.type = rse_ctrl_type(out.ctrl);
+        out.in_len = rse_ctrl_in_len(out.ctrl);
+        out.out_len = rse_ctrl_out_len(out.ctrl);
+        if (out.in_len > PSA_MAX_IOVEC || out.out_len > PSA_MAX_IOVEC ||
+            out.in_len + out.out_len > PSA_MAX_IOVEC) {
+            error_status = PSA_ERROR_INVALID_ARGUMENT;
+            return false;
+        }
+
+        std::array<uint32_t, PSA_MAX_IOVEC> io_sizes {};
+        std::array<uint64_t, PSA_MAX_IOVEC> host_ptrs {};
+        size_t offset = 12;
+        for (unsigned int i = 0; i < PSA_MAX_IOVEC; ++i) {
+            io_sizes[i] = read_le32(request, offset);
+            offset += sizeof(uint32_t);
+        }
+        for (unsigned int i = 0; i < PSA_MAX_IOVEC; ++i) {
+            host_ptrs[i] = read_le64(request, offset);
+            offset += sizeof(uint64_t);
+        }
+
+        for (unsigned int i = 0; i < out.in_len; ++i) {
+            out.inputs[i].resize(io_sizes[i]);
+            if (!mem_read_bytes(host_ptrs[i], out.inputs[i])) {
+                error_status = PSA_ERROR_COMMUNICATION_FAILURE;
+                return false;
+            }
+        }
+        for (unsigned int i = 0; i < out.out_len; ++i) {
+            const unsigned int source = out.in_len + i;
+            out.out_caps[i] = io_sizes[source];
+            out.out_ptrs[i] = host_ptrs[source];
+        }
+
+        return true;
+    }
+
+    bool parse_rse_ps_request(const std::vector<uint8_t>& request,
+                              rse_ps_request& out,
+                              int32_t& error_status)
+    {
+        if (request.size() < 4) {
+            error_status = PSA_ERROR_INVALID_ARGUMENT;
+            return false;
+        }
+
+        out.protocol = request[0];
+        out.seq = request[1];
+        out.client_id = static_cast<uint16_t>(request[2]) |
+                        (static_cast<uint16_t>(request[3]) << 8);
+
+        if (out.protocol == RSE_COMMS_PROTOCOL_EMBED) {
+            return parse_rse_ps_embed_request(request, out, error_status);
+        }
+        if (out.protocol == RSE_COMMS_PROTOCOL_POINTER_ACCESS) {
+            return parse_rse_ps_pointer_request(request, out, error_status);
+        }
+
+        error_status = PSA_ERROR_NOT_SUPPORTED;
+        return false;
+    }
+
+    int32_t set_ps_output(const rse_ps_request& request,
+                          std::array<std::vector<uint8_t>, PSA_MAX_IOVEC>& outputs,
+                          std::array<uint32_t, PSA_MAX_IOVEC>& out_sizes,
+                          unsigned int index,
+                          const std::vector<uint8_t>& value) const
+    {
+        if (index >= request.out_len || index >= PSA_MAX_IOVEC) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
+        if (value.size() > request.out_caps[index]) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
+
+        outputs[index] = value;
+        out_sizes[index] = static_cast<uint32_t>(value.size());
+        return PSA_SUCCESS;
+    }
+
+    static std::vector<uint8_t> bounded_bytes(const std::vector<uint8_t>& in,
+                                              size_t offset,
+                                              size_t size,
+                                              size_t max_size)
+    {
+        if (offset >= in.size()) {
+            return {};
+        }
+        const size_t available = in.size() - offset;
+        const size_t count = std::min(std::min(size, max_size), available);
+        return std::vector<uint8_t>(in.begin() + offset,
+                                    in.begin() + offset + count);
+    }
+
+    int32_t handle_rse_measured_boot_request(
+        const rse_ps_request& request,
+        std::array<std::vector<uint8_t>, PSA_MAX_IOVEC>& outputs,
+        std::array<uint32_t, PSA_MAX_IOVEC>& out_sizes)
+    {
+        switch (request.type) {
+        case TFM_MEASURED_BOOT_EXTEND: {
+            if (request.in_len < 4 || request.inputs[0].size() < 41) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+
+            const uint8_t index = request.inputs[0][0];
+            if (index >= m_measurements.size()) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+
+            measurement_entry& entry = m_measurements[index];
+            entry.valid = true;
+            entry.locked = request.inputs[0][1] != 0;
+            entry.algorithm = read_le32(request.inputs[0], 4);
+            const uint8_t sw_type_size = request.inputs[0][40];
+            entry.sw_type = bounded_bytes(request.inputs[0], 8, sw_type_size,
+                                          TFM_SW_TYPE_MAX_SIZE);
+            entry.signer_id = bounded_bytes(request.inputs[1], 0,
+                                            request.inputs[1].size(),
+                                            TFM_SIGNER_ID_MAX_SIZE);
+            entry.version = bounded_bytes(request.inputs[2], 0,
+                                          request.inputs[2].size(),
+                                          TFM_VERSION_MAX_SIZE);
+            entry.measurement = bounded_bytes(request.inputs[3], 0,
+                                              request.inputs[3].size(),
+                                              TFM_MEASUREMENT_VALUE_MAX_SIZE);
+            return PSA_SUCCESS;
+        }
+
+        case TFM_MEASURED_BOOT_READ: {
+            if (request.in_len < 1 || request.out_len < 1 ||
+                request.inputs[0].empty()) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+
+            const uint8_t index = request.inputs[0][0];
+            if (index >= m_measurements.size() || !m_measurements[index].valid) {
+                return PSA_ERROR_DOES_NOT_EXIST;
+            }
+
+            const measurement_entry& entry = m_measurements[index];
+            std::vector<uint8_t> metadata(56, 0);
+            metadata[0] = entry.locked ? 1 : 0;
+            metadata[4] = entry.algorithm & 0xffu;
+            metadata[5] = (entry.algorithm >> 8) & 0xffu;
+            metadata[6] = (entry.algorithm >> 16) & 0xffu;
+            metadata[7] = (entry.algorithm >> 24) & 0xffu;
+            std::copy(entry.sw_type.begin(), entry.sw_type.end(),
+                      metadata.begin() + 8);
+            metadata[40] = static_cast<uint8_t>(entry.sw_type.size());
+            std::copy(entry.version.begin(), entry.version.end(),
+                      metadata.begin() + 41);
+            metadata[55] = static_cast<uint8_t>(entry.version.size());
+
+            int32_t status = set_ps_output(request, outputs, out_sizes, 0, metadata);
+            if (status != static_cast<int32_t>(PSA_SUCCESS) || request.out_len < 2) {
+                return status;
+            }
+            status = set_ps_output(request, outputs, out_sizes, 1,
+                                   entry.measurement);
+            if (status != static_cast<int32_t>(PSA_SUCCESS) || request.out_len < 3) {
+                return status;
+            }
+            return set_ps_output(request, outputs, out_sizes, 2, entry.signer_id);
+        }
+
+        default:
+            return PSA_ERROR_NOT_SUPPORTED;
+        }
+    }
+
+    int32_t handle_rse_ps_request(
+        const rse_ps_request& request,
+        std::array<std::vector<uint8_t>, PSA_MAX_IOVEC>& outputs,
+        std::array<uint32_t, PSA_MAX_IOVEC>& out_sizes)
+    {
+        if (request.handle == TFM_MEASURED_BOOT_HANDLE) {
+            return handle_rse_measured_boot_request(request, outputs, out_sizes);
+        }
+
+        if (request.handle != TFM_PROTECTED_STORAGE_SERVICE_HANDLE) {
+            return PSA_ERROR_NOT_SUPPORTED;
+        }
+
+        switch (request.type) {
+        case TFM_PS_SET:
+            if (request.in_len < 3 || request.inputs[0].size() < sizeof(uint64_t) ||
+                request.inputs[2].size() < sizeof(uint32_t)) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+            m_ps_store[read_le64(request.inputs[0], 0)] = {
+                request.inputs[1],
+                read_le32(request.inputs[2], 0)
+            };
+            return PSA_SUCCESS;
+
+        case TFM_PS_GET: {
+            if (request.in_len < 2 || request.out_len < 1 ||
+                request.inputs[0].size() < sizeof(uint64_t) ||
+                request.inputs[1].size() < sizeof(uint32_t)) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+            const uint64_t uid = read_le64(request.inputs[0], 0);
+            const uint32_t offset = read_le32(request.inputs[1], 0);
+            const auto it = m_ps_store.find(uid);
+            if (it == m_ps_store.end()) {
+                return PSA_ERROR_DOES_NOT_EXIST;
+            }
+            if (offset > it->second.data.size()) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+
+            const size_t available = it->second.data.size() - offset;
+            const size_t copy_len =
+                std::min<size_t>(available, request.out_caps[0]);
+            std::vector<uint8_t> out(it->second.data.begin() + offset,
+                                     it->second.data.begin() + offset + copy_len);
+            return set_ps_output(request, outputs, out_sizes, 0, out);
+        }
+
+        case TFM_PS_GET_INFO: {
+            if (request.in_len < 1 || request.out_len < 1 ||
+                request.inputs[0].size() < sizeof(uint64_t)) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+            const uint64_t uid = read_le64(request.inputs[0], 0);
+            const auto it = m_ps_store.find(uid);
+            if (it == m_ps_store.end()) {
+                return PSA_ERROR_DOES_NOT_EXIST;
+            }
+
+            std::vector<uint8_t> info;
+            const auto size = static_cast<uint32_t>(it->second.data.size());
+            append_u32(info, size);
+            append_u32(info, size);
+            append_u32(info, it->second.flags);
+            return set_ps_output(request, outputs, out_sizes, 0, info);
+        }
+
+        case TFM_PS_REMOVE:
+            if (request.in_len < 1 || request.inputs[0].size() < sizeof(uint64_t)) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+            if (m_ps_store.erase(read_le64(request.inputs[0], 0)) == 0) {
+                return PSA_ERROR_DOES_NOT_EXIST;
+            }
+            return PSA_SUCCESS;
+
+        case TFM_PS_GET_SUPPORT:
+            if (request.out_len < 1) {
+                return PSA_ERROR_INVALID_ARGUMENT;
+            }
+            return set_ps_output(request, outputs, out_sizes, 0, le32_bytes(0));
+
+        default:
+            return PSA_ERROR_NOT_SUPPORTED;
+        }
+    }
+
+    std::vector<uint8_t> build_rse_ps_reply(const std::vector<uint8_t>& request)
+    {
+        rse_ps_request parsed;
+        int32_t status = PSA_SUCCESS;
+        std::array<std::vector<uint8_t>, PSA_MAX_IOVEC> outputs;
+        std::array<uint32_t, PSA_MAX_IOVEC> out_sizes {};
+
+        if (parse_rse_ps_request(request, parsed, status)) {
+            status = handle_rse_ps_request(parsed, outputs, out_sizes);
+        } else if (request.size() >= 4) {
+            parsed.protocol = request[0];
+            parsed.seq = request[1];
+            parsed.client_id = static_cast<uint16_t>(request[2]) |
+                               (static_cast<uint16_t>(request[3]) << 8);
+        }
+
+        if (status == static_cast<int32_t>(PSA_SUCCESS) &&
+            parsed.protocol == RSE_COMMS_PROTOCOL_POINTER_ACCESS) {
+            for (unsigned int i = 0; i < parsed.out_len; ++i) {
+                if (!mem_write_bytes(parsed.out_ptrs[i], outputs[i])) {
+                    status = PSA_ERROR_COMMUNICATION_FAILURE;
+                    out_sizes.fill(0);
+                    break;
+                }
+            }
+        }
+
+        std::ostringstream detail;
+        detail << "protocol=" << static_cast<unsigned int>(parsed.protocol)
+               << " seq=" << static_cast<unsigned int>(parsed.seq)
+               << " handle=0x" << std::hex << parsed.handle
+               << " type=0x" << parsed.type
+               << " status=0x" << static_cast<uint32_t>(status)
+               << std::dec << " in_len=" << parsed.in_len
+               << " out_len=" << parsed.out_len;
+        trace_event("rse-ps-response", detail.str());
+
+        std::vector<uint8_t> reply;
+        reply.push_back(parsed.protocol);
+        reply.push_back(parsed.seq);
+        append_u16(reply, parsed.client_id);
+        append_u32(reply, static_cast<uint32_t>(status));
+        if (parsed.protocol == RSE_COMMS_PROTOCOL_POINTER_ACCESS) {
+            for (unsigned int i = 0; i < PSA_MAX_IOVEC; ++i) {
+                append_u32(reply, out_sizes[i]);
+            }
+        } else {
+            for (unsigned int i = 0; i < PSA_MAX_IOVEC; ++i) {
+                append_u16(reply, static_cast<uint16_t>(out_sizes[i]));
+            }
+            if (status == static_cast<int32_t>(PSA_SUCCESS)) {
+                for (unsigned int i = 0; i < parsed.out_len; ++i) {
+                    reply.insert(reply.end(), outputs[i].begin(), outputs[i].end());
+                }
+            }
+        }
+
+        return reply;
     }
 
     std::vector<uint8_t> build_rse_success_reply(const std::vector<uint8_t>& request) const
