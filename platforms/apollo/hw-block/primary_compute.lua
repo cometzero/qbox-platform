@@ -28,6 +28,35 @@ local function getenv_or(name, default)
     return value
 end
 
+local function getenv_number_or(name, default)
+    local value = tonumber(getenv_or(name, default))
+    assert(value ~= nil, name.." must be numeric")
+    return value
+end
+
+local function getenv_bool_or(name, default)
+    local value = os.getenv(name)
+    if value == nil or value == "" then
+        return default
+    end
+    value = string.lower(value)
+    return value == "1" or value == "true" or value == "yes" or value == "on"
+end
+
+local function repeat_value(value, count)
+    local values = {}
+    for _=1,count do
+        values[#values + 1] = value
+    end
+    return values
+end
+
+local function mp_affinity(cpu_index)
+    local cluster = math.floor(cpu_index / 4)
+    local core = cpu_index % 4
+    return (cluster * 0x10000) + (core * 0x100)
+end
+
 local root = top().."../../../../../"
 local kernel_image = getenv_or(
     "QBOX_APOLLO_KERNEL",
@@ -48,7 +77,31 @@ if ACCEL == nil then
     ACCEL = getenv_or("QBOX_APOLLO_ACCEL", "tcg")
 end
 
-local ARM_NUM_CPUS = 4
+local ARM_NUM_CPUS = getenv_number_or("QBOX_APOLLO_NUM_CPUS", "16")
+assert(ARM_NUM_CPUS >= 1 and ARM_NUM_CPUS <= 16, "QBOX_APOLLO_NUM_CPUS must be 1..16")
+local pc_trace = getenv_bool_or("QBOX_APOLLO_PC_TRACE", false)
+local pc_trace_file = getenv_or(
+    "QBOX_APOLLO_PC_TRACE_FILE",
+    root.."build/qbox-apollo-fvp/cpu-pc-trace.log")
+local pc_trace_interval = getenv_number_or("QBOX_APOLLO_PC_TRACE_INTERVAL", "1")
+local pc_trace_limit = getenv_number_or("QBOX_APOLLO_PC_TRACE_LIMIT", "4096")
+local exception_trace = getenv_bool_or("QBOX_APOLLO_EXCEPTION_TRACE", false)
+local gdb_port_base = getenv_number_or("QBOX_APOLLO_GDB_PORT_BASE", "0")
+assert(gdb_port_base >= 0 and gdb_port_base <= 65535, "QBOX_APOLLO_GDB_PORT_BASE must be 0..65535")
+if gdb_port_base ~= 0 then
+    assert(false, "QBOX_APOLLO_GDB_PORT_BASE is unsupported; use QBOX_APOLLO_GDB_CPU_INDEX and QBOX_APOLLO_GDB_PORT")
+end
+local gdb_cpu_index = getenv_number_or("QBOX_APOLLO_GDB_CPU_INDEX", "-1")
+local gdb_port = getenv_number_or("QBOX_APOLLO_GDB_PORT", "0")
+assert(gdb_cpu_index >= -1 and gdb_cpu_index < ARM_NUM_CPUS, "QBOX_APOLLO_GDB_CPU_INDEX must be -1 or in CPU range")
+assert(gdb_port >= 0 and gdb_port <= 65535, "QBOX_APOLLO_GDB_PORT must be 0..65535")
+if gdb_port == 0 then
+    assert(gdb_cpu_index == -1, "QBOX_APOLLO_GDB_PORT must be nonzero when QBOX_APOLLO_GDB_CPU_INDEX is set")
+else
+    assert(gdb_cpu_index >= 0, "QBOX_APOLLO_GDB_CPU_INDEX must be set when QBOX_APOLLO_GDB_PORT is nonzero")
+end
+local GIC_REDIST_BASE = 0x20880000
+local GIC_REDIST_SIZE = 0x40000
 local ARCH_TIMER_VIRT_IRQ = 16 + 11
 local ARCH_TIMER_S_EL1_IRQ = 16 + 13
 local ARCH_TIMER_NS_EL1_IRQ = 16 + 14
@@ -154,14 +207,17 @@ platform = {
     -- AP CPU backend
     qemu_inst_mgr = {
         moduletype = "QemuInstanceManager";
+        construction_priority = -300;
     },
 
     qemu_inst = {
         moduletype="QemuInstance";
         args = {"&platform.qemu_inst_mgr", "AARCH64"};
         accel = ACCEL,
-        tcg_mode = "MULTI",
-        sync_policy = "multithread-unconstrained"
+        qemu_args = getenv_or("QBOX_APOLLO_QEMU_ARGS", ""),
+        tcg_mode = getenv_or("QBOX_APOLLO_TCG_MODE", "MULTI"),
+        sync_policy = getenv_or("QBOX_APOLLO_SYNC_POLICY", "multithread-unconstrained"),
+        construction_priority = -299
     },
 
     -- Interrupt controller
@@ -173,28 +229,8 @@ platform = {
             size = 0x10000,
             bind = "&router.initiator_socket"
         };
-        redist_iface_0 = {
-            address = 0x20880000,
-            size = 0x40000,
-            bind = "&router.initiator_socket"
-        };
-        redist_iface_1 = {
-            address = 0x208c0000,
-            size = 0x40000,
-            bind = "&router.initiator_socket"
-        };
-        redist_iface_2 = {
-            address = 0x20900000,
-            size = 0x40000,
-            bind = "&router.initiator_socket"
-        };
-        redist_iface_3 = {
-            address = 0x20940000,
-            size = 0x40000,
-            bind = "&router.initiator_socket"
-        };
         num_cpus = ARM_NUM_CPUS,
-        redist_region = {1, 1, 1, 1};
+        redist_region = repeat_value(1, ARM_NUM_CPUS);
         has_lpi = true;
         num_spi = 512
     };
@@ -348,6 +384,14 @@ platform = {
     };
 };
 
+for i=0,(ARM_NUM_CPUS-1) do
+    platform.gic_0["redist_iface_"..i] = {
+        address = GIC_REDIST_BASE + (i * GIC_REDIST_SIZE),
+        size = GIC_REDIST_SIZE,
+        bind = "&router.initiator_socket"
+    };
+end
+
 if initramfs_image ~= nil and initramfs_image ~= "" then
     table.insert(platform.load, {
         bin_file = initramfs_image,
@@ -386,6 +430,17 @@ end
 for i=1,#extra_disk_images do
     print("extra disk "..i..": "..extra_disk_images[i]);
 end
+print("ap cpus:      "..tostring(ARM_NUM_CPUS));
+print("PC trace:     "..tostring(pc_trace));
+if pc_trace then
+    print("PC trace log: "..pc_trace_file);
+end
+if gdb_port ~= 0 then
+    print("GDB CPU:      "..tostring(gdb_cpu_index));
+    print("GDB port:     "..tostring(gdb_port));
+else
+    print("GDB port:     disabled");
+end
 print("accel:        "..ACCEL);
 
 local psci_conduit = "smc";
@@ -419,12 +474,21 @@ for i=0,(ARM_NUM_CPUS-1) do
         },
         pmu_interrupt = {bind = "&gic_0.ppi_in_cpu_"..i.."_23"},
         psci_conduit = psci_conduit,
-        mp_affinity = i * 0x100;
+        mp_affinity = mp_affinity(i);
         start_powered_off = true;
         rvbar = INITIAL_DDR_SPACE;
+        construction_priority = -200 + i;
+        trace_pc = pc_trace;
+        trace_pc_file = pc_trace_file;
+        trace_pc_interval = pc_trace_interval;
+        trace_pc_limit = pc_trace_limit;
+        trace_exception_state = exception_trace;
     };
     if i == 0 then
         cpu["start_powered_off"] = false;
+    end
+    if gdb_port ~= 0 and i == gdb_cpu_index then
+        cpu["gdb_port"] = gdb_port;
     end
     platform["cpu_"..tostring(i)] = cpu;
 

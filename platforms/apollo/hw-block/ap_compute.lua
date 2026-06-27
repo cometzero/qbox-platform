@@ -3,6 +3,7 @@ local ap_compute = {}
 function ap_compute.define(ctx, platform)
     platform.ap_qemu_inst_mgr = enable_ap_cpus and {
         moduletype = "QemuInstanceManager";
+        construction_priority = -300;
     } or nil
 
     platform.ap_qemu_inst = enable_ap_cpus and {
@@ -12,6 +13,7 @@ function ap_compute.define(ctx, platform)
         tcg_mode = "MULTI";
         sync_policy = "multithread-freerunning";
         qemu_args = ap_qemu_args;
+        construction_priority = -299;
     } or nil
 
     platform.ap_reset_gpio = enable_ap_cpus and {
@@ -538,6 +540,7 @@ if enable_ap_cpus then
             trace_pc_interval = ap_pc_trace_interval;
             trace_pc_limit = ap_pc_trace_limit;
             trace_exception_state = ap_exception_trace;
+            construction_priority = -200 + i;
         }
         platform["ap_cpu_"..tostring(i)] = cpu
 

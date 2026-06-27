@@ -473,7 +473,8 @@ HOST_AP_DRAM2_BASE = 0x20000000000
 HOST_AP_DRAM2_SIZE = 0x80000000
 HOST_AP_ATU_LOGICAL_BASE = 0x40000000
 HOST_AP_ATU_LOGICAL_SIZE = 0x00800000
-AP_NUM_CPUS = enable_ap_cpus and 4 or 0
+AP_NUM_CPUS = enable_ap_cpus and getenv_number_or("QBOX_APOLLO_NUM_CPUS", "16") or 0
+assert(not enable_ap_cpus or (AP_NUM_CPUS >= 1 and AP_NUM_CPUS <= 16), "QBOX_APOLLO_NUM_CPUS must be 1..16 when AP CPUs are enabled")
 AP_GIC_NUM_CPUS = enable_ap_cpus and AP_NUM_CPUS or 1
 ARCH_TIMER_VIRT_IRQ = 16 + 11
 ARCH_TIMER_S_EL1_IRQ = 16 + 13

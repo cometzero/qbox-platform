@@ -227,11 +227,16 @@ function system_mgmt.define(ctx, platform)
         initiator_socket = {bind = "&host_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_PBX_IRQ};
         system_reset = {bind = ap_system_reset_bind_targets()};
-        power_domain_reset_1 = {bind = "&ap_cpu_1.reset"};
-        power_domain_reset_2 = {bind = "&ap_cpu_2.reset"};
-        power_domain_reset_3 = {bind = "&ap_cpu_3.reset"};
         log_level = 0;
     } or nil
+
+    if platform.host_ap_si_scmi_mhu_pbx ~= nil then
+        for i=1,(AP_NUM_CPUS-1) do
+            platform.host_ap_si_scmi_mhu_pbx["power_domain_reset_"..i] = {
+                bind = "&ap_cpu_"..i..".reset";
+            }
+        end
+    end
 
     platform.host_ap_si_scmi_mhu_mbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
