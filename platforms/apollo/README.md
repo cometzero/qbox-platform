@@ -122,7 +122,7 @@ python3 scripts/run/run_qbox_apollo_fvp_full.py \
   --si-mode live-cl0-cl1 \
   --skip-build \
   --timeout 2400 \
-  --rootfs-bootargs-profile none \
+  --rootfs-bootargs-profile quiet-console \
   --post-login-probe \
   --cc3xx-qemu-native-backend \
   --rse-lms-accel \
@@ -188,6 +188,38 @@ result.json
 summary.txt
 qbox-apollo-fvp.log
 ```
+
+The direct-boot and full-system AP paths default to 16 modeled AP CPUs. Use
+`QBOX_APOLLO_NUM_CPUS=1..16` for direct-boot CPU-count experiments; full-system
+AP runs use the same value when AP CPUs are enabled. Direct local bootargs also
+default to `maxcpus=16`, and the full-system rootfs patching profile defaults
+to `quiet-console`, which removes stale `maxcpus=` tokens from rootfs bootargs.
+
+For direct-boot CPU wake debugging, keep tracing disabled for normal runs and
+enable it only on focused reproductions:
+
+```bash
+QBOX_APOLLO_PC_TRACE=true \
+QBOX_APOLLO_PC_TRACE_FILE=build/qbox-apollo-fvp/trace-16/cpu-pc-trace.log \
+python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+  --skip-build \
+  --timeout 180 \
+  --post-login-probe \
+  --out-dir build/qbox-apollo-fvp/trace-16
+```
+
+`QBOX_APOLLO_PC_TRACE_INTERVAL` and `QBOX_APOLLO_PC_TRACE_LIMIT` tune direct
+PC trace volume. `QBOX_APOLLO_EXCEPTION_TRACE=true` enables exception-state
+trace for the same direct AP CPU models.
+
+For one selected direct-boot CPU GDB stub, set both
+`QBOX_APOLLO_GDB_CPU_INDEX` and `QBOX_APOLLO_GDB_PORT`. The selected port must
+not collide with any `--netdev hostfwd` TCP port. `QBOX_APOLLO_GDB_PORT_BASE`
+is intentionally unsupported on Apollo direct boot.
+
+Full-system AP PC tracing uses the RSE-runner controls
+`QBOX_RDASPEN_AP_PC_TRACE`, `QBOX_RDASPEN_AP_PC_TRACE_FILE`,
+`QBOX_RDASPEN_AP_PC_TRACE_INTERVAL`, and `QBOX_RDASPEN_AP_PC_TRACE_LIMIT`.
 
 ## Interactive Boot
 
