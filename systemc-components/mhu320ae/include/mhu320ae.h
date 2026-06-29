@@ -82,6 +82,7 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint8_t SCMI_PROTOCOL_BASE = 0x10;
     static constexpr uint8_t SCMI_PROTOCOL_POWER_DOMAIN = 0x11;
     static constexpr uint8_t SCMI_PROTOCOL_SYS_POWER = 0x12;
+    static constexpr uint8_t SCMI_PROTOCOL_PERFORMANCE = 0x13;
     static constexpr uint8_t SCMI_PROTOCOL_PFDI_MONITOR = 0x90;
     static constexpr uint8_t SCMI_MSG_PROTOCOL_MESSAGE_ATTRIBUTES = 0x2;
     static constexpr uint8_t SCMI_SYS_POWER_STATE_SET = 0x3;
@@ -89,7 +90,26 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint32_t SCMI_SYS_POWER_SHUTDOWN = 0;
     static constexpr uint32_t SCMI_SYS_POWER_COLD_RESET = 1;
     static constexpr uint32_t SCMI_SYS_POWER_WARM_RESET = 2;
+    static constexpr uint32_t SCMI_PERFORMANCE_VERSION = 0x00040000;
+    static constexpr uint8_t SCMI_PERF_DOMAIN_ATTRIBUTES = 0x3;
+    static constexpr uint8_t SCMI_PERF_DESCRIBE_LEVELS = 0x4;
+    static constexpr uint8_t SCMI_PERF_LIMITS_SET = 0x5;
+    static constexpr uint8_t SCMI_PERF_LIMITS_GET = 0x6;
+    static constexpr uint8_t SCMI_PERF_LEVEL_SET = 0x7;
+    static constexpr uint8_t SCMI_PERF_LEVEL_GET = 0x8;
+    static constexpr uint8_t SCMI_PERF_NOTIFY_LIMITS = 0x9;
+    static constexpr uint8_t SCMI_PERF_NOTIFY_LEVEL = 0xa;
+    static constexpr uint32_t SCMI_PERF_DOMAIN_COUNT = 1;
+    static constexpr unsigned int SCMI_PERF_OPP_COUNT = 3;
+    static constexpr uint32_t SCMI_PERF_MIN_LEVEL = 1000;
+    static constexpr uint32_t SCMI_PERF_MAX_LEVEL = 2000;
+    static constexpr uint32_t SCMI_PERF_SUSTAINED_FREQ_KHZ = 2000000;
+    static constexpr uint32_t SCMI_PERF_DOMAIN_SUPPORTS_SET_LIMITS = 1u << 31;
+    static constexpr uint32_t SCMI_PERF_DOMAIN_SUPPORTS_SET_LEVEL = 1u << 30;
+    static constexpr uint32_t SCMI_PERF_DOMAIN_SUPPORTS_LIMIT_NOTIFY = 1u << 29;
+    static constexpr uint32_t SCMI_PERF_DOMAIN_SUPPORTS_LEVEL_NOTIFY = 1u << 28;
     static constexpr uint32_t SCMI_PFDI_MONITOR_VERSION = 0x00020000;
+    static constexpr uint32_t SCMI_ERR_PARAM = static_cast<uint32_t>(-2);
     static constexpr uint8_t RSE_COMMS_PROTOCOL_EMBED = 0;
     static constexpr uint8_t RSE_COMMS_PROTOCOL_POINTER_ACCESS = 1;
     static constexpr unsigned int PSA_MAX_IOVEC = 4;
@@ -103,6 +123,13 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint32_t TFM_MEASURED_BOOT_HANDLE = 0x40000110;
     static constexpr uint32_t TFM_MEASURED_BOOT_READ = 1001;
     static constexpr uint32_t TFM_MEASURED_BOOT_EXTEND = 1002;
+    static constexpr uint32_t TFM_FIRMWARE_UPDATE_SERVICE_HANDLE = 0x40000104;
+    static constexpr uint32_t TFM_FWU_QUERY = 1010;
+    static constexpr unsigned int TFM_FWU_COMPONENT_COUNT = 5;
+    static constexpr unsigned int PSA_FWU_COMPONENT_INFO_SIZE = 44;
+    static constexpr uint32_t PSA_FWU_READY = 0;
+    static constexpr uint32_t PSA_FWU_FLAG_VOLATILE_STAGING = 0x00000001;
+    static constexpr uint32_t ESRT_FW_TYPE_SYSTEMFIRMWARE = 0x00000001;
     static constexpr unsigned int TFM_MEASUREMENT_SLOT_COUNT = 32;
     static constexpr unsigned int TFM_MEASUREMENT_VALUE_MAX_SIZE = 64;
     static constexpr unsigned int TFM_SIGNER_ID_MAX_SIZE = 64;
@@ -455,6 +482,7 @@ private:
 
     mhu320ae_frame_model m_frame;
     std::array<uint32_t, 256> m_power_domain_states {};
+    std::array<uint32_t, SCMI_PERF_DOMAIN_COUNT> m_performance_levels {};
     uint32_t m_power_domain_state = 0;
     bool m_pending_power_on_reset = false;
     sc_core::sc_event m_power_on_reset_event;
@@ -1005,6 +1033,20 @@ private:
         return out;
     }
 
+    std::vector<uint8_t> scmi_supported_protocols() const
+    {
+        if (p_scmi_transport.get_value() == "pfdi-monitor") {
+            return {SCMI_PROTOCOL_BASE, SCMI_PROTOCOL_PFDI_MONITOR};
+        }
+
+        return {
+            SCMI_PROTOCOL_BASE,
+            SCMI_PROTOCOL_POWER_DOMAIN,
+            SCMI_PROTOCOL_SYS_POWER,
+            SCMI_PROTOCOL_PERFORMANCE,
+        };
+    }
+
     void respond_scmi_base(uint32_t header, uint32_t& status, std::vector<uint8_t>& payload)
     {
         switch (msg_id(header)) {
@@ -1012,7 +1054,12 @@ private:
             append_u32(payload, 0x00020001);
             break;
         case 0x1:
-            payload = {1, 1, 0, 0};
+            payload = {
+                static_cast<uint8_t>(scmi_supported_protocols().size()),
+                1,
+                0,
+                0,
+            };
             break;
         case 0x2:
             append_u32(payload, 0);
@@ -1027,9 +1074,14 @@ private:
             append_u32(payload, 1);
             break;
         case 0x6:
-            append_u32(payload, 1);
-            payload.push_back(SCMI_PROTOCOL_BASE);
-            payload.insert(payload.end(), 3, 0);
+            {
+                const auto protocols = scmi_supported_protocols();
+                append_u32(payload, static_cast<uint32_t>(protocols.size()));
+                payload.insert(payload.end(), protocols.begin(), protocols.end());
+                while ((payload.size() - sizeof(uint32_t)) % sizeof(uint32_t) != 0) {
+                    payload.push_back(0);
+                }
+            }
             break;
         case 0x7:
             append_u32(payload, 0);
@@ -1144,6 +1196,161 @@ private:
         }
     }
 
+    void respond_scmi_performance(uint32_t header, const std::vector<uint8_t>& request,
+                                  uint32_t& status, std::vector<uint8_t>& payload)
+    {
+        const auto valid_domain = [](uint32_t domain) {
+            return domain < SCMI_PERF_DOMAIN_COUNT;
+        };
+        const auto opp_level = [](unsigned int index) {
+            switch (index) {
+            case 0:
+                return 1000u;
+            case 1:
+                return 1500u;
+            default:
+                return 2000u;
+            }
+        };
+        const auto opp_power = [](unsigned int index) {
+            switch (index) {
+            case 0:
+                return 100u;
+            case 1:
+                return 200u;
+            default:
+                return 300u;
+            }
+        };
+        const auto append_opp = [&](unsigned int index) {
+            const uint32_t level = opp_level(index);
+            append_u32(payload, level);
+            append_u32(payload, opp_power(index));
+            append_u16(payload, 1000);
+            append_u16(payload, 0);
+            append_u32(payload, level * 1000u);
+            append_u32(payload, index);
+        };
+
+        switch (msg_id(header)) {
+        case 0x0:
+            append_u32(payload, SCMI_PERFORMANCE_VERSION);
+            break;
+        case 0x1:
+            append_u16(payload, SCMI_PERF_DOMAIN_COUNT);
+            append_u16(payload, 0);
+            append_u32(payload, 0);
+            append_u32(payload, 0);
+            append_u32(payload, 0);
+            break;
+        case SCMI_MSG_PROTOCOL_MESSAGE_ATTRIBUTES:
+            switch (read_le32(request, 0)) {
+            case 0x0:
+            case 0x1:
+            case SCMI_MSG_PROTOCOL_MESSAGE_ATTRIBUTES:
+            case SCMI_PERF_DOMAIN_ATTRIBUTES:
+            case SCMI_PERF_DESCRIBE_LEVELS:
+            case SCMI_PERF_LIMITS_SET:
+            case SCMI_PERF_LIMITS_GET:
+            case SCMI_PERF_LEVEL_SET:
+            case SCMI_PERF_LEVEL_GET:
+            case SCMI_PERF_NOTIFY_LIMITS:
+            case SCMI_PERF_NOTIFY_LEVEL:
+                append_u32(payload, 0);
+                break;
+            default:
+                status = SCMI_ERR_SUPPORT;
+                append_u32(payload, 0);
+                break;
+            }
+            break;
+        case SCMI_PERF_DOMAIN_ATTRIBUTES: {
+            const uint32_t domain = read_le32(request, 0);
+            if (!valid_domain(domain)) {
+                status = SCMI_ERR_PARAM;
+                break;
+            }
+
+            append_u32(payload, SCMI_PERF_DOMAIN_SUPPORTS_SET_LIMITS |
+                                SCMI_PERF_DOMAIN_SUPPORTS_SET_LEVEL |
+                                SCMI_PERF_DOMAIN_SUPPORTS_LIMIT_NOTIFY |
+                                SCMI_PERF_DOMAIN_SUPPORTS_LEVEL_NOTIFY);
+            append_u32(payload, 0);
+            append_u32(payload, SCMI_PERF_SUSTAINED_FREQ_KHZ);
+            append_u32(payload, SCMI_PERF_MAX_LEVEL);
+            auto name = fixed_param_string("APCPU" + std::to_string(domain));
+            payload.insert(payload.end(), name.begin(), name.end());
+            break;
+        }
+        case SCMI_PERF_DESCRIBE_LEVELS: {
+            const uint32_t domain = read_le32(request, 0);
+            const uint32_t skip = read_le32(request, sizeof(uint32_t));
+            if (!valid_domain(domain)) {
+                status = SCMI_ERR_PARAM;
+                break;
+            }
+
+            const uint32_t returned =
+                skip < SCMI_PERF_OPP_COUNT ? SCMI_PERF_OPP_COUNT - skip : 0;
+            append_u16(payload, static_cast<uint16_t>(returned));
+            append_u16(payload, 0);
+            for (uint32_t index = skip; index < SCMI_PERF_OPP_COUNT; ++index) {
+                append_opp(index);
+            }
+            break;
+        }
+        case SCMI_PERF_LIMITS_SET: {
+            const uint32_t domain = read_le32(request, 0);
+            if (!valid_domain(domain)) {
+                status = SCMI_ERR_PARAM;
+            }
+            break;
+        }
+        case SCMI_PERF_LIMITS_GET: {
+            const uint32_t domain = read_le32(request, 0);
+            if (!valid_domain(domain)) {
+                status = SCMI_ERR_PARAM;
+                break;
+            }
+            append_u32(payload, SCMI_PERF_MAX_LEVEL);
+            append_u32(payload, SCMI_PERF_MIN_LEVEL);
+            break;
+        }
+        case SCMI_PERF_LEVEL_SET: {
+            const uint32_t domain = read_le32(request, 0);
+            const uint32_t level = read_le32(request, sizeof(uint32_t));
+            if (!valid_domain(domain)) {
+                status = SCMI_ERR_PARAM;
+                break;
+            }
+            m_performance_levels[domain] = level != 0 ? level : SCMI_PERF_MAX_LEVEL;
+            break;
+        }
+        case SCMI_PERF_LEVEL_GET: {
+            const uint32_t domain = read_le32(request, 0);
+            if (!valid_domain(domain)) {
+                status = SCMI_ERR_PARAM;
+                break;
+            }
+            const uint32_t level = m_performance_levels[domain] != 0 ?
+                m_performance_levels[domain] : SCMI_PERF_MAX_LEVEL;
+            append_u32(payload, level);
+            break;
+        }
+        case SCMI_PERF_NOTIFY_LIMITS:
+        case SCMI_PERF_NOTIFY_LEVEL: {
+            const uint32_t domain = read_le32(request, 0);
+            if (!valid_domain(domain)) {
+                status = SCMI_ERR_PARAM;
+            }
+            break;
+        }
+        default:
+            status = SCMI_ERR_SUPPORT;
+            break;
+        }
+    }
+
     void respond_scmi_pfdi_monitor(uint32_t header, uint32_t& status,
                                    std::vector<uint8_t>& payload)
     {
@@ -1190,6 +1397,9 @@ private:
             break;
         case SCMI_PROTOCOL_SYS_POWER:
             respond_scmi_sys_power(header, request, status, payload);
+            break;
+        case SCMI_PROTOCOL_PERFORMANCE:
+            respond_scmi_performance(header, request, status, payload);
             break;
         case SCMI_PROTOCOL_PFDI_MONITOR:
             if (p_scmi_transport.get_value() == "pfdi-monitor") {
@@ -1825,6 +2035,88 @@ private:
         return PSA_SUCCESS;
     }
 
+    static void append_at_u32(std::vector<uint8_t>& out, size_t offset, uint32_t value)
+    {
+        if (offset + sizeof(uint32_t) > out.size()) {
+            return;
+        }
+        out[offset] = value & 0xffu;
+        out[offset + 1] = (value >> 8) & 0xffu;
+        out[offset + 2] = (value >> 16) & 0xffu;
+        out[offset + 3] = (value >> 24) & 0xffu;
+    }
+
+    static uint32_t fwu_component_max_size(uint8_t component)
+    {
+        switch (component) {
+        case 0:
+            return 0x00020000;
+        case 1:
+            return 0x00040000;
+        case 2:
+            return 0x00100000;
+        case 3:
+            return 0x00240000;
+        case 4:
+            return 0x00100000;
+        default:
+            return 0;
+        }
+    }
+
+    static uint32_t fwu_component_location(uint8_t component)
+    {
+        switch (component) {
+        case 0:
+            return 0x00007000;
+        case 1:
+            return 0x00027000;
+        case 2:
+            return 0x00067000;
+        case 3:
+            return 0x00007000;
+        case 4:
+            return 0x00167000;
+        default:
+            return 0;
+        }
+    }
+
+    std::vector<uint8_t> fwu_component_info(uint8_t component) const
+    {
+        std::vector<uint8_t> info(PSA_FWU_COMPONENT_INFO_SIZE, 0);
+
+        info[0] = PSA_FWU_READY & 0xffu;
+        info[8] = 1;
+        append_at_u32(info, 16, fwu_component_max_size(component));
+        append_at_u32(info, 20, PSA_FWU_FLAG_VOLATILE_STAGING);
+        append_at_u32(info, 24, fwu_component_location(component));
+        append_at_u32(info, 28, ESRT_FW_TYPE_SYSTEMFIRMWARE);
+        append_at_u32(info, 32, 0x01000000);
+        return info;
+    }
+
+    int32_t handle_rse_fwu_request(
+        const rse_ps_request& request,
+        std::array<std::vector<uint8_t>, PSA_MAX_IOVEC>& outputs,
+        std::array<uint32_t, PSA_MAX_IOVEC>& out_sizes)
+    {
+        if (request.type != TFM_FWU_QUERY) {
+            return PSA_ERROR_NOT_SUPPORTED;
+        }
+        if (request.in_len < 1 || request.out_len < 1 || request.inputs[0].empty()) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
+
+        const uint8_t component = request.inputs[0][0];
+        if (component >= TFM_FWU_COMPONENT_COUNT) {
+            return PSA_ERROR_DOES_NOT_EXIST;
+        }
+
+        return set_ps_output(request, outputs, out_sizes, 0,
+                             fwu_component_info(component));
+    }
+
     static std::vector<uint8_t> bounded_bytes(const std::vector<uint8_t>& in,
                                               size_t offset,
                                               size_t size,
@@ -1923,6 +2215,9 @@ private:
     {
         if (request.handle == TFM_MEASURED_BOOT_HANDLE) {
             return handle_rse_measured_boot_request(request, outputs, out_sizes);
+        }
+        if (request.handle == TFM_FIRMWARE_UPDATE_SERVICE_HANDLE) {
+            return handle_rse_fwu_request(request, outputs, out_sizes);
         }
 
         if (request.handle != TFM_PROTECTED_STORAGE_SERVICE_HANDLE) {

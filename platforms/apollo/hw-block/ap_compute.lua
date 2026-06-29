@@ -258,7 +258,8 @@ function ap_compute.define(ctx, platform)
         redist_region = repeat_value(1, AP_GIC_ACTIVE_REDIST_REGIONS);
         has_security_extensions = true;
         has_lpi = true;
-        num_spi = 512;
+        revision = 4;
+        num_spi = 960;
     } or nil
 
     platform.ap_gic_its = enable_ap_cpus and {
