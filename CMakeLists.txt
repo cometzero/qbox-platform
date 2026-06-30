@@ -86,6 +86,9 @@ if(BUILD_TESTING)
     add_subdirectory(tests/components/cc3xx)
     add_subdirectory(tests/components/mhu320ae)
     add_subdirectory(tests/components/uart)
+    add_subdirectory(tests/components/gicx00_multiview)
+    add_subdirectory(tests/components/zena_fmu)
+    add_subdirectory(tests/components/gic720ae_messreg)
     add_subdirectory(tests/platforms)
 endif()
 
@@ -128,6 +131,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     qemu_hexagon_qtimer
     mhu320ae
     gicx00_multiview
+    gic720ae_messreg
     zena_fmu
     zena_ssu
     host_cmn_cyprus

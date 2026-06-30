@@ -27,10 +27,16 @@ class gicx00_multiview : public sc_core::sc_module
     static constexpr uint32_t GICD_CFGID = 0xf000;
     static constexpr uint32_t GICD_IVIEWR_BASE = 0xf600;
     static constexpr uint32_t GICD_IVIEWR_LIMIT = 0xfa00;
+    static constexpr uint32_t GICD_IVIEWR_FIRST = 2;
+    static constexpr uint32_t GICD_IVIEWR_LAST = 61;
     static constexpr uint64_t GICD_CFGID_VIEW = 1ull << 53;
 
     static constexpr uint32_t GICR_PWRR = 0x0024;
     static constexpr uint32_t GICR_VIEWR = 0x002c;
+    static constexpr uint32_t GICR_FLUSHR = 0x0030;
+    static constexpr uint32_t GICR_VIEWR_MASK = 0x3;
+    static constexpr uint32_t GICR_FLUSHR_RESET = 0x3cfffff0;
+    static constexpr uint32_t GICR_FLUSHR_RW_MASK = 0x3cfffff1;
 
     using target_socket_t =
         tlm_utils::simple_target_socket_b<
@@ -75,6 +81,7 @@ class gicx00_multiview : public sc_core::sc_module
             regs.fill(0);
             store32(regs, GICR_PWRR, 0);
             store32(regs, GICR_VIEWR, 0);
+            store32(regs, GICR_FLUSHR, GICR_FLUSHR_RESET);
         }
 
         store32(m_dist_regs, GICD_CTLR, 0);
@@ -117,7 +124,7 @@ class gicx00_multiview : public sc_core::sc_module
         uint8_t* data = trans.get_data_ptr();
 
         if (data == nullptr || !is_supported_length(len) ||
-            offset + len > regs.size()) {
+            offset > regs.size() || len > regs.size() - offset) {
             trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
             return false;
         }
@@ -136,14 +143,49 @@ class gicx00_multiview : public sc_core::sc_module
         return true;
     }
 
+    bool is_supported_iviewr(uint64_t offset, unsigned int len) const
+    {
+        if (offset < GICD_IVIEWR_BASE || offset >= GICD_IVIEWR_LIMIT ||
+            len != sizeof(uint32_t) ||
+            ((offset - GICD_IVIEWR_BASE) % sizeof(uint32_t)) != 0) {
+            return false;
+        }
+
+        const uint32_t index =
+            static_cast<uint32_t>((offset - GICD_IVIEWR_BASE) / sizeof(uint32_t));
+        return index >= GICD_IVIEWR_FIRST && index <= GICD_IVIEWR_LAST;
+    }
+
+    bool is_iviewr_window(uint64_t offset) const
+    {
+        return offset >= GICD_IVIEWR_BASE && offset < GICD_IVIEWR_LIMIT;
+    }
+
     bool access_dist(tlm::tlm_generic_payload& trans, bool debug)
     {
         const uint64_t offset = trans.get_address();
-        if (trans.get_command() == tlm::TLM_WRITE_COMMAND &&
-            offset >= GICD_IVIEWR_BASE && offset < GICD_IVIEWR_LIMIT &&
-            trans.get_data_length() == sizeof(uint32_t)) {
-            return access_array(m_dist_regs, "dist", UINT32_MAX, trans, debug);
+        if (is_iviewr_window(offset)) {
+            if (trans.get_data_ptr() == nullptr ||
+                trans.get_data_length() != sizeof(uint32_t)) {
+                trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+                return false;
+            }
+
+            if (!is_supported_iviewr(offset, trans.get_data_length())) {
+                if (trans.get_command() == tlm::TLM_READ_COMMAND) {
+                    uint32_t value = 0;
+                    std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
+                } else if (trans.get_command() != tlm::TLM_WRITE_COMMAND) {
+                    trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+                    return false;
+                }
+                trace_access("dist", UINT32_MAX, trans, offset,
+                             trans.get_data_length(), debug);
+                trans.set_response_status(tlm::TLM_OK_RESPONSE);
+                return true;
+            }
         }
+
         return access_array(m_dist_regs, "dist", UINT32_MAX, trans, debug);
     }
 
@@ -156,13 +198,21 @@ class gicx00_multiview : public sc_core::sc_module
         }
 
         const uint64_t offset = trans.get_address();
-        if (trans.get_command() == tlm::TLM_WRITE_COMMAND &&
+        if (trans.get_data_ptr() != nullptr &&
             trans.get_data_length() == sizeof(uint32_t) &&
-            offset == GICR_PWRR) {
+            trans.get_command() == tlm::TLM_WRITE_COMMAND) {
             uint32_t value = 0;
             std::memcpy(&value, trans.get_data_ptr(), sizeof(value));
-            value &= ~0x1u;
-            std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
+            if (offset == GICR_PWRR) {
+                value = 0;
+                std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
+            } else if (offset == GICR_VIEWR) {
+                value &= GICR_VIEWR_MASK;
+                std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
+            } else if (offset == GICR_FLUSHR) {
+                value &= GICR_FLUSHR_RW_MASK;
+                std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
+            }
         }
 
         return access_array(m_redist_regs[index], "redist", index, trans, debug);

@@ -232,12 +232,21 @@ platform = {
         num_cpus = ARM_NUM_CPUS,
         redist_region = repeat_value(1, ARM_NUM_CPUS);
         has_lpi = true;
-        num_spi = 512
+        revision = 4;
+        num_spi = 960;
+        has_gicv4_1 = true;
+        has_direct_lpi = true;
+        has_rvpeid = true;
+        has_vpend_valid_dirty = true;
+        vpeid_bits = 16;
     };
 
     its_0 = {
         moduletype = "arm_gicv3_its",
         args = {"&platform.qemu_inst", "&platform.gic_0"};
+        has_gicv4_1 = true;
+        gicv4_1_svpet = 1;
+        gicv4_1_cte_size = 2;
         mem = {
             address = 0x20840000,
             size = 0x40000,

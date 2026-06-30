@@ -1,4 +1,5 @@
 add_subdirectory(gicx00_multiview)
+add_subdirectory(gic720ae_messreg)
 add_subdirectory(host_cmn_cyprus)
 add_subdirectory(host_gtimer)
 add_subdirectory(host_ni710ae_nci)

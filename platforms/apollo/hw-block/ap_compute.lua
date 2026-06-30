@@ -260,11 +260,19 @@ function ap_compute.define(ctx, platform)
         has_lpi = true;
         revision = 4;
         num_spi = 960;
+        has_gicv4_1 = true;
+        has_direct_lpi = true;
+        has_rvpeid = true;
+        has_vpend_valid_dirty = true;
+        vpeid_bits = 16;
     } or nil
 
     platform.ap_gic_its = enable_ap_cpus and {
         moduletype = "arm_gicv3_its";
         args = {"&platform.ap_qemu_inst", "&platform.ap_gic"};
+        has_gicv4_1 = true;
+        gicv4_1_svpet = 1;
+        gicv4_1_cte_size = 2;
         mem = {
             address = 0x20840000;
             size = 0x00040000;
@@ -414,17 +422,14 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
-    -- Temporary AP-visible decode for the GIC-720AE remote-to-local message
-    -- registers; replace with multichip/message semantics when modeled.
-
     platform.ap_rgic2lgic_messreg = enable_ap_cpus and {
-        moduletype = "gs_memory";
+        moduletype = "gic720ae_messreg";
         target_socket = {
             address = AP_RGIC2LGIC_MESSREG_BASE;
             size = AP_RGIC2LGIC_MESSREG_SIZE;
             bind = "&host_router.initiator_socket";
         };
-        init_mem = true;
+        window_size = AP_RGIC2LGIC_MESSREG_SIZE;
         log_level = 0;
     } or nil
 
