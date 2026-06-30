@@ -203,6 +203,9 @@ class rse_lcm : public sc_core::sc_module
         case SP_ENABLE:
             if (value == SP_ENABLE_MAGIC) {
                 store32(SP_ENABLE, LCM_TRUE);
+                if (p_otp_lock_after_provision.get_value()) {
+                    m_otp_locked = true;
+                }
             } else {
                 store32(SP_ENABLE, value);
             }
