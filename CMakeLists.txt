@@ -82,13 +82,64 @@ add_subdirectory(qemu-components)
 add_subdirectory(platforms/apollo/rse-cpu)
 
 if(BUILD_TESTING)
-    add_subdirectory(tests/components/host_scr)
-    add_subdirectory(tests/components/cc3xx)
-    add_subdirectory(tests/components/mhu320ae)
+    set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_LABEL "qbox-platform-systemc-components")
+    set(qbox_platform_label_systemc_component_tests TRUE)
+    macro(add_test)
+        _add_test(${ARGV})
+        if(qbox_platform_label_systemc_component_tests)
+            cmake_parse_arguments(qbox_platform_add_test "" "NAME" "" ${ARGV})
+            if(qbox_platform_add_test_NAME)
+                set_tests_properties(
+                    ${qbox_platform_add_test_NAME}
+                    PROPERTIES LABELS "${QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_LABEL}"
+                )
+            endif()
+        endif()
+    endmacro()
+    set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS
+        cc3xx
+        dma350
+        gic720ae_messreg
+        gicx00_multiview
+        host_cmn_cyprus
+        host_gtimer
+        host_ni710ae_nci
+        host_ppu
+        host_scr
+        host_smcf_mgi
+        host_system_pll
+        mhu320ae
+        mmu720ae
+        reset_fanout
+        rse_atu
+        rse_integrity_checker
+        rse_kmu
+        rse_lcm
+        rse_protection_ctrl
+        rse_sam
+        rse_sysctrl
+        strata_flash_j3
+        zena_fmu
+        zena_ssu
+    )
+    set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS "")
+    foreach(component_test IN LISTS QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS)
+        add_subdirectory("tests/components/${component_test}")
+        get_property(
+            component_test_targets
+            DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/components/${component_test}"
+            PROPERTY BUILDSYSTEM_TARGETS
+        )
+        list(APPEND QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS ${component_test_targets})
+    endforeach()
+    set(qbox_platform_label_systemc_component_tests FALSE)
+    if(QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS)
+        add_custom_target(
+            qbox_platform_systemc_component_tests
+            DEPENDS ${QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS}
+        )
+    endif()
     add_subdirectory(tests/components/uart)
-    add_subdirectory(tests/components/gicx00_multiview)
-    add_subdirectory(tests/components/zena_fmu)
-    add_subdirectory(tests/components/gic720ae_messreg)
     add_subdirectory(tests/platforms)
 endif()
 
