@@ -1,0 +1,2 @@
+gs_create_dymod(reset_fanout)
+target_compile_definitions(reset_fanout PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)
