@@ -1,0 +1,2 @@
+gs_create_dymod(mhu320ae)
+target_compile_definitions(mhu320ae PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)
