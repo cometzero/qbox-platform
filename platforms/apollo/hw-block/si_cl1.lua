@@ -256,7 +256,6 @@ function si_cl1.enable(ctx, platform)
     -- CL1 boot image
     platform.si_cl1_loader = {
         moduletype = "loader";
-        load_at_elaboration = false;
         initiator_socket = {bind = "&host_router.target_socket"};
         { bin_file = si_cl1_image, address = SI_CL1_SRAM_BASE };
     }

@@ -743,7 +743,6 @@ function si_cl0.enable(ctx, platform)
     -- CL0 boot image and Cortex-R82 CPU
     platform.si_cl0_loader = {
         moduletype = "loader";
-        load_at_elaboration = false;
         initiator_socket = {bind = "&host_router.target_socket"};
         { bin_file = si_cl0_image, address = SI_CL0_SRAM_BASE };
     }

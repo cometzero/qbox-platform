@@ -79,7 +79,6 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_bl2_reset_loader = enable_ap_cpus and {
         moduletype = "loader";
-        load_at_elaboration = false;
         initiator_socket = {bind = "&host_router.target_socket"};
         {
             bin_file = AP_BL2_ELF;
