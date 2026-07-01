@@ -1,0 +1,2 @@
+gs_create_dymod(host_ppu)
+target_compile_definitions(host_ppu PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)
