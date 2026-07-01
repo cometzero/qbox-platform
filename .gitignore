@@ -1,0 +1,14 @@
+/build*/
+/examples/hello-qbox/build*/
+CMakeUserPresets.json
+/debug*/
+/install*/
+tags
+TAGS
+*~
+*.sw?
+.vscode
+.DS_Store
+__pycache__
+.worktrees
+.cache/
