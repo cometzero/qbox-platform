@@ -82,7 +82,6 @@ function si_cl1.enable(ctx, platform)
     local si_cl1_uart_read_file = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL1_UART_READ_FILE",
         "/dev/null")
-    local si_cl1_uart_poll_read = si_cl1_uart_read_file ~= "/dev/null"
     local si_cl1_qemu_args = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_QEMU_ARGS", "")
     local mhu_trace = ctx.getenv_bool_or("QBOX_APOLLO_FULL_SI_CL1_MHU_TRACE", false)
     local mhu_trace_file = ctx.getenv_or(
@@ -171,8 +170,6 @@ function si_cl1.enable(ctx, platform)
         moduletype = "char_backend_file";
         read_file = si_cl1_uart_read_file;
         write_file = si_cl1_log;
-        poll_read = si_cl1_uart_poll_read;
-        poll_interval_ms = 100;
         baudrate = 0;
     }
 

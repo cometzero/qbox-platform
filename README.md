@@ -120,14 +120,13 @@ For bounded headless validation:
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
   --si-mode live-cl0-cl1 \
   --skip-build \
-  --timeout 900 \
-  --post-login-probe
+  --timeout 900
 ```
 
 Primary-compute direct boot and SI CL1 isolated smoke paths remain available:
 
 ```bash
-python3 scripts/run/run_qbox_apollo_fvp_linux.py --timeout 600 --post-login-probe
+python3 scripts/run/run_qbox_apollo_fvp_linux.py --timeout 600
 python3 scripts/run/run_qbox_apollo_fvp_si_cl1.py --timeout 300
 ```
 

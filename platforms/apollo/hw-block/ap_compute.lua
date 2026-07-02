@@ -308,12 +308,8 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_primary_console_file = enable_ap_cpus and {
         moduletype = "char_backend_file";
-        read_file = primary_uart_read_file;
+        read_file = "/dev/null";
         write_file = primary_console_log;
-        poll_read = primary_uart_poll_read;
-        poll_interval_ms = tonumber(getenv_or(
-            "QBOX_RDASPEN_PRIMARY_UART_POLL_INTERVAL_MS",
-            "100"));
         baudrate = 0;
     } or nil
 

@@ -123,7 +123,6 @@ python3 scripts/run/run_qbox_apollo_fvp_full.py \
   --skip-build \
   --timeout 2400 \
   --rootfs-bootargs-profile quiet-console \
-  --post-login-probe \
   --cc3xx-qemu-native-backend \
   --rse-lms-accel \
   --rse-fast-boot-sram-dmi \
@@ -171,8 +170,7 @@ python3 scripts/run/run_qbox_fvp_rd_aspen_rse.py \
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_linux.py \
-  --timeout 600 \
-  --post-login-probe
+  --timeout 600
 ```
 
 The result files are written under:
@@ -204,7 +202,6 @@ QBOX_APOLLO_PC_TRACE_FILE=build/qbox-apollo-fvp/trace-16/cpu-pc-trace.log \
 python3 scripts/run/run_qbox_apollo_fvp_linux.py \
   --skip-build \
   --timeout 180 \
-  --post-login-probe \
   --out-dir build/qbox-apollo-fvp/trace-16
 ```
 
