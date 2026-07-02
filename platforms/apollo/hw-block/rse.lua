@@ -745,9 +745,6 @@ function rse.define(ctx, platform)
                 bl2_delay_cycles_addr = rse_bl2_delay_cycles_addr;
                 bl2_delay_max_cycles = rse_bl2_delay_max_cycles;
                 bl2_delay_expected_hits = rse_bl2_delay_expected_hits;
-                direct_file_aliases = rse_direct_file_aliases;
-                mmio_read_fastpath = rse_mmio_read_fastpath;
-                mmio_direct_fastpath_ranges = rse_mmio_direct_fastpath_ranges;
                 nvic = {
                     mem = {
                         address = RSE_NVIC_BASE;

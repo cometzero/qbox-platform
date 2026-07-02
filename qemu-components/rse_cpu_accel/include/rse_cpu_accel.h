@@ -101,9 +101,6 @@ private:
     ConfigValue<uint64_t> p_bl2_delay_cycles_addr;
     ConfigValue<uint64_t> p_bl2_delay_max_cycles;
     ConfigValue<uint64_t> p_bl2_delay_expected_hits;
-    ConfigValue<std::string> p_direct_file_aliases;
-    ConfigValue<std::string> p_mmio_read_fastpath;
-    ConfigValue<std::string> p_mmio_direct_fastpath_ranges;
 
     std::atomic<uint64_t> m_hotpath_memcpy_hits{ 0 };
     std::atomic<uint64_t> m_hotpath_memset_hits{ 0 };
@@ -191,7 +188,6 @@ private:
     std::atomic<uint64_t> m_bl2_load_accel_bytes{ 0 };
     std::atomic<uint64_t> m_bl2_load_accel_key_misses{ 0 };
     std::atomic<uint64_t> m_bl2_load_accel_dmi_failures{ 0 };
-    std::atomic<uint64_t> m_bl2_load_accel_direct_file_alias_hits{ 0 };
     std::atomic<uint64_t> m_bl2_load_accel_state_failures{ 0 };
     std::atomic<uint64_t> m_bl2_load_accel_unsupported{ 0 };
     std::atomic<uint32_t> m_bl2_load_accel_last_curr_img{ 0 };
@@ -218,7 +214,6 @@ private:
     std::atomic<uint64_t> m_bl2_boot_enc_decrypt_bytes{ 0 };
     std::atomic<uint64_t> m_bl2_boot_enc_decrypt_key_misses{ 0 };
     std::atomic<uint64_t> m_bl2_boot_enc_decrypt_dmi_failures{ 0 };
-    std::atomic<uint64_t> m_bl2_boot_enc_decrypt_direct_file_alias_hits{ 0 };
     std::atomic<uint64_t> m_bl2_boot_enc_decrypt_state_failures{ 0 };
     std::atomic<uint64_t> m_bl2_boot_enc_decrypt_unsupported{ 0 };
     std::atomic<uint32_t> m_bl2_boot_enc_last_enc_state{ 0 };
@@ -231,7 +226,6 @@ private:
     std::atomic<uint64_t> m_bl2_img_hash_hits{ 0 };
     std::atomic<uint64_t> m_bl2_img_hash_bytes{ 0 };
     std::atomic<uint64_t> m_bl2_img_hash_dmi_failures{ 0 };
-    std::atomic<uint64_t> m_bl2_img_hash_direct_file_alias_hits{ 0 };
     std::atomic<uint64_t> m_bl2_img_hash_state_failures{ 0 };
     std::atomic<uint64_t> m_bl2_img_hash_unsupported{ 0 };
     std::atomic<uint32_t> m_bl2_img_hash_last_hdr{ 0 };
@@ -354,10 +348,6 @@ private:
         p_bl2_delay_cycles_addr = param<uint64_t>("bl2_delay_cycles_addr", 0);
         p_bl2_delay_max_cycles = param<uint64_t>("bl2_delay_max_cycles", 50 * 1000 * 1000);
         p_bl2_delay_expected_hits = param<uint64_t>("bl2_delay_expected_hits", 3);
-        p_direct_file_aliases = param<std::string>("direct_file_aliases", "");
-        p_mmio_read_fastpath = param<std::string>("mmio_read_fastpath", "");
-        p_mmio_direct_fastpath_ranges =
-            param<std::string>("mmio_direct_fastpath_ranges", "");
     }
 
     bool hotpath_dmi_ptr(uint64_t address, uint64_t size, bool need_read,
@@ -382,24 +372,9 @@ private:
         return m_context.guest_read_bytes(address, size, out);
     }
 
-    bool hotpath_read_bytes_or_alias(uint64_t address, uint64_t size,
-                                     std::vector<uint8_t>& out,
-                                     bool& direct_file_alias)
-    {
-        return m_context.guest_read_bytes_or_alias(
-            address, size, out, direct_file_alias);
-    }
-
     bool hotpath_write_bytes(uint64_t address, const uint8_t* data, uint64_t size)
     {
         return m_context.guest_write_bytes(address, data, size);
-    }
-
-    bool hotpath_write_bytes_or_alias(uint64_t address, const uint8_t* data,
-                                      uint64_t size, bool& direct_file_alias)
-    {
-        return m_context.guest_write_bytes_or_alias(
-            address, data, size, direct_file_alias);
     }
 
     bool hotpath_write_u32(uint64_t address, uint32_t value)
@@ -1010,9 +985,7 @@ private:
         const uint64_t payload_addr = static_cast<uint64_t>(load_addr) + hdr_size;
         std::vector<uint8_t> input;
         std::vector<uint8_t> output(static_cast<size_t>(img_size));
-        bool direct_file_alias = false;
-        if (!hotpath_read_bytes_or_alias(payload_addr, img_size, input,
-                                         direct_file_alias)) {
+        if (!hotpath_read_bytes(payload_addr, img_size, input)) {
             m_bl2_load_accel_dmi_failures.fetch_add(1, std::memory_order_relaxed);
             write_hotpath_profile_file();
             return false;
@@ -1027,16 +1000,10 @@ private:
             return false;
         }
 
-        bool write_direct_file_alias = false;
-        if (!hotpath_write_bytes_or_alias(payload_addr, output.data(), img_size,
-                                          write_direct_file_alias)) {
+        if (!hotpath_write_bytes(payload_addr, output.data(), img_size)) {
             m_bl2_load_accel_dmi_failures.fetch_add(1, std::memory_order_relaxed);
             write_hotpath_profile_file();
             return false;
-        }
-        if (direct_file_alias || write_direct_file_alias) {
-            m_bl2_load_accel_direct_file_alias_hits.fetch_add(
-                1, std::memory_order_relaxed);
         }
         m_context.invalidate_guest_range(
             payload_addr, payload_addr + img_size - 1);
@@ -1209,8 +1176,7 @@ private:
 
         std::vector<uint8_t> input;
         std::vector<uint8_t> output(static_cast<size_t>(size));
-        bool direct_file_alias = false;
-        if (!hotpath_read_bytes_or_alias(buf, size, input, direct_file_alias)) {
+        if (!hotpath_read_bytes(buf, size, input)) {
             m_bl2_boot_enc_decrypt_dmi_failures.fetch_add(1, std::memory_order_relaxed);
             write_hotpath_profile_file();
             return false;
@@ -1231,16 +1197,10 @@ private:
             return false;
         }
 
-        bool write_direct_file_alias = false;
-        if (!hotpath_write_bytes_or_alias(buf, output.data(), size,
-                                          write_direct_file_alias)) {
+        if (!hotpath_write_bytes(buf, output.data(), size)) {
             m_bl2_boot_enc_decrypt_dmi_failures.fetch_add(1, std::memory_order_relaxed);
             write_hotpath_profile_file();
             return false;
-        }
-        if (direct_file_alias || write_direct_file_alias) {
-            m_bl2_boot_enc_decrypt_direct_file_alias_hits.fetch_add(
-                1, std::memory_order_relaxed);
         }
 
         m_context.invalidate_guest_range(buf, static_cast<uint64_t>(buf) + size - 1);
@@ -1340,30 +1300,18 @@ private:
         }
 
         std::vector<uint8_t> image;
-        bool direct_file_alias = false;
-        if (!hotpath_read_bytes_or_alias(image_header.load_addr, hash_size,
-                                         image, direct_file_alias)) {
+        if (!hotpath_read_bytes(image_header.load_addr, hash_size, image)) {
             m_bl2_img_hash_dmi_failures.fetch_add(1, std::memory_order_relaxed);
             write_hotpath_profile_file();
             return false;
         }
-        if (direct_file_alias) {
-            m_bl2_img_hash_direct_file_alias_hits.fetch_add(
-                1, std::memory_order_relaxed);
-        }
 
         std::vector<uint8_t> seed_bytes;
         if (seed_len != 0) {
-            bool seed_direct_file_alias = false;
-            if (!hotpath_read_bytes_or_alias(seed, seed_len, seed_bytes,
-                                             seed_direct_file_alias)) {
+            if (!hotpath_read_bytes(seed, seed_len, seed_bytes)) {
                 m_bl2_img_hash_dmi_failures.fetch_add(1, std::memory_order_relaxed);
                 write_hotpath_profile_file();
                 return false;
-            }
-            if (seed_direct_file_alias) {
-                m_bl2_img_hash_direct_file_alias_hits.fetch_add(
-                    1, std::memory_order_relaxed);
             }
         }
 
@@ -1712,7 +1660,6 @@ private:
             << "    \"bytes\": " << m_bl2_load_accel_bytes.load(std::memory_order_relaxed) << ",\n"
             << "    \"key_misses\": " << m_bl2_load_accel_key_misses.load(std::memory_order_relaxed) << ",\n"
             << "    \"dmi_failures\": " << m_bl2_load_accel_dmi_failures.load(std::memory_order_relaxed) << ",\n"
-            << "    \"direct_file_alias_hits\": " << m_bl2_load_accel_direct_file_alias_hits.load(std::memory_order_relaxed) << ",\n"
             << "    \"state_failures\": " << m_bl2_load_accel_state_failures.load(std::memory_order_relaxed) << ",\n"
             << "    \"unsupported\": " << m_bl2_load_accel_unsupported.load(std::memory_order_relaxed) << ",\n"
             << "    \"last_curr_img\": " << m_bl2_load_accel_last_curr_img.load(std::memory_order_relaxed) << ",\n"
@@ -1740,7 +1687,6 @@ private:
             << "    \"decrypt_bytes\": " << m_bl2_boot_enc_decrypt_bytes.load(std::memory_order_relaxed) << ",\n"
             << "    \"decrypt_key_misses\": " << m_bl2_boot_enc_decrypt_key_misses.load(std::memory_order_relaxed) << ",\n"
             << "    \"decrypt_dmi_failures\": " << m_bl2_boot_enc_decrypt_dmi_failures.load(std::memory_order_relaxed) << ",\n"
-            << "    \"decrypt_direct_file_alias_hits\": " << m_bl2_boot_enc_decrypt_direct_file_alias_hits.load(std::memory_order_relaxed) << ",\n"
             << "    \"decrypt_state_failures\": " << m_bl2_boot_enc_decrypt_state_failures.load(std::memory_order_relaxed) << ",\n"
             << "    \"decrypt_unsupported\": " << m_bl2_boot_enc_decrypt_unsupported.load(std::memory_order_relaxed) << ",\n"
             << "    \"last_enc_state\": \"" << hex_string(m_bl2_boot_enc_last_enc_state.load(std::memory_order_relaxed)) << "\",\n"
@@ -1759,7 +1705,6 @@ private:
             << "    \"hits\": " << m_bl2_img_hash_hits.load(std::memory_order_relaxed) << ",\n"
             << "    \"bytes\": " << m_bl2_img_hash_bytes.load(std::memory_order_relaxed) << ",\n"
             << "    \"dmi_failures\": " << m_bl2_img_hash_dmi_failures.load(std::memory_order_relaxed) << ",\n"
-            << "    \"direct_file_alias_hits\": " << m_bl2_img_hash_direct_file_alias_hits.load(std::memory_order_relaxed) << ",\n"
             << "    \"state_failures\": " << m_bl2_img_hash_state_failures.load(std::memory_order_relaxed) << ",\n"
             << "    \"unsupported\": " << m_bl2_img_hash_unsupported.load(std::memory_order_relaxed) << ",\n"
             << "    \"last_hdr\": \"" << hex_string(m_bl2_img_hash_last_hdr.load(std::memory_order_relaxed)) << "\",\n"
@@ -2240,10 +2185,7 @@ public:
         return p_hotpath_accel.get_value() || p_lms_accel.get_value() ||
                p_bl2_load_profile.get_value() || p_bl2_load_accel.get_value() ||
                p_bl2_boot_enc_accel.get_value() || p_bl2_img_hash_accel.get_value() ||
-               p_bl2_verify_sig_accel.get_value() || p_bl2_delay_accel.get_value() ||
-               !p_direct_file_aliases.get_value().empty() ||
-               !p_mmio_read_fastpath.get_value().empty() ||
-               !p_mmio_direct_fastpath_ranges.get_value().empty();
+               p_bl2_verify_sig_accel.get_value() || p_bl2_delay_accel.get_value();
     }
 
     bool needs_pc_entry_callback() const override
@@ -2256,10 +2198,6 @@ public:
 
     void configure_pc_watches(qemu::Cpu& cpu) override
     {
-        m_context.install_direct_file_aliases(p_direct_file_aliases.get_value());
-        m_context.install_mmio_read_fastpath(p_mmio_read_fastpath.get_value());
-        m_context.install_mmio_direct_fastpath_ranges(
-            p_mmio_direct_fastpath_ranges.get_value());
         if (!needs_pc_entry_callback()) {
             return;
         }

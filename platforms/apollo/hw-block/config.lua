@@ -129,10 +129,6 @@ primary_console_log = getenv_or(
     "QBOX_RDASPEN_PRIMARY_CONSOLE_LOG",
     root.."build/qbox-fvp-rd-aspen/qbox-primary-console.log")
 rse_uart_read_file = getenv_or("QBOX_RDASPEN_UART_READ_FILE", "/dev/null")
-primary_uart_read_file = getenv_or(
-    "QBOX_RDASPEN_PRIMARY_UART_READ_FILE",
-    "/dev/null")
-primary_uart_poll_read = primary_uart_read_file ~= "/dev/null"
 qemu_args = getenv_or("QBOX_RDASPEN_RSE_QEMU_ARGS", "")
 ap_qemu_args = getenv_or("QBOX_RDASPEN_AP_QEMU_ARGS", "")
 ap_pc_trace = getenv_or("QBOX_RDASPEN_AP_PC_TRACE", "false") == "true"
@@ -246,19 +242,6 @@ rse_bl2_boot_enc_slots =
     tonumber(getenv_or("QBOX_RDASPEN_RSE_BL2_BOOT_ENC_SLOTS", "2"))
 rse_bl2_boot_enc_max_bytes =
     tonumber(getenv_or("QBOX_RDASPEN_RSE_BL2_BOOT_ENC_MAX_BYTES", "4096"))
-rse_direct_si_sram_alias =
-    getenv_or("QBOX_RDASPEN_RSE_DIRECT_SI_SRAM_ALIAS", "false") == "true"
-rse_direct_file_aliases =
-    getenv_or("QBOX_RDASPEN_RSE_DIRECT_FILE_ALIASES", "")
-rse_mmio_read_fastpath = getenv_or(
-    "QBOX_RDASPEN_RSE_MMIO_READ_FASTPATH",
-    getenv_or("QBOX_MMIO_READ_FASTPATH", ""))
-rse_mmio_direct_fastpath_ranges = getenv_or(
-    "QBOX_RDASPEN_RSE_MMIO_DIRECT_FASTPATH_RANGES",
-    getenv_or("QBOX_MMIO_DIRECT_FASTPATH_RANGES", ""))
-rse_direct_si_sram_code_alias_size = getenv_number_or(
-    "QBOX_RDASPEN_RSE_DIRECT_SI_SRAM_CODE_ALIAS_SIZE",
-    "0x00100000")
 cc3xx_trace = getenv_or("QBOX_RDASPEN_CC3XX_TRACE", "false") == "true"
 cc3xx_trace_limit = tonumber(getenv_or("QBOX_RDASPEN_CC3XX_TRACE_LIMIT", "64"))
 cc3xx_trace_filter = getenv_or("QBOX_RDASPEN_CC3XX_TRACE_FILTER", "all")
@@ -367,16 +350,6 @@ RSE_HOST_ACCESS_BASE_NS = 0x60000000
 RSE_HOST_ACCESS_BASE_S = 0x70000000
 RSE_HOST_ACCESS_SIZE = 0x10000000
 
--- RSE image aliases into host-visible SI SRAM
-HOST_SI_CL0_IMG_HDR_LOGICAL_BASE = 0x70083C00
-HOST_SI_CL0_IMG_CODE_LOGICAL_BASE = 0x70084000
-HOST_SI_CL0_HEADER_FILE_OFFSET = 0x000FFC00
-HOST_SI_CL0_CODE_FILE_OFFSET = 0x00000000
-HOST_SI_CL1_IMG_HDR_LOGICAL_BASE = 0x70185C00
-HOST_SI_CL1_IMG_CODE_LOGICAL_BASE = 0x70186000
-HOST_SI_CL1_HEADER_FILE_OFFSET = 0x000FFC00
-HOST_SI_CL1_CODE_FILE_OFFSET = 0x00000000
-HOST_SI_IMG_HEADER_ALIAS_SIZE = 0x00000400
 RSE_HOST_UART0_BASE_NS = RSE_HOST_ACCESS_BASE_NS + 0x0FF00000
 RSE_HOST_UART0_BASE_S = RSE_HOST_ACCESS_BASE_S + 0x0FF00000
 RSE_NSACFG_BASE_NS = 0x40080000
@@ -532,40 +505,6 @@ HOST_SI_CL0_SRAM_PHYS_BASE = 0x4000120000000
 HOST_SI_CL1_SRAM_PHYS_BASE = 0x4000140000000
 HOST_SI_SRAM_WINDOW_SIZE = 0x01000000
 HOST_SI_CONTROL_WINDOW_SIZE = 0x00010000
-function direct_file_alias_spec(address, size, file_offset, access, path)
-    assert(path ~= "", "direct file alias requires a map file")
-    return string.format("0x%x:0x%x:0x%x:%s:%s",
-                         address, size, file_offset, access, path)
-end
-
-if rse_direct_si_sram_alias and rse_direct_file_aliases == "" then
-    rse_direct_file_aliases = table.concat({
-        direct_file_alias_spec(
-            HOST_SI_CL0_IMG_HDR_LOGICAL_BASE,
-            HOST_SI_IMG_HEADER_ALIAS_SIZE,
-            HOST_SI_CL0_HEADER_FILE_OFFSET,
-            "rw",
-            host_si_cl0_sram_map_file);
-        direct_file_alias_spec(
-            HOST_SI_CL0_IMG_CODE_LOGICAL_BASE,
-            rse_direct_si_sram_code_alias_size,
-            HOST_SI_CL0_CODE_FILE_OFFSET,
-            "rw",
-            host_si_cl0_sram_map_file);
-        direct_file_alias_spec(
-            HOST_SI_CL1_IMG_HDR_LOGICAL_BASE,
-            HOST_SI_IMG_HEADER_ALIAS_SIZE,
-            HOST_SI_CL1_HEADER_FILE_OFFSET,
-            "rw",
-            host_si_cl1_sram_map_file);
-        direct_file_alias_spec(
-            HOST_SI_CL1_IMG_CODE_LOGICAL_BASE,
-            rse_direct_si_sram_code_alias_size,
-            HOST_SI_CL1_CODE_FILE_OFFSET,
-            "rw",
-            host_si_cl1_sram_map_file);
-    }, ";")
-end
 HOST_AP_SI_SCMI_MHU_PBX_PHYS_BASE = 0x400003B080000
 HOST_AP_SI_SCMI_MHU_MBX_PHYS_BASE = 0x400003B0C0000
 HOST_AP_SI_MHU_FRAME_SIZE = 0x00030000
