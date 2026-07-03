@@ -39,7 +39,7 @@ index 82843c1543a4..f19bbc4a41fd 100644
 +#include <string>
 +#include <unordered_map>
  #include <vector>
- 
+
  #include <tlm>
 @@ -86,6 +95,40 @@ protected:
      qemu::Device m_dev;
@@ -79,13 +79,13 @@ index 82843c1543a4..f19bbc4a41fd 100644
 +    uint64_t m_addr_profile_shift = 12;
 +    uint64_t m_addr_profile_limit = 64;
 +    std::unordered_map<uint64_t, addr_profile_bucket> m_addr_profile;
- 
+
      std::atomic<bool> m_finished = false;
- 
+
 @@ -140,6 +183,177 @@ protected:
          m_initiator.initiator_customize_tlm_payload(trans);
      }
- 
+
 +    static std::string trim_copy(const std::string& text)
 +    {
 +        const auto start = text.find_first_not_of(" \t\r\n");
@@ -273,14 +273,14 @@ index 82843c1543a4..f19bbc4a41fd 100644
 +            }
              return qemu::MemoryRegionOps::MemTxError;
          }
- 
+
 @@ -692,11 +912,15 @@ protected:
          init_payload(trans, command, addr, val, size);
          QemuMemTxAttrsTlmExtension attrs_ext(attrs);
          trans.set_extension(&attrs_ext);
 +        std::atomic<uint64_t>* path_count = &m_profile.regular;
 +        std::atomic<uint64_t>* path_ns = &m_profile.regular_ns;
- 
+
          if (trans.get_extension<ExclusiveAccessTlmExtension>()) {
              /* in the case of an exclusive access keep the iolock (and assume NO side-effects)
               * clearly dangerous, but exclusives are not guaranteed to work on IO space anyway
@@ -291,7 +291,7 @@ index 82843c1543a4..f19bbc4a41fd 100644
          } else {
              bool qemu_io_locked = m_inst.g_rec_qemu_io_lock.try_lock();
 @@ -715,10 +939,16 @@ protected:
- 
+
              /* Force re-entrant code to use a direct access (safe for reentrancy with no side effects) */
              if (reentrancy > 1) {
 +                path_count = &m_profile.reentrant_direct;
@@ -306,11 +306,11 @@ index 82843c1543a4..f19bbc4a41fd 100644
 +                path_ns = &m_profile.regular_ns;
                  do_regular_access(trans);
              }
- 
+
 @@ -745,9 +975,100 @@ protected:
              break;
          }
- 
+
 +        if (trans.is_dmi_allowed() && m_profile_enabled) {
 +            m_profile.dmi_allowed.fetch_add(1, std::memory_order_relaxed);
 +        }
@@ -318,7 +318,7 @@ index 82843c1543a4..f19bbc4a41fd 100644
 +        profile_record(command, size, *path_count, *path_ns, profile_start, result);
          return result;
      }
- 
+
 +    void write_profile_file()
 +    {
 +        if (!m_profile_enabled || m_profile_file.empty()) {
@@ -429,21 +429,20 @@ index 82843c1543a4..f19bbc4a41fd 100644
          TlmInitiatorSocket::bind(*static_cast<tlm::tlm_bw_transport_if<>*>(this));
      }
 @@ -794,6 +1127,7 @@ public:
- 
+
      void end_of_simulation()
      {
 +        write_profile_file();
          m_finished = true;
      }
- 
+
 @@ -811,6 +1145,7 @@ public:
          }
  #endif
          //        dmimgr_unlock();
 +        write_profile_file();
      }
- 
-     void qemu_map(qemu::MemoryListener& listener, uint64_t addr, uint64_t len)
--- 
-2.43.0
 
+     void qemu_map(qemu::MemoryListener& listener, uint64_t addr, uint64_t len)
+--
+2.43.0
