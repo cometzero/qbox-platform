@@ -301,14 +301,14 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_secure_console_file = enable_ap_cpus and {
         moduletype = "char_backend_file";
-        read_file = "/dev/null";
+        read_file = secure_uart_read_file;
         write_file = secure_console_log;
         baudrate = 0;
     } or nil
 
     platform.ap_primary_console_file = enable_ap_cpus and {
         moduletype = "char_backend_file";
-        read_file = "/dev/null";
+        read_file = primary_uart_read_file;
         write_file = primary_console_log;
         baudrate = 0;
     } or nil
