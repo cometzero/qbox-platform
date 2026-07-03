@@ -545,6 +545,8 @@ function rse.define(ctx, platform)
         moduletype = "char_backend_file";
         read_file = rse_uart_read_file;
         write_file = rse_log;
+        poll_read = rse_uart_read_file ~= "/dev/null";
+        poll_interval_ms = uart_poll_interval_ms;
         baudrate = 0;
     }
 

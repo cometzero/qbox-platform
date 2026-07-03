@@ -303,6 +303,8 @@ function ap_compute.define(ctx, platform)
         moduletype = "char_backend_file";
         read_file = secure_uart_read_file;
         write_file = secure_console_log;
+        poll_read = secure_uart_read_file ~= "/dev/null";
+        poll_interval_ms = uart_poll_interval_ms;
         baudrate = 0;
     } or nil
 
@@ -310,6 +312,10 @@ function ap_compute.define(ctx, platform)
         moduletype = "char_backend_file";
         read_file = primary_uart_read_file;
         write_file = primary_console_log;
+        poll_read = primary_uart_read_file ~= "/dev/null";
+        poll_interval_ms = tonumber(getenv_or(
+            "QBOX_RDASPEN_PRIMARY_UART_POLL_INTERVAL_MS",
+            tostring(uart_poll_interval_ms)));
         baudrate = 0;
     } or nil
 

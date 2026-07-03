@@ -40,6 +40,7 @@ local si_cl1_log = getenv_or(
 local si_cl1_uart_read_file = getenv_or(
     "QBOX_APOLLO_SI_CL1_UART_READ_FILE",
     "/dev/null")
+local si_cl1_uart_poll_read = si_cl1_uart_read_file ~= "/dev/null"
 local accel = getenv_or("QBOX_APOLLO_SI_CL1_ACCEL", "tcg")
 local qemu_args = getenv_or("QBOX_APOLLO_SI_CL1_QEMU_ARGS", "")
 local mhu_trace = getenv_or("QBOX_APOLLO_SI_CL1_MHU_TRACE", "false") == "true"
@@ -156,6 +157,8 @@ platform = {
         moduletype = "char_backend_file";
         read_file = si_cl1_uart_read_file;
         write_file = si_cl1_log;
+        poll_read = si_cl1_uart_poll_read;
+        poll_interval_ms = 100;
         baudrate = 0;
     };
 

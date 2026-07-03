@@ -135,6 +135,9 @@ secure_uart_read_file = getenv_or(
 primary_uart_read_file = getenv_or(
     "QBOX_RDASPEN_PRIMARY_UART_READ_FILE",
     "/dev/null")
+uart_poll_interval_ms = tonumber(getenv_or(
+    "QBOX_RDASPEN_UART_POLL_INTERVAL_MS",
+    "100"))
 qemu_args = getenv_or("QBOX_RDASPEN_RSE_QEMU_ARGS", "")
 ap_qemu_args = getenv_or("QBOX_RDASPEN_AP_QEMU_ARGS", "")
 ap_pc_trace = getenv_or("QBOX_RDASPEN_AP_PC_TRACE", "false") == "true"
