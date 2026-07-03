@@ -377,11 +377,6 @@ private:
         return m_context.guest_write_bytes(address, data, size);
     }
 
-    bool hotpath_write_u32(uint64_t address, uint32_t value)
-    {
-        return m_context.guest_write_u32(address, value);
-    }
-
     static std::string profile_hex_string(uint64_t value)
     {
         std::ostringstream ss;
