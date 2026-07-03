@@ -31,7 +31,7 @@ public:
         , m_qemu_inst(qemu_inst)
         , m_router("router")
         , m_cpu("cpu", m_qemu_inst)
-        , m_rse_accel(m_cpu, std::string(m_cpu.name()) + ".")
+        , m_rse_accel(m_cpu, std::string(m_cpu.name()) + ".", m_cpu.name())
     {
         unsigned int irq_num =
             m_broker.get_param_handle(std::string(this->name()) + ".cpu.nvic.num_irq")

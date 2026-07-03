@@ -52,6 +52,7 @@ private:
     QemuCpuSemanticContext& m_context;
     cci::cci_broker_handle m_broker;
     std::string m_parameter_prefix;
+    std::string m_cpu_name;
     ConfigValue<bool> p_hotpath_accel;
     ConfigValue<uint64_t> p_hotpath_memcpy_addr;
     ConfigValue<uint64_t> p_hotpath_memset_addr;
@@ -358,12 +359,36 @@ private:
 
     bool hotpath_read_u32(uint64_t address, uint32_t& value)
     {
-        return m_context.guest_read_u32(address, value);
+        uint8_t* ptr = nullptr;
+        if (hotpath_dmi_ptr(address, sizeof(value), true, false, ptr)) {
+            std::memcpy(&value, ptr, sizeof(value));
+            return true;
+        }
+
+        std::vector<uint8_t> bytes;
+        if (!hotpath_read_bytes(address, sizeof(value), bytes) ||
+            bytes.size() != sizeof(value)) {
+            return false;
+        }
+        std::memcpy(&value, bytes.data(), sizeof(value));
+        return true;
     }
 
     bool hotpath_read_u8(uint64_t address, uint8_t& value)
     {
-        return m_context.guest_read_u8(address, value);
+        uint8_t* ptr = nullptr;
+        if (hotpath_dmi_ptr(address, sizeof(value), true, false, ptr)) {
+            value = *ptr;
+            return true;
+        }
+
+        std::vector<uint8_t> bytes;
+        if (!hotpath_read_bytes(address, sizeof(value), bytes) ||
+            bytes.size() != sizeof(value)) {
+            return false;
+        }
+        value = bytes[0];
+        return true;
     }
 
     bool hotpath_read_bytes(uint64_t address, uint64_t size,
@@ -1595,8 +1620,8 @@ private:
         std::lock_guard<std::mutex> lock(m_hotpath_profile_lock);
         std::ofstream out(profile_file, std::ios::out | std::ios::trunc);
         if (!out) {
-            std::cerr << m_context.semantic_cpu_name() << " hotpath_profile_error file="
-                      << profile_file << std::endl;
+            std::cerr << m_cpu_name << " hotpath_profile_error file=" << profile_file
+                      << std::endl;
             return;
         }
 
@@ -1605,7 +1630,7 @@ private:
         };
 
         out << "{\n"
-            << "  \"name\": \"" << m_context.semantic_cpu_name() << "\",\n"
+            << "  \"name\": \"" << m_cpu_name << "\",\n"
             << "  \"enabled\": " << (p_hotpath_accel.get_value() ? "true" : "false") << ",\n"
             << "  \"memcpy_addr\": \"" << hex_string(p_hotpath_memcpy_addr.get_value()) << "\",\n"
             << "  \"memset_addr\": \"" << hex_string(p_hotpath_memset_addr.get_value()) << "\",\n"
@@ -2167,11 +2192,19 @@ private:
     }
 
 public:
-    RseCpuAccel(QemuCpuSemanticContext& context, std::string parameter_prefix)
+    RseCpuAccel(QemuCpuSemanticContext& context, std::string parameter_prefix,
+                std::string cpu_name = {})
         : m_context(context)
         , m_broker(cci::cci_get_broker())
         , m_parameter_prefix(std::move(parameter_prefix))
+        , m_cpu_name(std::move(cpu_name))
     {
+        if (m_cpu_name.empty()) {
+            m_cpu_name = m_parameter_prefix;
+            if (!m_cpu_name.empty() && m_cpu_name.back() == '.') {
+                m_cpu_name.pop_back();
+            }
+        }
         load_config();
     }
 
