@@ -134,6 +134,9 @@ function si_cl0.enable(ctx, platform)
         SI_CL0_REFCLK_CNTCONTROL_BASE + SI_CL0_REFCLK_CNTCONTROL_SIZE
     local SI_CL0_REFCLK_CNTSYNC_BASE =
         SI_CL0_REFCLK_CNTREAD_BASE + SI_CL0_REFCLK_CNTCONTROL_SIZE
+    local SI_CL0_ATW5_CSS_COUNTERS_TIMERS_PROBE_BASE =
+        SI_CL0_ATW5_CSS_COUNTERS_TIMERS_BASE +
+        SI_CL0_ATW5_CSS_COUNTERS_TIMERS_SIZE - 4
     local SI_CL0_ATW6_AP_GIC_BASE = 0xd0770000
     local SI_CL0_ATW6_AP_GICD_MULTIVIEW_SIZE = 0x00010000
     local SI_CL0_ATW6_AP_GICR_BASE = SI_CL0_ATW6_AP_GIC_BASE + 0x00080000
@@ -165,7 +168,6 @@ function si_cl0.enable(ctx, platform)
         { name = "smd_expansion"; base = 0xd0000000; size = 0x00020000 };
         { name = "systop_pik"; base = 0xd0020000; size = 0x00002000 };
         { name = "system_id"; base = 0xd0030000; size = 0x00010000 };
-        { name = "css_counters_timers"; base = 0xd0040000; size = 0x00030000 };
         { name = "ni710ae_cluster0_fmu"; base = 0xd0070000; size = 0x00010000 };
         { name = "ni710ae_cluster1_fmu"; base = 0xd0170000; size = 0x00010000 };
         { name = "ni710ae_cluster2_fmu"; base = 0xd0270000; size = 0x00010000 };
@@ -470,7 +472,7 @@ function si_cl0.enable(ctx, platform)
             address = SI_CL0_REFCLK_CNTSYNC_BASE;
             size = SI_CL0_REFCLK_CNTCONTROL_SIZE;
             bind = "&host_router.initiator_socket";
-            priority = 0;
+            priority = 1;
         };
         log_level = 0;
     }
@@ -484,6 +486,19 @@ function si_cl0.enable(ctx, platform)
             bind = "&host_router.initiator_socket";
             priority = 0;
         };
+        log_level = 0;
+    }
+
+    platform.si_cl0_atu_check_css_counters_timers_tail = {
+        moduletype = "gs_memory";
+        dmi = false;
+        target_socket = {
+            address = SI_CL0_ATW5_CSS_COUNTERS_TIMERS_PROBE_BASE;
+            size = 0x00000004;
+            bind = "&host_router.initiator_socket";
+            priority = 0;
+        };
+        init_mem = true;
         log_level = 0;
     }
 
