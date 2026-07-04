@@ -357,6 +357,18 @@ private:
         return m_context.guest_dmi_ptr(address, size, need_read, need_write, ptr);
     }
 
+    static void add_pc_entry_watch(qemu::Cpu& cpu, bool enabled, uint64_t pc)
+    {
+        if (!enabled) {
+            return;
+        }
+
+        const uint64_t entry = pc & ~1ull;
+        if (entry != 0) {
+            cpu.add_pc_entry_watch(entry);
+        }
+    }
+
     bool hotpath_read_u32(uint64_t address, uint32_t& value)
     {
         uint8_t* ptr = nullptr;
@@ -2229,8 +2241,41 @@ public:
         if (!needs_pc_entry_callback()) {
             return;
         }
-        if (p_bl2_delay_accel.get_value() && p_bl2_delay_cycles_addr.get_value() != 0) {
-            cpu.add_pc_entry_watch(p_bl2_delay_cycles_addr.get_value() & ~1ull);
+
+        add_pc_entry_watch(cpu, p_lms_accel.get_value(),
+                           p_lms_verify_addr.get_value());
+
+        add_pc_entry_watch(cpu, p_bl2_load_profile.get_value(),
+                           p_bl2_boot_go_for_image_id_addr.get_value());
+        add_pc_entry_watch(cpu,
+                           p_bl2_load_profile.get_value() ||
+                               p_bl2_load_accel.get_value(),
+                           p_bl2_boot_load_image_to_sram_addr.get_value());
+        add_pc_entry_watch(cpu, p_bl2_load_profile.get_value(),
+                           p_bl2_boot_enc_load_addr.get_value());
+        add_pc_entry_watch(cpu,
+                           p_bl2_load_profile.get_value() ||
+                               p_bl2_load_accel.get_value() ||
+                               p_bl2_boot_enc_accel.get_value(),
+                           p_bl2_boot_enc_decrypt_addr.get_value());
+        add_pc_entry_watch(cpu, p_bl2_load_profile.get_value(),
+                           p_bl2_bootutil_img_validate_addr.get_value());
+        add_pc_entry_watch(cpu,
+                           p_bl2_load_profile.get_value() ||
+                               p_bl2_img_hash_accel.get_value(),
+                           p_bl2_bootutil_img_hash_addr.get_value());
+        add_pc_entry_watch(cpu,
+                           p_bl2_load_profile.get_value() ||
+                               p_bl2_verify_sig_accel.get_value(),
+                           p_bl2_bootutil_verify_sig_addr.get_value());
+        add_pc_entry_watch(cpu,
+                           p_bl2_load_accel.get_value() ||
+                               p_bl2_boot_enc_accel.get_value(),
+                           p_bl2_boot_enc_set_key_addr.get_value());
+
+        if (p_bl2_delay_accel.get_value() &&
+            p_bl2_delay_cycles_addr.get_value() != 0) {
+            add_pc_entry_watch(cpu, true, p_bl2_delay_cycles_addr.get_value());
             m_bl2_delay_watch_active.store(true, std::memory_order_relaxed);
         }
         m_pc_entry_registered = true;
