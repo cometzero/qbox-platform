@@ -11,38 +11,38 @@ required.
 The primary-compute direct-boot entrypoint is:
 
 ```text
-tools/qbox-platform/platforms/apollo/apollo-pc.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-pc.lua
 ```
 
 The SI CL1 isolated Zephyr entrypoint is:
 
 ```text
-tools/qbox-platform/platforms/apollo/apollo-si-cl1.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-si-cl1.lua
 ```
 
 The full-system QBox virtual platform entrypoint is:
 
 ```text
-tools/qbox-platform/platforms/apollo/apollo-qvp.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-qvp.lua
 ```
 
 The full-system entrypoint composes subsystem-owned Apollo hardware blocks:
 
 ```text
-tools/qbox-platform/platforms/apollo/hw-block/config.lua
-tools/qbox-platform/platforms/apollo/hw-block/fabric.lua
-tools/qbox-platform/platforms/apollo/hw-block/rse.lua
-tools/qbox-platform/platforms/apollo/hw-block/ap_compute.lua
-tools/qbox-platform/platforms/apollo/hw-block/ros.lua
-tools/qbox-platform/platforms/apollo/hw-block/system_mgmt.lua
-tools/qbox-platform/platforms/apollo/hw-block/si_cl0.lua
-tools/qbox-platform/platforms/apollo/hw-block/si_cl1.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/config.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/fabric.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/rse.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/ap_compute.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/ros.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/system_mgmt.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl0.lua
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl1.lua
 ```
 
 Hardware-block helpers used by the full-system entrypoint live under:
 
 ```text
-tools/qbox-platform/platforms/apollo/hw-block/
+hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/
 ```
 
 The current full-system block helpers are:
