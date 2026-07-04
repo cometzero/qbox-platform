@@ -71,6 +71,26 @@ AP firmware-chain and AP hardware construction live in `hw-block/ap_compute.lua`
 SI host-visible SRAM/PPU windows live in `hw-block/si_cl0.lua` and
 `hw-block/si_cl1.lua`.
 
+## Timer Topology
+
+Apollo QBox keeps CPU-local and platform REFCLK timers on separate model
+paths.
+
+- CPU internal Arm generic timers remain per-core QEMU `ARMCPU` timers. Their
+  outputs are GIC PPIs, so they are not represented by the AP REFCLK MMIO
+  device.
+- AP REFCLK is a 125MHz Arm memory-mapped generic timer exposed through the
+  reusable Arm MMIO QEMU/QBox path.
+- AP REFCLK frame 0 maps the non-secure `AP_SYS_CNT_BASE_NS` view and drives
+  SPI 49.
+- AP REFCLK frame 1 maps the secure `AP_SYS_CNT_BASE_S` view and drives
+  SPI 48.
+- AP REFCLK does not use `qemu_hexagon_qtimer`, `qct-qtimer`, or a
+  `qct-qtimer` compatibility alias. Those paths remain outside the Apollo
+  Arm generic timer contract.
+- SI0, CSS, and RSE counter windows use the `host_gtimer` control/read/sync
+  frame model for REFCLK counter behavior.
+
 ## Build Local Artifacts
 
 ```bash
