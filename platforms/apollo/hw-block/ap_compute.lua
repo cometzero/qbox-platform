@@ -344,35 +344,26 @@ function ap_compute.define(ctx, platform)
     } or nil
 
     platform.ap_timer_mem = enable_ap_cpus and {
-        moduletype = "qemu_hexagon_qtimer";
+        moduletype = "qemu_arm_arch_timer_mmio";
         args = {"&platform.ap_qemu_inst"};
-        nr_frames = 1;
-        nr_views = 1;
-        cnttid = 0x1;
+        cntfrq = 125000000;
+        nr_frames = 2;
+        view_size = AP_SYS_TIMER_SIZE;
+        frame_offset_0 = AP_SYS_CNT_BASE_NS - AP_SYS_TIMCTL_BASE;
+        frame_id_0 = 0;
+        frame_offset_1 = AP_SYS_CNT_BASE_S - AP_SYS_TIMCTL_BASE;
+        frame_id_1 = 1;
         mem = {
             address = AP_SYS_TIMCTL_BASE;
-            size = AP_SYS_TIMER_SIZE;
-            bind = "&host_router.initiator_socket";
-        };
-        mem_view = {
-            address = AP_SYS_CNT_BASE_NS;
-            size = AP_SYS_TIMER_SIZE;
+            size = (AP_SYS_CNT_BASE_NS - AP_SYS_TIMCTL_BASE) + AP_SYS_TIMER_SIZE;
             bind = "&host_router.initiator_socket";
         };
         irq = {
-            {bind = "&ap_gic.spi_in_"..AP_SYS_TIMER_IRQ};
+            -- frame 0 is the non-secure AP REFCLK frame.
+            {bind = "&ap_gic.spi_in_"..AP_SYS_TIMER_IRQ_NS};
+            -- frame 1 is the secure AP REFCLK frame.
+            {bind = "&ap_gic.spi_in_"..AP_SYS_TIMER_IRQ_S};
         };
-    } or nil
-
-    platform.ap_secure_timer_frame = enable_ap_cpus and {
-        moduletype = "gs_memory";
-        target_socket = {
-            address = AP_SYS_CNT_BASE_S;
-            size = AP_SYS_TIMER_SIZE;
-            bind = "&host_router.initiator_socket";
-        };
-        init_mem = true;
-        log_level = 0;
     } or nil
 
     -- RD-Aspen AP BL2 refreshes the secure SBSA watchdog in panic/error paths.
@@ -644,8 +635,6 @@ function ap_compute.enable_ap_view_router(ctx, platform)
     bind_ap_socket(platform.ap_secure_uart, "target_socket")
     bind_ap_socket(platform.ap_primary_uart, "target_socket")
     bind_ap_socket(platform.ap_timer_mem, "mem")
-    bind_ap_socket(platform.ap_timer_mem, "mem_view")
-    bind_ap_socket(platform.ap_secure_timer_frame, "target_socket")
     bind_ap_socket(platform.ap_secure_wdog, "target_socket")
     bind_ap_socket(platform.ap_secure_wdog_refresh, "target_socket")
     bind_ap_socket(platform.ap_sid, "target_socket")
