@@ -179,6 +179,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     nvic_armv7m
     ApolloRseCPU
     qemu_cc3xx
+    qemu_arm_arch_timer_mmio
     qemu_hexagon_qtimer
     mhu320ae
     gicx00_multiview
