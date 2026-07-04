@@ -395,7 +395,8 @@ function rse.define(ctx, platform)
                             "&rse_router.target_socket") or nil
 
     platform.rse_syscntr_cntrl_regs = {
-        moduletype = "gs_memory";
+        moduletype = "host_gtimer";
+        counter_control = true;
         target_socket = {
             address = RSE_SYSCNTR_CNTRL_BASE_S;
             size = 0x00001000;
@@ -405,7 +406,8 @@ function rse.define(ctx, platform)
     }
 
     platform.rse_syscntr_read_regs = {
-        moduletype = "gs_memory";
+        moduletype = "host_gtimer";
+        counter_read = true;
         target_socket = {
             address = RSE_SYSCNTR_READ_BASE_S;
             size = 0x00001000;

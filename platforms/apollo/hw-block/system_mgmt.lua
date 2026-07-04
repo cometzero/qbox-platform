@@ -33,6 +33,9 @@ system_mgmt.ownership = {
         "host_scr";
         "host_system_pll";
         "host_gtimer";
+        "host_css_counters_timers";
+        "host_css_counters_timers_read";
+        "host_css_counters_timers_sync";
     };
 }
 
@@ -372,13 +375,35 @@ function system_mgmt.define(ctx, platform)
     }
 
     platform.host_css_counters_timers = {
-        moduletype = "gs_memory";
+        moduletype = "host_gtimer";
+        counter_control = true;
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE;
-            size = HOST_CSS_COUNTERS_TIMERS_SIZE;
+            size = 0x00010000;
             bind = "&host_router.initiator_socket";
         };
-        init_mem = true;
+        log_level = 0;
+    }
+
+    platform.host_css_counters_timers_read = {
+        moduletype = "host_gtimer";
+        counter_read = true;
+        target_socket = {
+            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00010000;
+            size = 0x00010000;
+            bind = "&host_router.initiator_socket";
+        };
+        log_level = 0;
+    }
+
+    platform.host_css_counters_timers_sync = {
+        moduletype = "host_gtimer";
+        sync_frame = true;
+        target_socket = {
+            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00020000;
+            size = 0x00010000;
+            bind = "&host_router.initiator_socket";
+        };
         log_level = 0;
     }
 

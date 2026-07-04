@@ -130,6 +130,10 @@ function si_cl0.enable(ctx, platform)
     local SI_CL0_ATW5_CSS_COUNTERS_TIMERS_SIZE = 0x00030000
     local SI_CL0_REFCLK_CNTCONTROL_BASE = SI_CL0_ATW5_CSS_COUNTERS_TIMERS_BASE
     local SI_CL0_REFCLK_CNTCONTROL_SIZE = 0x00010000
+    local SI_CL0_REFCLK_CNTREAD_BASE =
+        SI_CL0_REFCLK_CNTCONTROL_BASE + SI_CL0_REFCLK_CNTCONTROL_SIZE
+    local SI_CL0_REFCLK_CNTSYNC_BASE =
+        SI_CL0_REFCLK_CNTREAD_BASE + SI_CL0_REFCLK_CNTCONTROL_SIZE
     local SI_CL0_ATW6_AP_GIC_BASE = 0xd0770000
     local SI_CL0_ATW6_AP_GICD_MULTIVIEW_SIZE = 0x00010000
     local SI_CL0_ATW6_AP_GICR_BASE = SI_CL0_ATW6_AP_GIC_BASE + 0x00080000
@@ -448,19 +452,32 @@ function si_cl0.enable(ctx, platform)
     }
 
     platform.si_cl0_css_counters_timers_window = {
-        moduletype = "gs_memory";
-        dmi = false;
+        moduletype = "host_gtimer";
+        counter_read = true;
         target_socket = {
-            address = SI_CL0_ATW5_CSS_COUNTERS_TIMERS_BASE;
-            size = SI_CL0_ATW5_CSS_COUNTERS_TIMERS_SIZE;
+            address = SI_CL0_REFCLK_CNTREAD_BASE;
+            size = SI_CL0_REFCLK_CNTCONTROL_SIZE;
             bind = "&host_router.initiator_socket";
-            priority = 10;
+            priority = 0;
+        };
+        log_level = 0;
+    }
+
+    platform.si_cl0_css_counters_timers_sync = {
+        moduletype = "host_gtimer";
+        sync_frame = true;
+        target_socket = {
+            address = SI_CL0_REFCLK_CNTSYNC_BASE;
+            size = SI_CL0_REFCLK_CNTCONTROL_SIZE;
+            bind = "&host_router.initiator_socket";
+            priority = 0;
         };
         log_level = 0;
     }
 
     platform.si_cl0_refclk_cntcontrol = {
         moduletype = "host_gtimer";
+        counter_control = true;
         target_socket = {
             address = SI_CL0_REFCLK_CNTCONTROL_BASE;
             size = SI_CL0_REFCLK_CNTCONTROL_SIZE;
