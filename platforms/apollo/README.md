@@ -132,7 +132,7 @@ It forwards `--rse-fast-boot-sram-dmi` to the RSE runner and sets
 transferable shared-memory DMI instead of direct-file aliases.
 
 ```bash
-./run_qbox.sh
+./run_qbox_local.sh
 ```
 
 For a bounded headless command, use:
@@ -169,7 +169,7 @@ The command should print nothing. Use the legacy file-backed SRAM aliases only
 for explicit debug or compatibility rollback:
 
 ```bash
-./run_qbox.sh --legacy-file-backed-sram
+./run_qbox_local.sh --legacy-file-backed-sram
 ```
 
 For direct RSE-runner debugging, the legacy equivalent is:

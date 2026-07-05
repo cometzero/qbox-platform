@@ -114,7 +114,7 @@ After local build artifacts exist, launch the Apollo full-system QBox demo from
 the workspace root:
 
 ```bash
-./run_qbox.sh
+./run_qbox_local.sh
 ```
 
 For bounded headless validation:
@@ -141,7 +141,7 @@ To package existing local-build outputs into a QBox-runnable image set:
 
 ```bash
 ./local_build.sh --package
-./run_qbox.sh --local-build-dir build/local-apollo-fvp/package/qbox/local-build
+./run_qbox_local.sh --local-build-dir build/local-apollo-fvp/package/qbox/local-build
 ```
 
 ## Related Docs
