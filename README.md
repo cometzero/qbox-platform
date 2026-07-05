@@ -64,7 +64,7 @@ From the Arm Auto Solutions workspace root, build the Apollo QBox platform
 dependencies with:
 
 ```bash
-./local-build.sh qbox
+./local_build.sh qbox
 ```
 
 The workspace helper configures this overlay as the CMake source tree and
@@ -140,7 +140,7 @@ Runtime evidence is written under `build/qbox-apollo-fvp/`.
 To package existing local-build outputs into a QBox-runnable image set:
 
 ```bash
-./local-build.sh package
+./local_build.sh --package
 ./run_qbox.sh --local-build-dir build/local-apollo-fvp/package/qbox/local-build
 ```
 

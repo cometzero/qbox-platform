@@ -94,7 +94,7 @@ paths.
 ## Build Local Artifacts
 
 ```bash
-./local-build.sh build
+./local_build.sh build
 ```
 
 The direct-boot runner consumes:
@@ -121,7 +121,7 @@ build/qbox-apollo-fvp/apollo-fvp-direct.overlay.dtbo
 ## Build QBox Targets
 
 ```bash
-./local-build.sh qbox
+./local_build.sh qbox
 ```
 
 ## Full-System RSE-First Boot
