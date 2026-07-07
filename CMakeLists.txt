@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 project(qbox_platform VERSION 0.1)
 include(CTest)
+option(QBOX_USE_SYSTEM_LIBQEMU "Use an installed libqemu CMake package" OFF)
 
 get_filename_component(_qbox_platform_source_dir "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 get_filename_component(_qbox_platform_tools_dir "${_qbox_platform_source_dir}/.." ABSOLUTE)
@@ -36,10 +37,12 @@ if(NOT EXISTS "${QBOX_CORE_SOURCE_DIR}/CMakeLists.txt")
 endif()
 
 set(_qbox_platform_default_qemu_source_dir "")
-if(DEFINED QEMU_SOURCE_DIR AND QEMU_SOURCE_DIR)
-    set(_qbox_platform_default_qemu_source_dir "${QEMU_SOURCE_DIR}")
-elseif(EXISTS "${_qbox_platform_tools_dir}/qemu/CMakeLists.txt")
-    set(_qbox_platform_default_qemu_source_dir "${_qbox_platform_tools_dir}/qemu")
+if(NOT QBOX_USE_SYSTEM_LIBQEMU)
+    if(DEFINED QEMU_SOURCE_DIR AND QEMU_SOURCE_DIR)
+        set(_qbox_platform_default_qemu_source_dir "${QEMU_SOURCE_DIR}")
+    elseif(EXISTS "${_qbox_platform_tools_dir}/qemu/CMakeLists.txt")
+        set(_qbox_platform_default_qemu_source_dir "${_qbox_platform_tools_dir}/qemu")
+    endif()
 endif()
 set(
     QBOX_QEMU_SOURCE_DIR
@@ -48,7 +51,14 @@ set(
     "Path to the qemu/libqemu source tree"
 )
 
-if(QBOX_QEMU_SOURCE_DIR)
+if(QBOX_USE_SYSTEM_LIBQEMU)
+    set(QBOX_QEMU_SOURCE_DIR "" CACHE PATH "Path to the qemu/libqemu source tree" FORCE)
+    set(QEMU_SOURCE_DIR "" CACHE PATH "Compatibility path to qemu/libqemu source tree" FORCE)
+    unset(FETCHCONTENT_SOURCE_DIR_QEMU CACHE)
+    unset(FETCHCONTENT_SOURCE_DIR_LIBQEMU CACHE)
+    unset(qemu_SOURCE_DIR CACHE)
+    unset(libqemu_SOURCE_DIR CACHE)
+elseif(QBOX_QEMU_SOURCE_DIR)
     get_filename_component(QBOX_QEMU_SOURCE_DIR "${QBOX_QEMU_SOURCE_DIR}" ABSOLUTE)
     set(QBOX_QEMU_SOURCE_DIR "${QBOX_QEMU_SOURCE_DIR}" CACHE PATH "Path to the qemu/libqemu source tree" FORCE)
     if(NOT EXISTS "${QBOX_QEMU_SOURCE_DIR}/CMakeLists.txt")
@@ -66,7 +76,9 @@ if(QBOX_QEMU_SOURCE_DIR)
 endif()
 
 message(STATUS "QBOX_CORE_SOURCE_DIR = ${QBOX_CORE_SOURCE_DIR}")
-if(QBOX_QEMU_SOURCE_DIR)
+if(QBOX_USE_SYSTEM_LIBQEMU)
+    message(STATUS "QBOX_USE_SYSTEM_LIBQEMU = ON")
+elseif(QBOX_QEMU_SOURCE_DIR)
     message(STATUS "QBOX_QEMU_SOURCE_DIR = ${QBOX_QEMU_SOURCE_DIR}")
 endif()
 
