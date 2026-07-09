@@ -122,6 +122,7 @@ if(BUILD_TESTING)
         host_system_pll
         mhu320ae
         mmu720ae
+        ras_ffh_stub
         reset_fanout
         rse_atu
         rse_integrity_checker
