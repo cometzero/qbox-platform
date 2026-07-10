@@ -124,7 +124,7 @@ function si_cl1.enable(ctx, platform)
         moduletype = "QemuInstance";
         args = {"&platform.si_cl1_qemu_inst_mgr", "AARCH64"};
         accel = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_ACCEL", "tcg");
-        tcg_mode = "MULTI";
+        tcg_mode = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_TCG_MODE", "SINGLE");
         sync_policy = "multithread-unconstrained";
         qemu_args = si_cl1_qemu_args;
     }

@@ -39,6 +39,13 @@ hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl0.lua
 hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl1.lua
 ```
 
+Safety Island CL1 uses single-thread TCG by default as containment for the
+observed MTTCG-sensitive stall between SMP bring-up and PFDI readiness. The
+underlying QEMU/SystemC concurrency defect remains unresolved. Set
+`QBOX_APOLLO_FULL_SI_CL1_TCG_MODE=MULTI` for full-system performance
+experiments, or `QBOX_APOLLO_SI_CL1_TCG_MODE=MULTI` for the isolated CL1
+entrypoint.
+
 Hardware-block helpers used by the full-system entrypoint live under:
 
 ```text

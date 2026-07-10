@@ -42,6 +42,7 @@ local si_cl1_uart_read_file = getenv_or(
     "/dev/null")
 local si_cl1_uart_poll_read = si_cl1_uart_read_file ~= "/dev/null"
 local accel = getenv_or("QBOX_APOLLO_SI_CL1_ACCEL", "tcg")
+local tcg_mode = getenv_or("QBOX_APOLLO_SI_CL1_TCG_MODE", "SINGLE")
 local qemu_args = getenv_or("QBOX_APOLLO_SI_CL1_QEMU_ARGS", "")
 local mhu_trace = getenv_or("QBOX_APOLLO_SI_CL1_MHU_TRACE", "false") == "true"
 local mhu_trace_file = getenv_or(
@@ -99,7 +100,7 @@ platform = {
         moduletype = "QemuInstance";
         args = {"&platform.qemu_inst_mgr", "AARCH64"};
         accel = accel;
-        tcg_mode = "MULTI";
+        tcg_mode = tcg_mode;
         sync_policy = "multithread-unconstrained";
         qemu_args = qemu_args;
     };
