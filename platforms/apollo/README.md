@@ -118,15 +118,20 @@ paths.
 ./local_build.sh build
 ```
 
+Local source-build artifacts follow `build/local-${MACHINE}`. The helper reads
+the active Yocto machine and currently resolves to `apollo-qvp`; an explicit
+`MACHINE` overrides it. `apollo-fvp` is the built-in fallback only when no
+active machine is available or Yocto-variable loading is disabled.
+
 The direct-boot runner consumes:
 
 ```text
-build/local-apollo-fvp/deploy/boot/Image
-build/local-apollo-fvp/deploy/boot/initramfs.cpio.gz
+build/local-${MACHINE}/deploy/boot/Image
+build/local-${MACHINE}/deploy/boot/initramfs.cpio.gz
 ```
 
 The full-system runner also consumes the local firmware deploy artifacts under
-`build/local-apollo-fvp/deploy/firmware/`, including RSE ROM/flash/OTP, AP
+`build/local-${MACHINE}/deploy/firmware/`, including RSE ROM/flash/OTP, AP
 flash, SI CL0 firmware, and SI CL1 Zephyr images.
 
 The direct-boot runner uses the local-build Linux DTB as its base and applies a
@@ -156,7 +161,13 @@ transferable shared-memory DMI instead of direct-file aliases.
 ./run_qbox_local.sh
 ```
 
-For a bounded headless command, use:
+For a bounded headless active-QVP command, use:
+
+```bash
+./run_qbox_yocto.sh --headless --exit-after-pass --timeout 900
+```
+
+For explicit FVP local-source comparison, use:
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
@@ -210,6 +221,7 @@ python3 scripts/run/run_qbox_fvp_rd_aspen_rse.py \
 ## Headless Boot
 
 ```bash
+export MACHINE="${MACHINE:-apollo-fvp}"
 python3 scripts/run/run_qbox_apollo_fvp_linux.py \
   --timeout 600
 ```
@@ -266,7 +278,7 @@ python3 scripts/run/run_qbox_apollo_fvp_linux.py \
   --skip-build \
   --interactive \
   --timeout "${QBOX_APOLLO_TIMEOUT:-0}" \
-  --local-build-dir build/local-apollo-fvp
+  --local-build-dir build/local-${MACHINE}
 ```
 
 Set `QBOX_APOLLO_TIMEOUT=0` for an unbounded interactive session.

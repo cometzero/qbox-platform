@@ -43,6 +43,7 @@ qemu-components/arm_smmuv3/
 qemu-components/cc3xx_native/
 qemu-components/cpu_arm/cpu_arm_cortex_a720ae/
 qemu-components/cpu_arm/cpu_arm_cortex_r82/
+qemu-components/rse_cpu_accel/
 qemu-components/sbsa_gwdt/
 qemu-components/virtio_mmio_rng/
 tests/components/
@@ -73,9 +74,14 @@ passes the core and QEMU source paths explicitly:
 ```text
 QBOX_CORE_DIR=hsoc-stack/tools/qbox
 QBOX_PLATFORM_DIR=hsoc-stack/tools/qbox-platform
-QBOX_PLATFORM_BUILD_DIR=build/local-apollo-fvp/work/qbox-platform
+QBOX_PLATFORM_BUILD_DIR=build/local-${MACHINE}/work/qbox-platform
 QBOX_QEMU_DIR=hsoc-stack/tools/qemu
 ```
+
+The local build reads the active machine from `build/conf/local.conf` and
+currently uses `apollo-qvp`. An explicit `MACHINE` overrides it; `apollo-fvp`
+is only the built-in fallback when no active machine is available or
+Yocto-variable loading is intentionally disabled.
 
 `QBOX_BUILD_DIR` is accepted only as a compatibility alias for
 `QBOX_PLATFORM_BUILD_DIR`.
@@ -91,16 +97,17 @@ apollo_fvp_full_system
 When debugging CMake directly from the workspace root:
 
 ```bash
+MACHINE="${MACHINE:-apollo-qvp}"
 cmake \
   -S hsoc-stack/tools/qbox-platform \
-  -B build/local-apollo-fvp/work/qbox-platform \
+  -B build/local-${MACHINE}/work/qbox-platform \
   -DCMAKE_BUILD_TYPE=Release \
   -DQBOX_CORE_SOURCE_DIR="${PWD}/hsoc-stack/tools/qbox" \
   -DQBOX_QEMU_SOURCE_DIR="${PWD}/hsoc-stack/tools/qemu" \
   -DLIBQEMU_GIT="file://${PWD}/hsoc-stack/tools/qemu" \
   -DFETCHCONTENT_SOURCE_DIR_LIBQEMU="${PWD}/hsoc-stack/tools/qemu"
 
-cmake --build build/local-apollo-fvp/work/qbox-platform \
+cmake --build build/local-${MACHINE}/work/qbox-platform \
   --target apollo_fvp_full_system \
   --parallel 8
 ```
@@ -117,7 +124,13 @@ the workspace root:
 ./run_qbox_local.sh
 ```
 
-For bounded headless validation:
+For bounded headless validation of the active QVP deploy image:
+
+```bash
+./run_qbox_yocto.sh --headless --exit-after-pass --timeout 900
+```
+
+For explicit FVP local-source comparison:
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
@@ -133,19 +146,23 @@ python3 scripts/run/run_qbox_apollo_fvp_linux.py --timeout 600
 python3 scripts/run/run_qbox_apollo_fvp_si_cl1.py --timeout 300
 ```
 
-Runtime evidence is written under `build/qbox-apollo-fvp/`.
+The explicit FVP runner writes `build/qbox-apollo-fvp/`. Yocto-built Apollo QVP
+runs use `build/qbox-apollo-qvp/` and require the generated QVP `.qboxconf`
+plus native sysroot provider.
 
 ## Packaging
 
 To package existing local-build outputs into a QBox-runnable image set:
 
 ```bash
+export MACHINE="${MACHINE:-apollo-qvp}"
 ./local_build.sh --package
-./run_qbox_local.sh --local-build-dir build/local-apollo-fvp/package/qbox/local-build
+./run_qbox_local.sh \
+  --local-build-dir build/local-${MACHINE}/package/qbox/local-build
 ```
 
 ## Related Docs
 
-- Root workspace guide: `README.md`
-- Agent/source ownership guide: `AGENTS.md`
+- Root workspace guide: `../../../README.md`
+- Agent/source ownership guide: `../../../AGENTS.md`
 - Apollo platform guide: `platforms/apollo/README.md`
