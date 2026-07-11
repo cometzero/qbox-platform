@@ -170,6 +170,15 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     ASSERT_GE(reset_sink.values.size(), 1u);
     EXPECT_FALSE(reset_sink.values.back());
 
+    const auto reset_count_after_power_on = reset_sink.values.size();
+    write32(dut, PPU_PWPR, PPU_PWPR_DYNAMIC_EN);
+    sc_core::sc_start(sc_core::SC_ZERO_TIME);
+
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 0xfu, 0x8u);
+    EXPECT_NE(read32(dut, PPU_PWSR) & PPU_PWSR_PWR_DYN_STATUS, 0u);
+    EXPECT_EQ(reset_sink.values.size(), reset_count_after_power_on);
+    EXPECT_FALSE(reset_sink.values.back());
+
     write32(dut, PPU_PWPR, 0x0u);
     sc_core::sc_start(sc_core::SC_ZERO_TIME);
 

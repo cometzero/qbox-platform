@@ -72,6 +72,7 @@ function si_cl1.enable(ctx, platform)
     local ARCH_TIMER_PHYS_PPI = 16 + 4
     local ARCH_TIMER_VIRT_PPI = 16 + 11
     local ARCH_TIMER_HYP_PPI = 16 + 3
+    local ARCH_TIMER_FREQUENCY_HZ = 100000000
 
     local si_cl1_image = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL1_IMAGE",
@@ -124,8 +125,10 @@ function si_cl1.enable(ctx, platform)
         moduletype = "QemuInstance";
         args = {"&platform.si_cl1_qemu_inst_mgr", "AARCH64"};
         accel = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_ACCEL", "tcg");
-        tcg_mode = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_TCG_MODE", "SINGLE");
-        sync_policy = "multithread-unconstrained";
+        tcg_mode = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_TCG_MODE", "MULTI");
+        sync_policy = ctx.getenv_or(
+            "QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY", "multithread-quantum");
+        managed_start_in_reset_release = true;
         qemu_args = si_cl1_qemu_args;
     }
 
@@ -273,6 +276,7 @@ function si_cl1.enable(ctx, platform)
             reset_power_on = true;
             rvbar = SI_CL1_ENTRY;
             mp_affinity = 0x10000 + (i * 0x100);
+            cntfrq_hz = ARCH_TIMER_FREQUENCY_HZ;
             irq_timer_sec_out = {
                 bind = "&si_cl1_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_SEC_PPI;
             };

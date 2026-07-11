@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -69,19 +70,32 @@ class host_ppu : public sc_core::sc_module
         {
             const uint32_t previous_status = load32(PPU_PWSR);
             uint32_t status = load32(PPU_PWSR);
+            const bool power_dynamic = (value & PPU_POWER_DYN_ENABLE) != 0;
+            const bool op_dynamic = (value & PPU_OP_DYN_ENABLE) != 0;
+            const uint32_t requested_power = value & PPU_POWER_MASK;
+            const uint32_t requested_op = value & PPU_OP_POLICY_MASK;
+
+            // Dynamic policy is a minimum; without DEVACTIVE inputs it cannot
+            // lower the current status until software requests a static mode.
+            const uint32_t power_status = power_dynamic
+                ? std::max(previous_status & PPU_POWER_MASK, requested_power)
+                : requested_power;
+            const uint32_t op_status = op_dynamic
+                ? std::max(previous_status & PPU_OP_POLICY_MASK, requested_op)
+                : requested_op;
 
             store32(PPU_PWPR, value);
             status &= ~(PPU_POWER_MASK | PPU_POWER_DYN_STATUS |
                         PPU_OFF_LOCK_STATUS | PPU_OP_POLICY_MASK |
                         PPU_OP_DYN_STATUS);
-            status |= value & (PPU_POWER_MASK | PPU_OP_POLICY_MASK);
-            if ((value & PPU_POWER_DYN_ENABLE) != 0) {
+            status |= power_status | op_status;
+            if (power_dynamic) {
                 status |= PPU_POWER_DYN_STATUS;
             }
             if ((value & PPU_OFF_LOCK_ENABLE) != 0) {
                 status |= PPU_OFF_LOCK_STATUS;
             }
-            if ((value & PPU_OP_DYN_ENABLE) != 0) {
+            if (op_dynamic) {
                 status |= PPU_OP_DYN_STATUS;
             }
             store32(PPU_PWSR, status);

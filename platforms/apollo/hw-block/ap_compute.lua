@@ -10,8 +10,9 @@ function ap_compute.define(ctx, platform)
         moduletype = "QemuInstance";
         args = {"&platform.ap_qemu_inst_mgr", "AARCH64"};
         accel = "tcg";
-        tcg_mode = "MULTI";
+        tcg_mode = ctx.getenv_or("QBOX_APOLLO_FULL_AP_TCG_MODE", "MULTI");
         sync_policy = "multithread-freerunning";
+        managed_start_in_reset_release = true;
         qemu_args = ap_qemu_args;
         construction_priority = -299;
     } or nil

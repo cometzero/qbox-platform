@@ -425,6 +425,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     broker.set_preset_cci_value("rse_si_pbx.assert_power_on_reset", cci::cci_value(true));
     broker.set_preset_cci_value("rse_si_pbx.power_domain_reset_count",
                                 cci::cci_value(4u));
+    broker.set_preset_cci_value("rse_si_pbx.power_domain_reset_pulse_on_power_on",
+                                cci::cci_value(true));
     broker.set_preset_cci_value("rse_si_mbx.pair", cci::cci_value(std::string("rse_si_cl0")));
     broker.set_preset_cci_value("rse_si_mbx.frame", cci::cci_value(std::string("mbx")));
     broker.set_preset_cci_value("ap_rse_pbx.pair", cci::cci_value(std::string("ap_rse")));
@@ -979,6 +981,32 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     write32(pbx_bus, DBCW_SET, 2);
     sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_NS));
     EXPECT_FALSE(ap_domain2_reset.reset.read());
+
+    ap_domain1_reset.write_count = 0;
+    ap_domain1_reset.saw_asserted = false;
+    ap_domain2_reset.write_count = 0;
+    ap_domain2_reset.saw_asserted = false;
+    ap_domain3_reset.write_count = 0;
+    ap_domain3_reset.saw_asserted = false;
+    for (uint32_t domain_id = 1; domain_id <= 3; ++domain_id) {
+        shmem.write32(SCMI_STATUS, 0);
+        shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 4);
+        shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_POWER_DOMAIN,
+                                               SCMI_MESSAGE_POWER_STATE_SET));
+        shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t), domain_id);
+        shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t) * 2, 0x00000111);
+        write32(pbx_bus, DBCW_SET, 2);
+    }
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_NS));
+    EXPECT_TRUE(ap_domain1_reset.saw_asserted);
+    EXPECT_TRUE(ap_domain2_reset.saw_asserted);
+    EXPECT_TRUE(ap_domain3_reset.saw_asserted);
+    EXPECT_EQ(ap_domain1_reset.write_count, 2u);
+    EXPECT_EQ(ap_domain2_reset.write_count, 2u);
+    EXPECT_EQ(ap_domain3_reset.write_count, 2u);
+    EXPECT_FALSE(ap_domain1_reset.reset.read());
+    EXPECT_FALSE(ap_domain2_reset.reset.read());
+    EXPECT_FALSE(ap_domain3_reset.reset.read());
 
     deferred_shmem.write32(SCMI_STATUS, 0);
     deferred_shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 4);

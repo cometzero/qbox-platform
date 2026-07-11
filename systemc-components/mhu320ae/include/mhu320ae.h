@@ -480,16 +480,20 @@ private:
         std::string reason;
     };
 
+    struct pending_power_domain_reset {
+        uint32_t domain_id;
+        uint32_t power_state;
+        sc_core::sc_time due_time;
+    };
+
     mhu320ae_frame_model m_frame;
     std::array<uint32_t, 256> m_power_domain_states {};
     std::array<uint32_t, SCMI_PERF_DOMAIN_COUNT> m_performance_levels {};
     uint32_t m_power_domain_state = 0;
     bool m_pending_power_on_reset = false;
     sc_core::sc_event m_power_on_reset_event;
-    bool m_pending_power_domain_reset_valid = false;
-    uint32_t m_pending_power_domain_reset_id = 0;
-    uint32_t m_pending_power_domain_reset_state = 0;
-    sc_core::sc_event m_power_domain_reset_event;
+    std::deque<pending_power_domain_reset> m_pending_power_domain_resets;
+    sc_core::sc_event_queue m_power_domain_reset_events;
     bool m_pending_system_power_reset_valid = false;
     uint32_t m_pending_system_power_state = 0;
     sc_core::sc_event m_system_power_reset_event;
@@ -699,16 +703,19 @@ private:
         }
         m_power_domain_state = power_state;
 
-        m_pending_power_domain_reset_id = domain_id;
-        m_pending_power_domain_reset_state = power_state;
-        m_pending_power_domain_reset_valid = true;
         const uint64_t reset_delay_ns = p_power_domain_reset_delay_ns.get_value();
-        if (reset_delay_ns == 0) {
-            m_power_domain_reset_event.notify(sc_core::SC_ZERO_TIME);
-        } else {
-            m_power_domain_reset_event.notify(
-                sc_core::sc_time(reset_delay_ns, sc_core::SC_NS));
-        }
+        const sc_core::sc_time reset_delay(reset_delay_ns, sc_core::SC_NS);
+        const sc_core::sc_time due_time = sc_core::sc_time_stamp() + reset_delay;
+        const auto position = std::upper_bound(
+            m_pending_power_domain_resets.begin(),
+            m_pending_power_domain_resets.end(), due_time,
+            [](const sc_core::sc_time& due,
+               const pending_power_domain_reset& pending) {
+                return due < pending.due_time;
+            });
+        m_pending_power_domain_resets.insert(
+            position, { domain_id, power_state, due_time });
+        m_power_domain_reset_events.notify(reset_delay);
 
         {
             std::ostringstream detail;
@@ -740,22 +747,25 @@ private:
     void emit_power_domain_reset()
     {
         for (;;) {
-            wait(m_power_domain_reset_event);
-            if (!m_pending_power_domain_reset_valid) {
+            wait(m_power_domain_reset_events.default_event());
+            if (m_pending_power_domain_resets.empty()) {
+                continue;
+            }
+            if (m_pending_power_domain_resets.front().due_time >
+                sc_core::sc_time_stamp()) {
                 continue;
             }
 
-            const uint32_t domain_id = m_pending_power_domain_reset_id;
-            const uint32_t power_state = m_pending_power_domain_reset_state;
-            m_pending_power_domain_reset_valid = false;
+            const pending_power_domain_reset pending = m_pending_power_domain_resets.front();
+            m_pending_power_domain_resets.pop_front();
 
             {
                 std::ostringstream detail;
-                detail << "domain=" << domain_id
-                       << " power_state=0x" << std::hex << power_state << std::dec;
+                detail << "domain=" << pending.domain_id
+                       << " power_state=0x" << std::hex << pending.power_state << std::dec;
                 trace_event("power-domain-reset-drive", detail.str());
             }
-            drive_power_domain_reset(domain_id, power_state);
+            drive_power_domain_reset(pending.domain_id, pending.power_state);
             trace_event("power-domain-reset-driven");
         }
     }
@@ -1431,9 +1441,22 @@ private:
             trace_event("scmi-ack-signaled");
         }
         if (protocol_id(header) == SCMI_PROTOCOL_POWER_DOMAIN &&
-            msg_id(header) == 0x5 && m_pending_power_domain_reset_valid) {
-            trace_event("power-domain-reset-reschedule-after-state-get");
-            m_power_domain_reset_event.notify(sc_core::SC_ZERO_TIME);
+            msg_id(header) == 0x5) {
+            const uint32_t domain_id = read_le32(request, 0);
+            const auto pending = std::find_if(
+                m_pending_power_domain_resets.begin(),
+                m_pending_power_domain_resets.end(),
+                [domain_id](const pending_power_domain_reset& reset) {
+                    return reset.domain_id == domain_id;
+                });
+            if (pending != m_pending_power_domain_resets.end()) {
+                trace_event("power-domain-reset-reschedule-after-state-get");
+                pending_power_domain_reset reset = *pending;
+                m_pending_power_domain_resets.erase(pending);
+                reset.due_time = sc_core::sc_time_stamp();
+                m_pending_power_domain_resets.push_front(reset);
+                m_power_domain_reset_events.notify(sc_core::SC_ZERO_TIME);
+            }
         }
     }
 
@@ -2621,6 +2644,7 @@ public:
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 256)
         , p_trace_file("trace_file", std::string(""))
+        , m_power_domain_reset_events("power_domain_reset_events")
         , target_socket("target_socket")
         , initiator_socket("initiator_socket")
         , irq("irq")

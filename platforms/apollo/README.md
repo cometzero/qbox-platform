@@ -39,12 +39,26 @@ hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl0.lua
 hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl1.lua
 ```
 
-Safety Island CL1 uses single-thread TCG by default as containment for the
-observed MTTCG-sensitive stall between SMP bring-up and PFDI readiness. The
-underlying QEMU/SystemC concurrency defect remains unresolved. Set
-`QBOX_APOLLO_FULL_SI_CL1_TCG_MODE=MULTI` for full-system performance
-experiments, or `QBOX_APOLLO_SI_CL1_TCG_MODE=MULTI` for the isolated CL1
-entrypoint.
+The full-system AP and Safety Island CL1 use multi-thread TCG so each vCPU has
+an independent wake condition. QBox manages each start-in-reset release with
+its existing target-vCPU unhalt, reset, power-state, and kick operations; no
+QEMU API or source change is required. TF-A releases the AP secondary CPUs
+sequentially, while CL1 Zephyr's reset voting lock may select any released
+physical MPID as logical CPU 0.
+
+CL1 also uses `multithread-quantum` synchronization. Its execution can run at
+most one global quantum ahead of SystemC. Managed CPUs stop their quantum
+keepers while reset is asserted, then keep them active across WFI after reset
+release so QEMU deadline timers can wake the CPUs reliably. The host PPU model
+preserves the current power state when firmware enables a lower dynamic
+minimum policy, so that policy update does not reassert CPU reset. Each CL1
+Cortex-R82 generic timer runs at 100 MHz to match the Zephyr system-clock
+configuration.
+Override the TCG defaults with `QBOX_APOLLO_FULL_AP_TCG_MODE`,
+`QBOX_APOLLO_FULL_SI_CL1_TCG_MODE`, and
+`QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY` for experiments. The isolated CL1
+entrypoint keeps its single-thread default and can be overridden with
+`QBOX_APOLLO_SI_CL1_TCG_MODE`.
 
 Hardware-block helpers used by the full-system entrypoint live under:
 
