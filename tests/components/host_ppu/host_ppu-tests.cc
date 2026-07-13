@@ -155,7 +155,6 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     dut.power_on_reset.bind(reset_sink.signal);
     dut.power_on_load.bind(load_sink.signal);
 
-    sc_core::sc_start(sc_core::SC_ZERO_TIME);
     write32(dut, PPU_PWPR, 0x8u);
     sc_core::sc_start(sc_core::sc_time(3, sc_core::SC_NS));
 

@@ -273,6 +273,7 @@ function si_cl0.enable(ctx, platform)
         accel = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL0_ACCEL", "tcg");
         tcg_mode = "MULTI";
         sync_policy = "multithread-unconstrained";
+        managed_start_in_reset_release = true;
         qemu_args = si_cl0_qemu_args;
     }
 

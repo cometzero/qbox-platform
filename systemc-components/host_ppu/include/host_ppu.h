@@ -38,6 +38,7 @@ class host_ppu : public sc_core::sc_module
 
     std::array<uint8_t, REG_BYTES> m_regs{};
     unsigned int m_trace_count = 0;
+    unsigned int m_pending_power_on_sequences = 0;
     sc_core::sc_event m_power_on_sequence_event;
 
     static bool is_supported_length(unsigned int len)
@@ -127,6 +128,7 @@ class host_ppu : public sc_core::sc_module
     {
         if (!power_status_is_on(previous_status) && power_status_is_on(status)) {
             trace_signal("power-on-sequence-scheduled", true);
+            ++m_pending_power_on_sequences;
             m_power_on_sequence_event.notify(sc_core::SC_ZERO_TIME);
         } else if (power_status_is_on(previous_status) && power_status_is_off(status) &&
                    p_power_on_reset_assert_on_power_off.get_value()) {
@@ -146,7 +148,10 @@ class host_ppu : public sc_core::sc_module
     void emit_power_on_sequence()
     {
         for (;;) {
-            sc_core::wait(m_power_on_sequence_event);
+            while (m_pending_power_on_sequences == 0) {
+                sc_core::wait(m_power_on_sequence_event);
+            }
+            --m_pending_power_on_sequences;
 
             if (p_assert_power_on_load.get_value()) {
                 write_power_on_load(true);
