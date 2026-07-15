@@ -39,6 +39,32 @@ hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl0.lua
 hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl1.lua
 ```
 
+The full-system machine contract is loaded from the same directory before
+platform construction:
+
+```text
+hw-block/topology.lua
+hw-block/address_map.lua
+hw-block/transaction_routes.lua
+hw-block/signal_routes.lua
+hw-block/boot_control.lua
+hw-block/software_contract.lua
+hw-block/machine_contract.lua
+```
+
+`topology.lua` declares 52-bit system/AP/SMD, 32-bit RSE, and 40-bit SI CL0/CL1
+views. The runtime currently instantiates `system_router`, `ap_router`,
+`rse_router`, `si_cl0_router`, and `si_cl1_router`. The SMD router is contract
+only until the A4 system-management migration. AP and both SI views retain
+low-priority broad one-to-one system bridges during the A3 transition; their
+names are explicit `compatibility_debt` and they must be replaced with
+RSE-owned ATU/APU windows rather than silently becoming permanent buses.
+
+AP/SI HIPC windows and the SI CL0-to-SI CL1 SCMI window use explicit bridges.
+Local targets, CPU initiators, GPEX, and loaders bind to their domain router,
+so overlapping numeric local addresses no longer depend on platform-wide
+target-priority mutation.
+
 The full-system AP and Safety Island CL1 use multi-thread TCG so each vCPU has
 an independent wake condition. QBox manages each start-in-reset release with
 its existing target-vCPU unhalt, reset, power-state, and kick operations; no
@@ -79,6 +105,13 @@ hw-block/si_cl1.lua
 hw-block/si_cl1_isolated.lua
 hw-block/ros.lua
 hw-block/system_mgmt.lua
+```
+
+Export and validate the machine-readable contract with:
+
+```bash
+python3 scripts/test/validate_qbox_apollo_topology.py \
+  --emit build/qbox-apollo-qvp/topology/topology.json
 ```
 
 `hw-block/ros.lua` tracks the modeled Rest of System subset from the Arm Zena
@@ -136,7 +169,9 @@ flash, SI CL0 firmware, and SI CL1 Zephyr images.
 
 The direct-boot runner uses the local-build Linux DTB as its base and applies a
 small `/chosen` overlay for direct bootargs and initrd addresses. Generated
-artifacts are written to:
+artifacts are written to the following legacy compatibility root. Full-system
+QVP evidence uses `build/qbox-apollo-qvp/`; do not mix these direct-boot files
+with full-system or FVP-reference evidence.
 
 ```text
 build/qbox-apollo-fvp/apollo-fvp-direct.dtb
@@ -167,7 +202,7 @@ For a bounded headless active-QVP command, use:
 ./run_qbox_yocto.sh --headless --exit-after-pass --timeout 900
 ```
 
-For explicit FVP local-source comparison, use:
+For an explicit local-source full-system run, use:
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
@@ -178,7 +213,7 @@ python3 scripts/run/run_qbox_apollo_fvp_full.py \
   --cc3xx-qemu-native-backend \
   --rse-lms-accel \
   --rse-fast-boot-sram-dmi \
-  --out-dir build/qbox-apollo-fvp/full-live-cl0-cl1-sram-dmi
+  --out-dir build/qbox-apollo-qvp/full-live-cl0-cl1-sram-dmi
 ```
 
 The RSE child `result.json` should report
@@ -191,7 +226,7 @@ entries for the host SRAM regions should use `mode: "shared_memory"` and
 The default SRAM DMI path should not create file-backed host SRAM images:
 
 ```bash
-find build/qbox-apollo-fvp/full-live-cl0-cl1-sram-dmi -type f \( \
+find build/qbox-apollo-qvp/full-live-cl0-cl1-sram-dmi -type f \( \
   -name 'host-si-cl*-sram.bin' -o \
   -name 'host-ap-*-sram.bin' \
 \) -print -quit
@@ -215,18 +250,18 @@ python3 scripts/run/run_qbox_fvp_rd_aspen_rse.py \
   --qbox-perf-profile \
   --timeout 90 \
   --ignore-fail-patterns \
-  --out-dir build/qbox-apollo-fvp/rse-legacy-file-backed-sram
+  --out-dir build/qbox-apollo-qvp/rse-legacy-file-backed-sram
 ```
 
 ## Headless Boot
 
 ```bash
-export MACHINE="${MACHINE:-apollo-fvp}"
+export MACHINE="${MACHINE:-apollo-qvp}"
 python3 scripts/run/run_qbox_apollo_fvp_linux.py \
   --timeout 600
 ```
 
-The result files are written under:
+The direct-boot result files are currently written under the legacy root:
 
 ```text
 build/qbox-apollo-fvp/<timestamp>/
@@ -240,11 +275,12 @@ summary.txt
 qbox-apollo-fvp.log
 ```
 
-The direct-boot and full-system AP paths default to 16 modeled AP CPUs. Use
-`QBOX_APOLLO_NUM_CPUS=1..16` for direct-boot CPU-count experiments; full-system
-AP runs use the same value when AP CPUs are enabled. Direct local bootargs also
-default to `maxcpus=16`, and the full-system rootfs patching profile defaults
-to `quiet-console`, which removes stale `maxcpus=` tokens from rootfs bootargs.
+The direct-boot AP path keeps its 16-CPU experiment default and direct local
+bootargs keep `maxcpus=16`. The full-system path defaults to 4 modeled AP CPUs,
+matching active `apollo-qvp` Yocto configuration. Use
+`QBOX_APOLLO_NUM_CPUS=1..16` to override either path deliberately. The
+full-system rootfs patching profile defaults to `quiet-console`, which removes
+stale `maxcpus=` tokens from rootfs bootargs.
 
 For direct-boot CPU wake debugging, keep tracing disabled for normal runs and
 enable it only on focused reproductions:
