@@ -47,7 +47,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SI_PIK_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -58,7 +58,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SI_SCR_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -74,7 +74,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SI_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -96,9 +96,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_RSE_SI_MHU_PHYS_BASE;
             size = RSE_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         power_on_reset = enable_ap_cpus and {bind = "&ap_cpu_0.reset"} or nil;
         log_level = 0;
     }
@@ -118,9 +118,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_RSE_SI_MHU_PHYS_BASE + RSE_MHU_FRAME_SIZE;
             size = RSE_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&rse_cpu_pass.target_signal_socket_"..
             RSE_IRQ_SI_CL0_RSE_CMU_MHU_RECEIVER};
         log_level = 0;
@@ -132,7 +132,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_RSE_SI_SSRAM_PHYS_BASE;
             size = HOST_RSE_SI_SSRAM_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -150,16 +150,16 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_AP_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         translation_socket = enable_ap_cpus and {
             address = HOST_AP_ATU_LOGICAL_BASE;
             size = HOST_AP_ATU_LOGICAL_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
             relative_addresses = false;
             priority = 10;
         } or nil;
-        initiator_socket = enable_ap_cpus and {bind = "&host_router.target_socket"} or nil;
+        initiator_socket = enable_ap_cpus and {bind = "&system_router.target_socket"} or nil;
         log_level = 0;
     }
 
@@ -177,9 +177,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = 0x400003B000000;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_PBX_IRQ};
         log_level = 0;
     } or nil
@@ -198,9 +198,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = 0x400003B040000;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_MBX_IRQ};
         log_level = 0;
     } or nil
@@ -225,9 +225,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_AP_SI_SCMI_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_PBX_IRQ};
         system_reset = {bind = ap_system_reset_bind_targets()};
         log_level = 0;
@@ -255,9 +255,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_AP_SI_SCMI_MHU_MBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_MBX_IRQ};
         log_level = 0;
     } or nil
@@ -299,9 +299,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = 0x400003B100000;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_120"};
         log_level = 0;
     } or nil
@@ -317,9 +317,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = 0x400003B140000;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_121"};
         log_level = 0;
     } or nil
@@ -341,9 +341,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_AP_SI_PFDI_MONITOR_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         log_level = 0;
     } or nil
 
@@ -358,7 +358,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SMDEXP2SMD_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -368,7 +368,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SYSTOP_PIK_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -380,7 +380,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -391,7 +391,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00010000;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -402,7 +402,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00020000;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -412,7 +412,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SMCF_SRAM_PHYS_BASE;
             size = HOST_SMCF_SRAM_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -437,9 +437,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_AP_RSE_MHU_PHYS_BASE;
             size = MHU_V3_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         log_level = 0;
     }
 
@@ -457,9 +457,9 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_AP_RSE_MHU_PHYS_BASE + MHU_V3_FRAME_SIZE;
             size = MHU_V3_FRAME_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         log_level = 0;
     }
 
@@ -470,7 +470,7 @@ function system_mgmt.define(ctx, platform)
             -- AP MHU pointer-access window used by TF-M SFCP requests.
             address = HOST_AP_MHU_POINTER_ACCESS_PHYS_BASE;
             size = HOST_AP_MHU_POINTER_ACCESS_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -501,23 +501,6 @@ function system_mgmt.add_ap_logical_mhu_aliases(platform)
             size = AP_LOGICAL_MHU_FRAME_SIZE;
         }
     end
-end
-
-function system_mgmt.prepare_live_cl0_integration(ctx, platform)
-    if platform.host_ap_flash ~= nil then
-        ctx.lower_decode_priority(platform.host_ap_flash.target_socket, 10)
-    end
-    if platform.ap_gpex_0 ~= nil then
-        ctx.lower_decode_priority(platform.ap_gpex_0.ecam_iface, 10)
-    end
-    if platform.host_ap_dram1 ~= nil then
-        ctx.lower_decode_priority(platform.host_ap_dram1.target_socket, 10)
-    end
-    ctx.ros.lower_decode_priorities(platform, ctx.lower_decode_priority, 10)
-
-    ctx.ap_compute.enable_ap_view_router(ctx, platform)
-
-    system_mgmt.add_ap_logical_mhu_aliases(platform)
 end
 
 return system_mgmt

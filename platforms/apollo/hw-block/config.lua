@@ -455,7 +455,7 @@ HOST_AP_DRAM2_BASE = 0x20000000000
 HOST_AP_DRAM2_SIZE = 0x80000000
 HOST_AP_ATU_LOGICAL_BASE = 0x40000000
 HOST_AP_ATU_LOGICAL_SIZE = 0x00800000
-AP_NUM_CPUS = enable_ap_cpus and getenv_number_or("QBOX_APOLLO_NUM_CPUS", "16") or 0
+AP_NUM_CPUS = enable_ap_cpus and getenv_number_or("QBOX_APOLLO_NUM_CPUS", "4") or 0
 assert(not enable_ap_cpus or (AP_NUM_CPUS >= 1 and AP_NUM_CPUS <= 16), "QBOX_APOLLO_NUM_CPUS must be 1..16 when AP CPUs are enabled")
 AP_GIC_NUM_CPUS = enable_ap_cpus and AP_NUM_CPUS or 1
 ARCH_TIMER_VIRT_IRQ = 16 + 11
@@ -590,10 +590,10 @@ function ap_smmu_component()
             mem = {
                 address = 0x1C0000000;
                 size = 0x08000000;
-                bind = "&host_router.initiator_socket";
+                bind = "&system_router.initiator_socket";
             };
-            downstream_socket = {bind = "&host_router.target_socket"};
-            ptw_socket = {bind = "&host_router.target_socket"};
+            downstream_socket = {bind = "&system_router.target_socket"};
+            ptw_socket = {bind = "&system_router.target_socket"};
             irq_combined = {bind = "&ap_gic.spi_in_65"};
             stage = "1";
             profile = "zena-css-cfg2";
@@ -606,7 +606,7 @@ function ap_smmu_component()
         mem = {
             address = 0x1C0000000;
             size = 0x08000000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         irq_out_0 = {bind = "&ap_gic.spi_in_65"};
         stage = "1";
@@ -621,15 +621,18 @@ function lower_decode_priority(target, priority)
     end
 end
 
-function config.create(apollo_dir)
+function config.create(apollo_dir, machine_contract, machine)
+    local hipc = machine_contract.range(machine, "si_cl1_hipc_shared")
     return {
         apollo_dir = apollo_dir;
         apollo_root = root;
         apollo_si_mode = apollo_si_mode;
         apollo_live_cl0 = apollo_live_cl0;
         apollo_live_cl1 = apollo_live_cl1;
-        APOLLO_SI_CL1_HIPC_SHARED_BASE = 0xe0130000;
-        APOLLO_SI_CL1_HIPC_SHARED_SIZE = 0x00080000;
+        machine_contract = machine;
+        machine_contract_module = machine_contract;
+        APOLLO_SI_CL1_HIPC_SHARED_BASE = hipc.base;
+        APOLLO_SI_CL1_HIPC_SHARED_SIZE = hipc.size;
         getenv_or = getenv_or;
         getenv_number_or = getenv_number_or;
         getenv_bool_or = getenv_bool_or;

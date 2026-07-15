@@ -29,32 +29,32 @@ function ap_compute.define(ctx, platform)
     platform.ap_global_peripheral_initiator = enable_ap_cpus and {
         moduletype = "global_peripheral_initiator";
         args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
-        global_initiator = {bind = "&host_router.target_socket"};
+        global_initiator = {bind = "&system_router.target_socket"};
     } or nil
 
     platform.ap_gpex_0 = enable_ap_cpus and {
         moduletype = "qemu_gpex";
         args = {"&platform.ap_qemu_inst"};
-        bus_master = {bind = "&host_router.target_socket"};
+        bus_master = {bind = "&system_router.target_socket"};
         pio_iface = {
             address = 0x60200000;
             size = 0x00100000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         mmio_iface = {
             address = 0x60300000;
             size = 0x1FD00000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         ecam_iface = {
             address = 0x43B50000;
             size = 0x10000000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         mmio_iface_high = {
             address = 0x400000000;
             size = 0x200000000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         irq_out_0 = {bind = "&ap_gic.spi_in_300"};
         irq_out_1 = {bind = "&ap_gic.spi_in_301"};
@@ -68,7 +68,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = HOST_AP_SHARED_SRAM_PHYS_BASE;
             size = HOST_AP_SHARED_SRAM_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         map_file = host_ap_shared_sram_map_file;
         shared_memory = host_sram_shared_memory_enabled(host_ap_shared_sram_map_file);
@@ -80,7 +80,7 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_bl2_reset_loader = enable_ap_cpus and {
         moduletype = "loader";
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         {
             bin_file = AP_BL2_ELF;
             address = AP_BL2_RESET.data_phys_base;
@@ -118,7 +118,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = 0x00180000;
             size = 0x00001000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -130,7 +130,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = HOST_AP_BL2_HEADER_SRAM_PHYS_BASE;
             size = HOST_AP_BL2_HEADER_SRAM_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         map_file = host_ap_bl2_header_sram_map_file;
         shared_memory = host_sram_shared_memory_enabled(host_ap_bl2_header_sram_map_file);
@@ -157,7 +157,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = HOST_AP_FLASH_PHY_BASE;
             size = HOST_AP_FLASH_IMAGE_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         load = {bin_file = ap_flash, offset = 0};
         log_level = 0;
@@ -188,7 +188,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = HOST_AP_TRUSTED_NVCTR_BASE;
             size = HOST_AP_TRUSTED_NVCTR_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         load = {data = HOST_AP_TRUSTED_NVCTR_DATA, offset = 0};
@@ -201,7 +201,8 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = HOST_AP_DRAM1_BASE;
             size = HOST_AP_DRAM1_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
+            priority = 10;
         };
         log_level = 0;
     } or nil
@@ -212,7 +213,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = 0xFFBF0000;
             size = 0x00002000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -224,7 +225,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = HOST_AP_SPMC_BASE;
             size = HOST_AP_SPMC_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     } or nil
@@ -235,7 +236,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = HOST_AP_DRAM2_BASE;
             size = HOST_AP_DRAM2_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     } or nil
@@ -246,7 +247,7 @@ function ap_compute.define(ctx, platform)
         dist_iface = {
             address = AP_GIC_DIST_BASE;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
             aliases = {
                 optee_secure_view = {
                     address = AP_GIC_LEGACY_DIST_BASE;
@@ -276,7 +277,7 @@ function ap_compute.define(ctx, platform)
         mem = {
             address = 0x20840000;
             size = 0x00040000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
     } or nil
 
@@ -288,13 +289,13 @@ function ap_compute.define(ctx, platform)
         refresh_mem = {
             address = 0x1A420000;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
             mirror_4k_aperture = true;
         };
         control_mem = {
             address = 0x1A430000;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
             mirror_4k_aperture = true;
         };
         irq_out = {bind = "&ap_gic.spi_in_50"};
@@ -326,7 +327,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_SECURE_UART_BASE;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         irq = {bind = "&ap_gic.spi_in_"..AP_SECURE_UART_IRQ};
         backend_socket = {bind = "&ap_secure_console_file.biflow_socket"};
@@ -338,7 +339,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_PRIMARY_UART_BASE;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         irq = {bind = "&ap_gic.spi_in_"..AP_PRIMARY_UART_IRQ};
         backend_socket = {bind = "&ap_primary_console_file.biflow_socket"};
@@ -357,7 +358,7 @@ function ap_compute.define(ctx, platform)
         mem = {
             address = AP_SYS_TIMCTL_BASE;
             size = (AP_SYS_CNT_BASE_NS - AP_SYS_TIMCTL_BASE) + AP_SYS_TIMER_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         irq = {
             -- frame 0 is the non-secure AP REFCLK frame.
@@ -376,7 +377,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_SECURE_WDOG_BASE;
             size = AP_SECURE_WDOG_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -387,7 +388,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_SECURE_WDOG_REFRESH_BASE;
             size = AP_SECURE_WDOG_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -410,7 +411,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_SID_BASE;
             size = AP_SID_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     } or nil
@@ -420,7 +421,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_RGIC2LGIC_MESSREG_BASE;
             size = AP_RGIC2LGIC_MESSREG_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         window_size = AP_RGIC2LGIC_MESSREG_SIZE;
         log_level = 0;
@@ -436,7 +437,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_CL0_NI710AE_FMU_BASE;
             size = AP_FMU_MODELED_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     } or nil
@@ -448,7 +449,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_CL1_NI710AE_FMU_BASE;
             size = AP_FMU_MODELED_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     } or nil
@@ -460,7 +461,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_CL2_NI710AE_FMU_BASE;
             size = AP_FMU_MODELED_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     } or nil
@@ -472,7 +473,7 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = AP_CL3_NI710AE_FMU_BASE;
             size = AP_FMU_MODELED_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         log_level = 0;
     } or nil
@@ -482,7 +483,7 @@ if enable_ap_cpus then
         platform["ap_gic"]["redist_iface_"..i] = {
             address = AP_GIC_REDIST_BASE + (i * AP_GIC_REDIST_SIZE);
             size = AP_GIC_REDIST_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
             aliases = {
                 optee_secure_view = {
                     address = AP_GIC_LEGACY_REDIST_BASE + (i * AP_GIC_LEGACY_REDIST_SIZE);
@@ -498,7 +499,7 @@ if enable_ap_cpus then
             target_socket = {
                 address = AP_GIC_REDIST_BASE + (i * AP_GIC_REDIST_SIZE);
                 size = AP_GIC_REDIST_SIZE;
-                bind = "&host_router.initiator_socket";
+                bind = "&system_router.initiator_socket";
             };
             dmi_allow = false;
             log_level = 0;
@@ -509,7 +510,7 @@ if enable_ap_cpus then
         local cpu = {
             moduletype = "cpu_arm_cortexA720AE";
             args = {"&platform.ap_qemu_inst"};
-            mem = {bind = "&host_router.target_socket"};
+            mem = {bind = "&system_router.target_socket"};
             has_el3 = true;
             has_el2 = true;
             irq_timer_phys_out = {
@@ -552,38 +553,48 @@ end
 
 end
 
-function ap_compute.enable_ap_view_router(ctx, platform)
-    if platform.ap_cpu_0 == nil then
-        return
-    end
-
-    print("Apollo FVP AP logical view router enabled...")
+function ap_compute.enable_ap_router(ctx, platform)
+    print("Apollo QVP AP router enabled...")
 
     -- AP logical view
-    platform.ap_view_router = {
+    platform.ap_router = {
         moduletype = "router";
         log_level = 0;
     }
 
-    platform.ap_view_passthrough = {
+    platform.ap_system_bridge = {
         moduletype = "addrtr";
         mapped_base_addr = 0x0;
         target_socket = {
             address = 0x0;
             size = 0x1000000000000;
-            bind = "&ap_view_router.initiator_socket";
+            bind = "&ap_router.initiator_socket";
             relative_addresses = false;
             priority = 100;
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
+        log_level = 0;
+    }
+
+    platform.ap_hipc_alias = {
+        moduletype = "addrtr";
+        mapped_base_addr = 0x00100000;
+        target_socket = {
+            address = ctx.APOLLO_SI_CL1_HIPC_SHARED_BASE;
+            size = ctx.APOLLO_SI_CL1_HIPC_SHARED_SIZE;
+            bind = "&ap_router.initiator_socket";
+            relative_addresses = false;
+            priority = 0;
+        };
+        initiator_socket = {bind = "&ap_router.target_socket"};
         log_level = 0;
     }
 
     -- Host-to-AP translation and AP masters
     local function bind_ap_target(target)
         if target ~= nil then
-            target.bind = "&ap_view_router.initiator_socket"
-            target.priority = 0
+            target.bind = "&ap_router.initiator_socket"
+            target.priority = target.priority or 0
         end
     end
 
@@ -596,18 +607,18 @@ function ap_compute.enable_ap_view_router(ctx, platform)
     if platform.host_ap_atu ~= nil and
        platform.host_ap_atu.translation_socket ~= nil then
         platform.host_ap_atu.translation_socket.bind =
-            "&ap_view_router.initiator_socket"
+            "&ap_router.initiator_socket"
         platform.host_ap_atu.translation_socket.priority = 10
     end
 
     if platform.ap_global_peripheral_initiator ~= nil then
         platform.ap_global_peripheral_initiator.global_initiator = {
-            bind = "&ap_view_router.target_socket";
+            bind = "&ap_router.target_socket";
         }
     end
     if platform.ap_gpex_0 ~= nil then
         platform.ap_gpex_0.bus_master = {
-            bind = "&ap_view_router.target_socket";
+            bind = "&ap_router.target_socket";
         }
         bind_ap_target(platform.ap_gpex_0.pio_iface)
         bind_ap_target(platform.ap_gpex_0.mmio_iface)
@@ -649,7 +660,7 @@ function ap_compute.enable_ap_view_router(ctx, platform)
     for i=0,15 do
         local cpu = platform["ap_cpu_"..i]
         if cpu ~= nil then
-            cpu.mem = {bind = "&ap_view_router.target_socket"}
+            cpu.mem = {bind = "&ap_router.target_socket"}
         end
     end
 end

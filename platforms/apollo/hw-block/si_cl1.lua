@@ -7,7 +7,7 @@ function si_cl1.define(ctx, platform)
         target_socket = {
             address = HOST_SI_CL1_SRAM_PHYS_BASE;
             size = HOST_SI_SRAM_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
         };
         map_file = host_si_cl1_sram_map_file;
         shared_memory = host_sram_shared_memory_enabled(host_si_cl1_sram_map_file);
@@ -21,7 +21,7 @@ function si_cl1.define(ctx, platform)
         target_socket = {
             address = HOST_SI_CL1_CL_UTIL_BASE;
             size = HOST_SI_CL_UTIL_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
             priority = 20;
         };
         init_mem = true;
@@ -37,7 +37,7 @@ function si_cl1.define(ctx, platform)
         target_socket = {
             address = HOST_SI_CL1_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&system_router.initiator_socket";
             priority = 10;
         };
         log_level = 0;
@@ -47,6 +47,38 @@ end
 
 function si_cl1.enable(ctx, platform)
     print("Apollo FVP live SI CL1 block enabled...")
+
+    platform.si_cl1_router = {
+        moduletype = "router";
+        log_level = 0;
+    }
+
+    platform.si_cl1_system_bridge = {
+        moduletype = "addrtr";
+        mapped_base_addr = 0x00000000;
+        target_socket = {
+            address = 0x00000000;
+            size = 0x10000000000;
+            bind = "&si_cl1_router.initiator_socket";
+            relative_addresses = false;
+            priority = 100;
+        };
+        initiator_socket = {bind = "&system_router.target_socket"};
+        log_level = 0;
+    }
+
+    platform.si_cl1_hipc_bridge = {
+        moduletype = "addrtr";
+        mapped_base_addr = 0x00100000;
+        target_socket = {
+            address = ctx.APOLLO_SI_CL1_HIPC_SHARED_BASE;
+            size = ctx.APOLLO_SI_CL1_HIPC_SHARED_SIZE;
+            bind = "&si_cl1_router.initiator_socket";
+            relative_addresses = false;
+        };
+        initiator_socket = {bind = "&ap_router.target_socket"};
+        log_level = 0;
+    }
 
     local SI_CL1_CPU_COUNT = 4
     local SI_CL1_SRAM_BASE = 0x140000000
@@ -92,30 +124,6 @@ function si_cl1.enable(ctx, platform)
     local mhu_trace_limit =
         ctx.getenv_number_or("QBOX_APOLLO_FULL_SI_CL1_MHU_TRACE_LIMIT", "4096")
 
-    -- Merged host-router priority adjustments
-    -- The first live CL1 integration still uses the RD-Aspen host_router as a
-    -- temporary merged bus. CL1 local addresses overlap broad AP regions in
-    -- that flattened view, so lower only those broad AP windows and let the
-    -- narrow CL1 targets win the overlapping slices.
-    if platform.host_ap_flash ~= nil then
-        ctx.lower_decode_priority(platform.host_ap_flash.target_socket, 10)
-    end
-    if platform.ap_gpex_0 ~= nil then
-        ctx.lower_decode_priority(platform.ap_gpex_0.ecam_iface, 10)
-    end
-    if platform.host_ap_dram1 ~= nil then
-        ctx.lower_decode_priority(platform.host_ap_dram1.target_socket, 10)
-    end
-
-    if platform.host_ap_bl2_header_sram ~= nil then
-        local target = platform.host_ap_bl2_header_sram.target_socket
-        target.aliases = target.aliases or {}
-        target.aliases.si_cl1_hipc_local_view = {
-            address = ctx.APOLLO_SI_CL1_HIPC_SHARED_BASE;
-            size = ctx.APOLLO_SI_CL1_HIPC_SHARED_SIZE;
-        }
-    end
-
     -- CL1 CPU backend
     platform.si_cl1_qemu_inst_mgr = {
         moduletype = "QemuInstanceManager";
@@ -139,7 +147,7 @@ function si_cl1.enable(ctx, platform)
         target_socket = {
             address = SI_CL1_SRAM_BASE;
             size = SI_CL1_SRAM_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -149,7 +157,7 @@ function si_cl1.enable(ctx, platform)
         target_socket = {
             address = SI_CL1_SCMI_SHMEM_BASE;
             size = SI_CL1_SCMI_SHMEM_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -162,7 +170,7 @@ function si_cl1.enable(ctx, platform)
         dist_iface = {
             address = SI_CL1_GICD_BASE;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         };
         redist_region = {1, 1, 1, 1};
         num_cpus = SI_CL1_CPU_COUNT;
@@ -185,7 +193,7 @@ function si_cl1.enable(ctx, platform)
         target_socket = {
             address = SI_CL1_UART_BASE;
             size = 0x00010000;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         };
         irq = {bind = "&si_cl1_gic.spi_in_"..SI_CL1_UART_IRQ};
         backend_socket = {bind = "&si_cl1_console_file.biflow_socket"};
@@ -204,9 +212,9 @@ function si_cl1.enable(ctx, platform)
         target_socket = {
             address = SI_CL1_HIPC_PBX_BASE;
             size = SI_CL1_HIPC_MHU_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&si_cl1_router.target_socket"};
         irq = {bind = "&si_cl1_gic.spi_in_40"};
         log_level = 0;
     }
@@ -223,9 +231,9 @@ function si_cl1.enable(ctx, platform)
         target_socket = {
             address = SI_CL1_HIPC_MBX_BASE;
             size = SI_CL1_HIPC_MHU_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&si_cl1_router.target_socket"};
         irq = {bind = "&si_cl1_gic.spi_in_41"};
         log_level = 0;
     }
@@ -249,9 +257,9 @@ function si_cl1.enable(ctx, platform)
         target_socket = {
             address = SI_CL1_PFDI_PBX_BASE;
             size = SI_CL1_PFDI_MHU_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&si_cl1_router.target_socket"};
         irq = {bind = "&si_cl1_gic.spi_in_50"};
         log_level = 0;
     }
@@ -259,7 +267,7 @@ function si_cl1.enable(ctx, platform)
     -- CL1 boot image
     platform.si_cl1_loader = {
         moduletype = "loader";
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&si_cl1_router.target_socket"};
         { bin_file = si_cl1_image, address = SI_CL1_SRAM_BASE };
     }
 
@@ -268,7 +276,7 @@ function si_cl1.enable(ctx, platform)
         local cpu = {
             moduletype = "cpu_arm_cortexR82";
             args = {"&platform.si_cl1_qemu_inst"};
-            mem = {bind = "&host_router.target_socket"};
+            mem = {bind = "&si_cl1_router.target_socket"};
             has_el2 = true;
             psci_conduit = "smc";
             start_powered_off = false;
@@ -294,7 +302,7 @@ function si_cl1.enable(ctx, platform)
         platform["si_cl1_gic"]["redist_iface_"..i] = {
             address = SI_CL1_GICR0_BASE + (i * SI_CL1_GICR_STRIDE);
             size = SI_CL1_GICR_SIZE;
-            bind = "&host_router.initiator_socket";
+            bind = "&si_cl1_router.initiator_socket";
         }
         platform["si_cl1_gic"]["irq_out_"..i] = {
             bind = "&si_cl1_cpu_"..i..".irq_in";

@@ -363,7 +363,7 @@ function rse.define(ctx, platform)
                 };
             };
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         log_level = 0;
     }
 
@@ -454,7 +454,7 @@ function rse.define(ctx, platform)
             size = RSE_LOCAL_MHU_FRAME_SIZE;
             bind = "&rse_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         log_level = 0;
     }
 
@@ -472,7 +472,7 @@ function rse.define(ctx, platform)
             size = RSE_LOCAL_MHU_FRAME_SIZE;
             bind = "&rse_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&rse_cpu_pass.target_signal_socket_"..
             RSE_IRQ_CMU_MHU0_RECEIVER};
         log_level = 0;
@@ -492,7 +492,7 @@ function rse.define(ctx, platform)
             size = RSE_LOCAL_MHU_FRAME_SIZE;
             bind = "&rse_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         log_level = 0;
     }
 
@@ -510,7 +510,7 @@ function rse.define(ctx, platform)
             size = RSE_LOCAL_MHU_FRAME_SIZE;
             bind = "&rse_router.initiator_socket";
         };
-        initiator_socket = {bind = "&host_router.target_socket"};
+        initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&rse_cpu_pass.target_signal_socket_"..
             RSE_IRQ_CMU_MHU2_RECEIVER};
         log_level = 0;
