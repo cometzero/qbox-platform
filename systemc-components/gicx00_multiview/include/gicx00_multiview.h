@@ -15,6 +15,7 @@
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
+#include <tlm_utils/simple_initiator_socket.h>
 #include <tlm_utils/simple_target_socket.h>
 
 class gicx00_multiview : public sc_core::sc_module
@@ -24,10 +25,14 @@ class gicx00_multiview : public sc_core::sc_module
     static constexpr uint64_t REDIST_BYTES = 0x20000;
     static constexpr uint64_t REDIST_FRAME_BYTES = 0x40000;
     static constexpr unsigned int REDIST_COUNT = 16;
+    static constexpr uint64_t DEFAULT_BACKEND_DIST_BASE = 0x20800000;
+    static constexpr uint64_t DEFAULT_BACKEND_REDIST_BASE = 0x20880000;
+    static constexpr uint64_t DEFAULT_BACKEND_REDIST_STRIDE = 0x40000;
+    static constexpr unsigned int DEFAULT_BACKEND_REDIST_COUNT = 4;
+    static constexpr unsigned int LEGACY_REDIST_FIRST_FRAME = 1;
     static constexpr uint64_t INACTIVE_REDIST_BYTES =
         REDIST_FRAME_BYTES * REDIST_COUNT;
 
-    static constexpr uint32_t GICD_CTLR = 0x0000;
     static constexpr uint32_t GICD_CFGID = 0xf000;
     static constexpr uint32_t GICD_IVIEWR_BASE = 0xf600;
     static constexpr uint32_t GICD_IVIEWR_LIMIT = 0xfa00;
@@ -44,6 +49,10 @@ class gicx00_multiview : public sc_core::sc_module
 
     using target_socket_t =
         tlm_utils::simple_target_socket_b<
+            gicx00_multiview, DEFAULT_TLM_BUSWIDTH,
+            tlm::tlm_base_protocol_types, sc_core::SC_ZERO_OR_MORE_BOUND>;
+    using initiator_socket_t =
+        tlm_utils::simple_initiator_socket_b<
             gicx00_multiview, DEFAULT_TLM_BUSWIDTH,
             tlm::tlm_base_protocol_types, sc_core::SC_ZERO_OR_MORE_BOUND>;
 
@@ -88,7 +97,6 @@ class gicx00_multiview : public sc_core::sc_module
             store32(regs, GICR_FLUSHR, GICR_FLUSHR_RESET);
         }
 
-        store32(m_dist_regs, GICD_CTLR, 0);
         store64(m_dist_regs, GICD_CFGID, GICD_CFGID_VIEW);
     }
 
@@ -173,6 +181,63 @@ class gicx00_multiview : public sc_core::sc_module
         return true;
     }
 
+    bool validate_backend_access(tlm::tlm_generic_payload& trans,
+                                 uint64_t aperture_bytes)
+    {
+        const uint64_t offset = trans.get_address();
+        const unsigned int len = trans.get_data_length();
+
+        if (trans.get_data_ptr() == nullptr || !is_supported_length(len) ||
+            offset >= aperture_bytes || len > aperture_bytes - offset) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+        if (trans.get_command() != tlm::TLM_READ_COMMAND &&
+            trans.get_command() != tlm::TLM_WRITE_COMMAND) {
+            trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+            return false;
+        }
+        return true;
+    }
+
+    bool forward_backend(const char* region, unsigned int index,
+                         tlm::tlm_generic_payload& trans,
+                         sc_core::sc_time& delay, uint64_t address,
+                         bool debug)
+    {
+        const uint64_t offset = trans.get_address();
+        const unsigned int len = trans.get_data_length();
+
+        if (backend_socket.size() == 0) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+
+        trans.set_address(address);
+        trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
+        if (debug) {
+            const unsigned int transferred =
+                backend_socket->transport_dbg(trans);
+            if (transferred == len &&
+                trans.get_response_status() == tlm::TLM_INCOMPLETE_RESPONSE) {
+                trans.set_response_status(tlm::TLM_OK_RESPONSE);
+            } else if (transferred != len &&
+                       trans.get_response_status() ==
+                           tlm::TLM_INCOMPLETE_RESPONSE) {
+                trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            }
+        } else {
+            backend_socket->b_transport(trans, delay);
+        }
+        trans.set_address(offset);
+
+        if (!trans.is_response_ok()) {
+            return false;
+        }
+        trace_access(region, index, trans, offset, len, debug);
+        return true;
+    }
+
     bool is_supported_iviewr(uint64_t offset, unsigned int len) const
     {
         if (offset < GICD_IVIEWR_BASE || offset >= GICD_IVIEWR_LIMIT ||
@@ -191,7 +256,8 @@ class gicx00_multiview : public sc_core::sc_module
         return offset >= GICD_IVIEWR_BASE && offset < GICD_IVIEWR_LIMIT;
     }
 
-    bool access_dist(tlm::tlm_generic_payload& trans, bool debug)
+    bool access_dist(tlm::tlm_generic_payload& trans,
+                     sc_core::sc_time& delay, bool debug)
     {
         const uint64_t offset = trans.get_address();
         if (offset >= DIST_BYTES) {
@@ -219,13 +285,30 @@ class gicx00_multiview : public sc_core::sc_module
                 trans.set_response_status(tlm::TLM_OK_RESPONSE);
                 return true;
             }
+            return access_array(m_dist_regs, "dist", UINT32_MAX, trans,
+                                debug);
         }
 
-        return access_array(m_dist_regs, "dist", UINT32_MAX, trans, debug);
+        if (offset >= GICD_CFGID &&
+            offset < GICD_CFGID + sizeof(uint64_t)) {
+            return access_array(m_dist_regs, "dist", UINT32_MAX, trans,
+                                debug);
+        }
+
+        if (backend_socket.size() == 0) {
+            return access_array(m_dist_regs, "dist", UINT32_MAX, trans,
+                                debug);
+        }
+        if (!validate_backend_access(trans, DIST_BYTES)) {
+            return false;
+        }
+        return forward_backend(
+            "dist-backend", UINT32_MAX, trans, delay,
+            p_backend_dist_base.get_value() + offset, debug);
     }
 
     bool access_redist(unsigned int index, tlm::tlm_generic_payload& trans,
-                       bool debug)
+                       sc_core::sc_time& delay, bool debug)
     {
         if (index >= m_redist_regs.size()) {
             trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
@@ -233,47 +316,84 @@ class gicx00_multiview : public sc_core::sc_module
         }
 
         const uint64_t offset = trans.get_address();
+        if (offset >= REDIST_FRAME_BYTES) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+
+        const bool extension_register =
+            offset == GICR_PWRR || offset == GICR_VIEWR ||
+            offset == GICR_FLUSHR;
+        if (offset < REDIST_BYTES && extension_register) {
+            if (trans.get_data_ptr() != nullptr &&
+                trans.get_data_length() == sizeof(uint32_t) &&
+                trans.get_command() == tlm::TLM_WRITE_COMMAND) {
+                uint32_t value = 0;
+                std::memcpy(&value, trans.get_data_ptr(), sizeof(value));
+                if (offset == GICR_PWRR) {
+                    value = 0;
+                } else if (offset == GICR_VIEWR) {
+                    value &= GICR_VIEWR_MASK;
+                } else {
+                    value &= GICR_FLUSHR_RW_MASK;
+                }
+                std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
+            }
+            return access_array(m_redist_regs[index], "redist", index,
+                                trans, debug);
+        }
+
+        /*
+         * RD-Aspen overlays a 128 KiB secure redistributor aperture on
+         * view-0 frames that have a 256 KiB stride. Consequently, two
+         * functional redistributors occupy each frame from frame 1 onward.
+         */
+        if (backend_socket.size() != 0 &&
+            index >= LEGACY_REDIST_FIRST_FRAME) {
+            const unsigned int cpu =
+                (index - LEGACY_REDIST_FIRST_FRAME) * 2 +
+                static_cast<unsigned int>(offset / REDIST_BYTES);
+            if (cpu < p_backend_redist_count.get_value()) {
+                const uint64_t backend_offset = offset % REDIST_BYTES;
+                trans.set_address(backend_offset);
+                if (!validate_backend_access(trans, REDIST_BYTES)) {
+                    trans.set_address(offset);
+                    return false;
+                }
+                const bool success = forward_backend(
+                    "redist-backend", cpu, trans, delay,
+                    p_backend_redist_base.get_value() +
+                        (cpu * p_backend_redist_stride.get_value()) +
+                        backend_offset,
+                    debug);
+                trans.set_address(offset);
+                return success;
+            }
+        }
+
         if (offset >= REDIST_BYTES) {
             return access_reserved("redist-reserved", index,
                                    REDIST_FRAME_BYTES, trans, debug);
         }
-
-        if (trans.get_data_ptr() != nullptr &&
-            trans.get_data_length() == sizeof(uint32_t) &&
-            trans.get_command() == tlm::TLM_WRITE_COMMAND) {
-            uint32_t value = 0;
-            std::memcpy(&value, trans.get_data_ptr(), sizeof(value));
-            if (offset == GICR_PWRR) {
-                value = 0;
-                std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
-            } else if (offset == GICR_VIEWR) {
-                value &= GICR_VIEWR_MASK;
-                std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
-            } else if (offset == GICR_FLUSHR) {
-                value &= GICR_FLUSHR_RW_MASK;
-                std::memcpy(trans.get_data_ptr(), &value, sizeof(value));
-            }
-        }
-
         return access_array(m_redist_regs[index], "redist", index, trans, debug);
     }
 
     bool access_dist_window(tlm::tlm_generic_payload& trans, bool debug,
-                            uint64_t base)
+                            sc_core::sc_time& delay, uint64_t base)
     {
         const uint64_t offset = trans.get_address();
         trans.set_address(base + offset);
-        const bool success = access_dist(trans, debug);
+        const bool success = access_dist(trans, delay, debug);
         trans.set_address(offset);
         return success;
     }
 
     bool access_redist_window(tlm::tlm_generic_payload& trans, bool debug,
-                              uint64_t base)
+                              sc_core::sc_time& delay, uint64_t base)
     {
         const uint64_t offset = trans.get_address();
         trans.set_address(base + offset);
-        const bool success = access_redist(0, trans, debug);
+        const bool success = access_redist(0, trans, delay, debug);
         trans.set_address(offset);
         return success;
     }
@@ -281,6 +401,12 @@ class gicx00_multiview : public sc_core::sc_module
 public:
     cci::cci_param<bool> p_trace;
     cci::cci_param<unsigned int> p_trace_limit;
+    cci::cci_param<uint64_t> p_backend_dist_base;
+    cci::cci_param<uint64_t> p_backend_redist_base;
+    cci::cci_param<uint64_t> p_backend_redist_stride;
+    cci::cci_param<unsigned int> p_backend_redist_count;
+
+    initiator_socket_t backend_socket;
 
     target_socket_t view0_dist;
     target_socket_t view0_dist_cfgid;
@@ -310,6 +436,14 @@ public:
         : sc_core::sc_module(name)
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 128)
+        , p_backend_dist_base("backend_dist_base", DEFAULT_BACKEND_DIST_BASE)
+        , p_backend_redist_base(
+              "backend_redist_base", DEFAULT_BACKEND_REDIST_BASE)
+        , p_backend_redist_stride(
+              "backend_redist_stride", DEFAULT_BACKEND_REDIST_STRIDE)
+        , p_backend_redist_count(
+              "backend_redist_count", DEFAULT_BACKEND_REDIST_COUNT)
+        , backend_socket("backend_socket")
         , view0_dist("view0_dist")
         , view0_dist_cfgid("view0_dist_cfgid")
         , view0_dist_iviewr("view0_dist_iviewr")
@@ -398,56 +532,57 @@ public:
     void b_transport_dist(tlm::tlm_generic_payload& trans,
                           sc_core::sc_time& delay)
     {
-        (void)delay;
         trans.set_dmi_allowed(false);
-        access_dist(trans, false);
+        access_dist(trans, delay, false);
     }
 
     unsigned int transport_dbg_dist(tlm::tlm_generic_payload& trans)
     {
-        return access_dist(trans, true) ? trans.get_data_length() : 0;
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        return access_dist(trans, delay, true) ? trans.get_data_length() : 0;
     }
 
     void b_transport_dist_cfgid(tlm::tlm_generic_payload& trans,
                                 sc_core::sc_time& delay)
     {
-        (void)delay;
         trans.set_dmi_allowed(false);
-        access_dist_window(trans, false, GICD_CFGID);
+        access_dist_window(trans, false, delay, GICD_CFGID);
     }
 
     unsigned int transport_dbg_dist_cfgid(tlm::tlm_generic_payload& trans)
     {
-        return access_dist_window(trans, true, GICD_CFGID) ?
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        return access_dist_window(trans, true, delay, GICD_CFGID) ?
             trans.get_data_length() : 0;
     }
 
     void b_transport_dist_iviewr(tlm::tlm_generic_payload& trans,
                                  sc_core::sc_time& delay)
     {
-        (void)delay;
         trans.set_dmi_allowed(false);
-        access_dist_window(trans, false, GICD_IVIEWR_BASE);
+        access_dist_window(trans, false, delay, GICD_IVIEWR_BASE);
     }
 
     unsigned int transport_dbg_dist_iviewr(tlm::tlm_generic_payload& trans)
     {
-        return access_dist_window(trans, true, GICD_IVIEWR_BASE) ?
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        return access_dist_window(trans, true, delay, GICD_IVIEWR_BASE) ?
             trans.get_data_length() : 0;
     }
 
     void b_transport_redist(unsigned int index, tlm::tlm_generic_payload& trans,
                             sc_core::sc_time& delay)
     {
-        (void)delay;
         trans.set_dmi_allowed(false);
-        access_redist(index, trans, false);
+        access_redist(index, trans, delay, false);
     }
 
     unsigned int transport_dbg_redist(unsigned int index,
                                       tlm::tlm_generic_payload& trans)
     {
-        return access_redist(index, trans, true) ? trans.get_data_length() : 0;
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        return access_redist(index, trans, delay, true) ?
+            trans.get_data_length() : 0;
     }
 
     void b_transport_inactive_redists(tlm::tlm_generic_payload& trans,
@@ -470,45 +605,45 @@ public:
     void b_transport_redist0_pwrr(tlm::tlm_generic_payload& trans,
                                   sc_core::sc_time& delay)
     {
-        (void)delay;
         trans.set_dmi_allowed(false);
-        access_redist_window(trans, false, GICR_PWRR);
+        access_redist_window(trans, false, delay, GICR_PWRR);
     }
 
     unsigned int transport_dbg_redist0_pwrr(
         tlm::tlm_generic_payload& trans)
     {
-        return access_redist_window(trans, true, GICR_PWRR) ?
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        return access_redist_window(trans, true, delay, GICR_PWRR) ?
             trans.get_data_length() : 0;
     }
 
     void b_transport_redist0_viewr(tlm::tlm_generic_payload& trans,
                                    sc_core::sc_time& delay)
     {
-        (void)delay;
         trans.set_dmi_allowed(false);
-        access_redist_window(trans, false, GICR_VIEWR);
+        access_redist_window(trans, false, delay, GICR_VIEWR);
     }
 
     unsigned int transport_dbg_redist0_viewr(
         tlm::tlm_generic_payload& trans)
     {
-        return access_redist_window(trans, true, GICR_VIEWR) ?
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        return access_redist_window(trans, true, delay, GICR_VIEWR) ?
             trans.get_data_length() : 0;
     }
 
     void b_transport_redist0_flushr(tlm::tlm_generic_payload& trans,
                                     sc_core::sc_time& delay)
     {
-        (void)delay;
         trans.set_dmi_allowed(false);
-        access_redist_window(trans, false, GICR_FLUSHR);
+        access_redist_window(trans, false, delay, GICR_FLUSHR);
     }
 
     unsigned int transport_dbg_redist0_flushr(
         tlm::tlm_generic_payload& trans)
     {
-        return access_redist_window(trans, true, GICR_FLUSHR) ?
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        return access_redist_window(trans, true, delay, GICR_FLUSHR) ?
             trans.get_data_length() : 0;
     }
 

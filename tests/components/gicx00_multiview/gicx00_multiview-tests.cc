@@ -4,18 +4,23 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 
 #include <cci/utils/broker.h>
 #include <gicx00_multiview.h>
 #include <gtest/gtest.h>
 #include <systemc>
 #include <tlm>
+#include <tlm_utils/simple_target_socket.h>
 
 namespace {
 
 constexpr uint64_t GICD_CTLR = 0x0000;
 constexpr uint64_t GICD_CFGID = 0xf000;
 constexpr uint64_t GICD_IVIEWR_BASE = 0xf600;
+constexpr uint64_t AP_GIC_DIST_BASE = 0x20800000;
+constexpr uint64_t AP_GIC_REDIST_BASE = 0x20880000;
+constexpr uint64_t AP_GIC_REDIST_STRIDE = 0x40000;
 constexpr uint64_t GICR_PWRR = 0x0024;
 constexpr uint64_t GICR_VIEWR = 0x002c;
 constexpr uint64_t GICR_FLUSHR = 0x0030;
@@ -28,6 +33,54 @@ constexpr uint16_t SPI_LIMIT = 992;
 struct SpiView {
     uint16_t spi;
     uint32_t view;
+};
+
+class FunctionalGicBackend : public sc_core::sc_module
+{
+public:
+    tlm_utils::simple_target_socket<FunctionalGicBackend,
+                                    DEFAULT_TLM_BUSWIDTH>
+        target_socket;
+    unsigned int accesses = 0;
+    uint64_t last_address = 0;
+    tlm::tlm_command last_command = tlm::TLM_IGNORE_COMMAND;
+    uint64_t read_value = 0;
+
+    explicit FunctionalGicBackend(sc_core::sc_module_name name)
+        : sc_core::sc_module(name)
+        , target_socket("target_socket")
+    {
+        target_socket.register_b_transport(
+            this, &FunctionalGicBackend::b_transport);
+        target_socket.register_transport_dbg(
+            this, &FunctionalGicBackend::transport_dbg);
+    }
+
+    void b_transport(tlm::tlm_generic_payload& trans,
+                     sc_core::sc_time& delay)
+    {
+        (void)delay;
+        handle(trans);
+    }
+
+    unsigned int transport_dbg(tlm::tlm_generic_payload& trans)
+    {
+        handle(trans);
+        return trans.is_response_ok() ? trans.get_data_length() : 0;
+    }
+
+private:
+    void handle(tlm::tlm_generic_payload& trans)
+    {
+        ++accesses;
+        last_address = trans.get_address();
+        last_command = trans.get_command();
+        if (trans.get_command() == tlm::TLM_READ_COMMAND) {
+            std::memcpy(trans.get_data_ptr(), &read_value,
+                        trans.get_data_length());
+        }
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+    }
 };
 
 template <typename T>
@@ -145,6 +198,43 @@ TEST(Gicx00MultiviewTest, ResetValuesAdvertiseViewAndPowerOnState)
     EXPECT_EQ(read_redist32(dut, 0, GICR_PWRR) & 0x1u, 0u);
     EXPECT_EQ(read_redist32(dut, 0, GICR_VIEWR), 0u);
     EXPECT_EQ(read_redist32(dut, 0, GICR_FLUSHR), GICR_FLUSHR_RESET);
+}
+
+TEST(Gicx00MultiviewTest,
+     StandardGicAccessesReachCanonicalFunctionalBackend)
+{
+    FunctionalGicBackend backend("gicx00_functional_backend");
+    gicx00_multiview dut("gicx00_multiview_backend");
+    dut.backend_socket.bind(backend.target_socket);
+
+    write_dist32(dut, GICD_CTLR, 0x7u);
+    EXPECT_EQ(backend.last_command, tlm::TLM_WRITE_COMMAND);
+    EXPECT_EQ(backend.last_address, AP_GIC_DIST_BASE + GICD_CTLR);
+
+    backend.read_value = 0xa5a55a5au;
+    EXPECT_EQ(read_dist32(dut, GICD_CTLR), 0xa5a55a5au);
+    EXPECT_EQ(backend.last_address, AP_GIC_DIST_BASE + GICD_CTLR);
+
+    EXPECT_EQ(read_redist32(dut, 1, 0x0008), 0xa5a55a5au);
+    EXPECT_EQ(backend.last_address, AP_GIC_REDIST_BASE + 0x0008);
+
+    EXPECT_EQ(read_redist32(dut, 1, 0x20008), 0xa5a55a5au);
+    EXPECT_EQ(backend.last_address,
+              AP_GIC_REDIST_BASE + AP_GIC_REDIST_STRIDE + 0x0008);
+
+    EXPECT_EQ(read_redist32(dut, 2, 0x0008), 0xa5a55a5au);
+    EXPECT_EQ(backend.last_address,
+              AP_GIC_REDIST_BASE + (2 * AP_GIC_REDIST_STRIDE) + 0x0008);
+
+    EXPECT_EQ(read_redist32(dut, 2, 0x20008), 0xa5a55a5au);
+    EXPECT_EQ(backend.last_address,
+              AP_GIC_REDIST_BASE + (3 * AP_GIC_REDIST_STRIDE) + 0x0008);
+
+    const unsigned int standard_accesses = backend.accesses;
+    EXPECT_NE(read_dist64(dut, GICD_CFGID) & GICD_CFGID_VIEW, 0u);
+    write_dist32(dut, iviewr_offset(SPI_MIN), 0x1u);
+    write_redist32(dut, 1, GICR_VIEWR, 0x2u);
+    EXPECT_EQ(backend.accesses, standard_accesses);
 }
 
 TEST(Gicx00MultiviewTest, StoresTwoBitDistributorViewFields)

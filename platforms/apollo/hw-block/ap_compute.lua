@@ -282,6 +282,11 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_gic_multiview = {
         moduletype = "gicx00_multiview";
+        backend_dist_base = AP_GIC_DIST_BASE;
+        backend_redist_base = AP_GIC_REDIST_BASE;
+        backend_redist_stride = AP_GIC_REDIST_SIZE;
+        backend_redist_count = AP_GIC_ACTIVE_REDIST_REGIONS;
+        backend_socket = {bind = "&ap_router.target_socket"};
         trace = ctx.getenv_bool_or(
             "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE", false);
         trace_limit = ctx.getenv_number_or(
