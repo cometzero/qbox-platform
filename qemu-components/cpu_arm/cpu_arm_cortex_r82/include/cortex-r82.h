@@ -82,6 +82,10 @@ public:
         , irq_timer_hyp_out("irq_timer_hyp_out")
         , irq_timer_sec_out("irq_timer_sec_out")
     {
+        m_external_ev |= irq_in->default_event();
+        m_external_ev |= fiq_in->default_event();
+        m_external_ev |= virq_in->default_event();
+        m_external_ev |= vfiq_in->default_event();
     }
 
     void before_end_of_elaboration() override
