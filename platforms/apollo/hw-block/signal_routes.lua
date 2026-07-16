@@ -10,8 +10,12 @@ return {
         { name = "ap_secure_uart"; source = "ap_secure_uart"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 53; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_smmu_event"; source = "ap_smmu_0.event"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 65; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_ras_ffh"; source = "ap_ras.corrected_deferred"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 89; owner = "ap"; scope = "zena_css_architecture" };
-        { name = "ap_si_scmi_pbx"; source = "host_ap_si_scmi_mhu_pbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 112; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
-        { name = "ap_si_scmi_mbx"; source = "host_ap_si_scmi_mhu_mbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 113; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
+        { name = "ap_si_ns_mhu_pbx"; source = "host_ap_si_ns_scmi_mhu_pbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 112; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
+        { name = "ap_si_ns_mhu_mbx"; source = "host_ap_si_ns_scmi_mhu_mbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 113; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
+        { name = "ap_si_scmi_pbx"; source = "host_ap_si_scmi_mhu_pbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 114; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
+        { name = "ap_si_scmi_mbx"; source = "host_ap_si_scmi_mhu_mbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 115; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
+        { name = "ap_si_pfdi_pbx"; source = "host_ap_si_pfdi_monitor_mhu_pbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 118; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
+        { name = "ap_si_pfdi_mbx"; source = "host_ap_si_pfdi_monitor_mhu_mbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 119; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
         { name = "ap_si_hipc_pbx"; source = "host_ap_si_hipc_mhu_pbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 120; owner = "si_cl1"; scope = "fvp_cfg2_extension" };
         { name = "ap_si_hipc_mbx"; source = "host_ap_si_hipc_mhu_mbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 121; owner = "si_cl1"; scope = "fvp_cfg2_extension" };
         { name = "gpex_intx_a"; source = "ap_gpex_0.intx0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 300; owner = "ap"; scope = "rd_aspen_cfg2" };
@@ -20,6 +24,12 @@ return {
         { name = "gpex_intx_d"; source = "ap_gpex_0.intx3"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 303; owner = "ap"; scope = "rd_aspen_cfg2" };
         { name = "gpex_msi"; source = "ap_gpex_0.msi"; sink = "ap_gic_its.translation"; controller = "ap_gic_its"; kind = "MSI_LPI"; id = 0; owner = "ap"; scope = "zena_css_architecture" };
         { name = "si_cl0_uart"; source = "si_cl0_uart"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 40; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "si_cl0_ap_ns_mhu_pbx"; source = "si_cl0_ap_ns_mhu_pbx"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 96; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "si_cl0_ap_ns_mhu_mbx"; source = "si_cl0_ap_ns_mhu_mbx"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 97; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "si_cl0_ap_scmi_mhu_pbx"; source = "si_cl0_ap_scmi_mhu_pbx"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 98; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "si_cl0_ap_scmi_mhu_mbx"; source = "si_cl0_ap_scmi_mhu_mbx"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 99; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "si_cl0_ap_pfdi_mhu_pbx"; source = "si_cl0_ap_pfdi_monitor_mhu_pbx"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 102; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "si_cl0_ap_pfdi_mhu_mbx"; source = "si_cl0_ap_pfdi_monitor_mhu_mbx"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 103; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "si_cl0_fmu_critical"; source = "si_cl0_fmu.critical"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 128; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "si_cl0_fmu_noncritical"; source = "si_cl0_fmu.noncritical"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 129; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "si_cl1_uart"; source = "si_cl1_uart"; sink = "si_cl1_gic.spi"; controller = "si_cl1_gic"; kind = "SPI"; id = 7; owner = "si_cl1"; scope = "fvp_cfg2_extension" };
@@ -32,7 +42,8 @@ return {
     };
     reset_routes = {
         { name = "rse_to_ap_primary_reset"; source = "rse_ap_power_request"; sink = "ap_reset_gpio"; owner = "rse"; order = 40; scope = "zena_css_architecture" };
-        { name = "si_cl0_to_ap_secondary_reset"; source = "si_cl0_power_domain_reset"; sink = "ap_cpu.reset"; owner = "si_cl0"; order = 50; scope = "zena_css_architecture" };
+        { name = "si_cl0_to_ap_secondary_reset"; source = "si_cl0_ap_core_ppu.power_on_reset"; sink = "ap_cpu.reset"; owner = "si_cl0"; order = 50; scope = "zena_css_architecture" };
+        { name = "qbox_service_model_to_ap_secondary_reset"; source = "host_ap_si_scmi_mhu_pbx.power_domain_reset"; sink = "ap_cpu.reset"; owner = "qbox_service_model"; order = 50; scope = "qbox_compatibility" };
         { name = "si_cl0_cluster_reset"; source = "host_si_cl0_clus_ppu"; sink = "si_cl0_cpu.reset"; owner = "si_cl0"; order = 30; scope = "zena_css_architecture" };
         { name = "si_cl1_cluster_reset"; source = "host_si_cl1_clus_ppu"; sink = "si_cl1_cpu.reset"; owner = "si_cl1"; order = 30; scope = "fvp_cfg2_extension" };
     };

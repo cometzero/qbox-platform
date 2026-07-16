@@ -34,6 +34,7 @@ function si_cl1.define(ctx, platform)
         trace_limit = host_ppu_trace_limit;
         assert_power_on_load = apollo_live_cl1;
         power_on_load = apollo_live_cl1 and {bind = "&si_cl1_loader.reset"} or nil;
+        power_on_load_pulse_width_ns = 0;
         target_socket = {
             address = HOST_SI_CL1_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
@@ -50,20 +51,6 @@ function si_cl1.enable(ctx, platform)
 
     platform.si_cl1_router = {
         moduletype = "router";
-        log_level = 0;
-    }
-
-    platform.si_cl1_system_bridge = {
-        moduletype = "addrtr";
-        mapped_base_addr = 0x00000000;
-        target_socket = {
-            address = 0x00000000;
-            size = 0x10000000000;
-            bind = "&si_cl1_router.initiator_socket";
-            relative_addresses = false;
-            priority = 100;
-        };
-        initiator_socket = {bind = "&system_router.target_socket"};
         log_level = 0;
     }
 
@@ -95,6 +82,7 @@ function si_cl1.enable(ctx, platform)
     local SI_CL1_HIPC_PBX_BASE = 0x39000000
     local SI_CL1_HIPC_MBX_BASE = 0x39040000
     local SI_CL1_PFDI_PBX_BASE = 0x39200000
+    local SI_CL1_PFDI_MBX_BASE = 0x39240000
     local SI_CL1_HIPC_MHU_SIZE = 0x00030000
     local SI_CL1_PFDI_MHU_SIZE = 0x00020000
     local SI_CL1_MHU_CHANNELS = 32
@@ -242,7 +230,7 @@ function si_cl1.enable(ctx, platform)
         moduletype = "mhu320ae";
         frame = "pbx";
         pair = "apollo_si_cl1_pfdi";
-        protocol = "scmi";
+        protocol = "doorbell-bridge";
         scmi_transport = "pfdi-monitor";
         channel_count = SI_CL1_MHU_CHANNELS;
         tx_shmem = SI_CL1_SCMI_SHMEM_BASE;
@@ -261,6 +249,31 @@ function si_cl1.enable(ctx, platform)
         };
         initiator_socket = {bind = "&si_cl1_router.target_socket"};
         irq = {bind = "&si_cl1_gic.spi_in_50"};
+        log_level = 0;
+    }
+
+    platform.si_cl1_pfdi_reply_mhu_mbx = {
+        moduletype = "mhu320ae";
+        frame = "mbx";
+        pair = "apollo_si_cl0_pfdi_reply";
+        protocol = "doorbell-bridge";
+        scmi_transport = "pfdi-monitor";
+        channel_count = SI_CL1_MHU_CHANNELS;
+        tx_shmem = SI_CL1_SCMI_SHMEM_BASE;
+        rx_shmem = SI_CL1_SCMI_SHMEM_BASE;
+        scmi_channel_stride = SI_CL1_SCMI_MSG_SIZE_PER_CORE;
+        scmi_channel_base_index = SI_CL1_PFDI_MHU_CHANNEL_BASE;
+        scmi_channel_count = 4;
+        init_shmem = false;
+        trace = mhu_trace;
+        trace_file = mhu_trace_file;
+        trace_limit = mhu_trace_limit;
+        target_socket = {
+            address = SI_CL1_PFDI_MBX_BASE;
+            size = SI_CL1_PFDI_MHU_SIZE;
+            bind = "&si_cl1_router.initiator_socket";
+        };
+        initiator_socket = {bind = "&si_cl1_router.target_socket"};
         log_level = 0;
     }
 

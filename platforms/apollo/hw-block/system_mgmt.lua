@@ -9,8 +9,7 @@ system_mgmt.ownership = {
     };
     shared_memory = {
         "host_rse_si_ssram";
-        "host_smcf_sram";
-        "si_cl0_smd_shared_sram";
+        "host_smd_shared_sram";
     };
     messaging = {
         "host_ap_rse_mhu_pbx";
@@ -18,6 +17,7 @@ system_mgmt.ownership = {
         "host_rse_si_mhu_pbx";
         "host_rse_si_mhu_mbx";
         "host_ap_si_pfdi_monitor_mhu_pbx";
+        "host_ap_si_pfdi_monitor_mhu_mbx";
         "si_cl1_pfdi_mhu_pbx";
     };
     translation = {
@@ -82,14 +82,11 @@ function system_mgmt.define(ctx, platform)
     platform.host_rse_si_mhu_pbx = {
         moduletype = "mhu320ae";
         frame = "pbx";
-        pair = "rse_si_cl0";
-        protocol = "scmi";
-        scmi_transport = "rse-bl2";
+        pair = "rse_to_si_cl0";
+        protocol = "doorbell-bridge";
         tx_shmem = HOST_RSE_SI_SSRAM_PHYS_BASE;
         rx_shmem = HOST_RSE_SI_SSRAM_PHYS_BASE;
         init_shmem = false;
-        ack_bit = 1;
-        assert_power_on_reset = true;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
@@ -99,16 +96,14 @@ function system_mgmt.define(ctx, platform)
             bind = "&system_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        power_on_reset = enable_ap_cpus and {bind = "&ap_cpu_0.reset"} or nil;
         log_level = 0;
     }
 
     platform.host_rse_si_mhu_mbx = {
         moduletype = "mhu320ae";
         frame = "mbx";
-        pair = "rse_si_cl0";
-        protocol = "scmi";
-        scmi_transport = "rse-bl2";
+        pair = "si_cl0_to_rse";
+        protocol = "doorbell-bridge";
         tx_shmem = HOST_RSE_SI_SSRAM_PHYS_BASE;
         rx_shmem = HOST_RSE_SI_SSRAM_PHYS_BASE;
         init_shmem = false;
@@ -150,7 +145,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_AP_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&system_router.initiator_socket";
+            bind = "&smd_router.initiator_socket";
         };
         translation_socket = enable_ap_cpus and {
             address = HOST_AP_ATU_LOGICAL_BASE;
@@ -166,11 +161,11 @@ function system_mgmt.define(ctx, platform)
     platform.host_ap_si_ns_scmi_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "pbx";
-        pair = "ap_si_ns_scmi";
-        protocol = "scmi";
+        pair = ctx.apollo_live_cl0 and "ap_to_si_cl0_ns" or "ap_si_ns_scmi";
+        protocol = ctx.apollo_live_cl0 and "doorbell-bridge" or "scmi";
         tx_shmem = 0x00180000;
         rx_shmem = 0x00180100;
-        init_shmem = true;
+        init_shmem = not ctx.apollo_live_cl0;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
@@ -180,15 +175,15 @@ function system_mgmt.define(ctx, platform)
             bind = "&system_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_PBX_IRQ};
+        irq = {bind = "&ap_gic.spi_in_"..AP_SI_NS_MHU_PBX_IRQ};
         log_level = 0;
     } or nil
 
     platform.host_ap_si_ns_scmi_mhu_mbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "mbx";
-        pair = "ap_si_ns_scmi";
-        protocol = "scmi";
+        pair = ctx.apollo_live_cl0 and "si_cl0_to_ap_ns" or "ap_si_ns_scmi";
+        protocol = ctx.apollo_live_cl0 and "doorbell-bridge" or "scmi";
         tx_shmem = 0x00180000;
         rx_shmem = 0x00180100;
         init_shmem = false;
@@ -201,18 +196,18 @@ function system_mgmt.define(ctx, platform)
             bind = "&system_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_MBX_IRQ};
+        irq = {bind = "&ap_gic.spi_in_"..AP_SI_NS_MHU_MBX_IRQ};
         log_level = 0;
     } or nil
 
     platform.host_ap_si_scmi_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "pbx";
-        pair = "ap_si_scmi";
-        protocol = "scmi";
+        pair = ctx.apollo_live_cl0 and "ap_to_si_cl0_scmi" or "ap_si_scmi";
+        protocol = ctx.apollo_live_cl0 and "doorbell-bridge" or "scmi";
         tx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
         rx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
-        init_shmem = true;
+        init_shmem = not ctx.apollo_live_cl0;
         power_domain_reset_count = AP_NUM_CPUS;
         power_domain_reset_delay_ns = ap_power_domain_reset_delay_ns;
         power_domain_reset_assert_on_power_off = false;
@@ -233,7 +228,8 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     } or nil
 
-    if platform.host_ap_si_scmi_mhu_pbx ~= nil then
+    if platform.host_ap_si_scmi_mhu_pbx ~= nil and
+       not ctx.apollo_live_cl0 then
         for i=1,(AP_NUM_CPUS-1) do
             platform.host_ap_si_scmi_mhu_pbx["power_domain_reset_"..i] = {
                 bind = "&ap_cpu_"..i..".reset";
@@ -244,8 +240,8 @@ function system_mgmt.define(ctx, platform)
     platform.host_ap_si_scmi_mhu_mbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "mbx";
-        pair = "ap_si_scmi";
-        protocol = "scmi";
+        pair = ctx.apollo_live_cl0 and "si_cl0_to_ap_scmi" or "ap_si_scmi";
+        protocol = ctx.apollo_live_cl0 and "doorbell-bridge" or "scmi";
         tx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
         rx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
         init_shmem = false;
@@ -327,14 +323,14 @@ function system_mgmt.define(ctx, platform)
     platform.host_ap_si_pfdi_monitor_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "pbx";
-        pair = "ap_si_pfdi_monitor";
-        protocol = "scmi";
+        pair = ctx.apollo_live_cl0 and "ap_to_si_cl0_pfdi" or "ap_si_pfdi_monitor";
+        protocol = ctx.apollo_live_cl0 and "doorbell-bridge" or "scmi";
         scmi_transport = "pfdi-monitor";
         tx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
         rx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
         scmi_channel_stride = HOST_AP_SCMI_PFDI_MONITOR_STRIDE;
         scmi_channel_count = HOST_AP_SCMI_PFDI_MONITOR_CHANNELS;
-        init_shmem = true;
+        init_shmem = not ctx.apollo_live_cl0;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
@@ -344,6 +340,31 @@ function system_mgmt.define(ctx, platform)
             bind = "&system_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
+        irq = {bind = "&ap_gic.spi_in_"..AP_SI_PFDI_MHU_PBX_IRQ};
+        log_level = 0;
+    } or nil
+
+    platform.host_ap_si_pfdi_monitor_mhu_mbx = enable_ap_cpus and {
+        moduletype = "mhu320ae";
+        frame = "mbx";
+        pair = ctx.apollo_live_cl0 and "si_cl0_to_ap_pfdi" or "ap_si_pfdi_monitor";
+        protocol = ctx.apollo_live_cl0 and "doorbell-bridge" or "scmi";
+        scmi_transport = "pfdi-monitor";
+        tx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
+        rx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
+        scmi_channel_stride = HOST_AP_SCMI_PFDI_MONITOR_STRIDE;
+        scmi_channel_count = HOST_AP_SCMI_PFDI_MONITOR_CHANNELS;
+        init_shmem = false;
+        trace = mhu_trace;
+        trace_limit = mhu_trace_limit;
+        trace_file = mhu_trace_file;
+        target_socket = {
+            address = HOST_AP_SI_PFDI_MONITOR_MHU_MBX_PHYS_BASE;
+            size = HOST_AP_SI_MHU_FRAME_SIZE;
+            bind = "&system_router.initiator_socket";
+        };
+        initiator_socket = {bind = "&system_router.target_socket"};
+        irq = {bind = "&ap_gic.spi_in_"..AP_SI_PFDI_MHU_MBX_IRQ};
         log_level = 0;
     } or nil
 
@@ -358,7 +379,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SMDEXP2SMD_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&system_router.initiator_socket";
+            bind = "&smd_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -368,7 +389,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_SYSTOP_PIK_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
-            bind = "&system_router.initiator_socket";
+            bind = "&smd_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -380,7 +401,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE;
             size = 0x00010000;
-            bind = "&system_router.initiator_socket";
+            bind = "&smd_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -391,7 +412,7 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00010000;
             size = 0x00010000;
-            bind = "&system_router.initiator_socket";
+            bind = "&smd_router.initiator_socket";
         };
         log_level = 0;
     }
@@ -402,17 +423,17 @@ function system_mgmt.define(ctx, platform)
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00020000;
             size = 0x00010000;
-            bind = "&system_router.initiator_socket";
+            bind = "&smd_router.initiator_socket";
         };
         log_level = 0;
     }
 
-    platform.host_smcf_sram = {
+    platform.host_smd_shared_sram = {
         moduletype = "gs_memory";
         target_socket = {
-            address = HOST_SMCF_SRAM_PHYS_BASE;
-            size = HOST_SMCF_SRAM_SIZE;
-            bind = "&system_router.initiator_socket";
+            address = HOST_SMD_SHARED_SRAM_PHYS_BASE;
+            size = HOST_SMD_SHARED_SRAM_SIZE;
+            bind = "&smd_router.initiator_socket";
         };
         init_mem = true;
         log_level = 0;
@@ -476,31 +497,6 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-end
-
-function system_mgmt.add_ap_logical_mhu_aliases(platform)
-    local AP_RSE_SECURE_MHU_PBX_LOGICAL_BASE = 0x40680000
-    local AP_RSE_SECURE_MHU_MBX_LOGICAL_BASE = 0x406B0000
-    local AP_LOGICAL_MHU_FRAME_SIZE = 0x00030000
-
-    if platform.host_ap_rse_mhu_pbx ~= nil then
-        local target = platform.host_ap_rse_mhu_pbx.target_socket
-        target.priority = 0
-        target.aliases = target.aliases or {}
-        target.aliases.ap_logical_pbx = {
-            address = AP_RSE_SECURE_MHU_PBX_LOGICAL_BASE;
-            size = AP_LOGICAL_MHU_FRAME_SIZE;
-        }
-    end
-    if platform.host_ap_rse_mhu_mbx ~= nil then
-        local target = platform.host_ap_rse_mhu_mbx.target_socket
-        target.priority = 0
-        target.aliases = target.aliases or {}
-        target.aliases.ap_logical_mbx = {
-            address = AP_RSE_SECURE_MHU_MBX_LOGICAL_BASE;
-            size = AP_LOGICAL_MHU_FRAME_SIZE;
-        }
-    end
 end
 
 return system_mgmt

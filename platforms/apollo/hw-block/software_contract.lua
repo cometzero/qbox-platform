@@ -6,7 +6,7 @@ return {
     };
     interfaces = {
         { name = "rse_scp_scmi"; protocol = "SCMI"; producer = "rse_runtime"; consumer = "scp_si0"; transport = "MHUv3"; purpose = "boot_confirmation_and_ap_primary_power"; scope = "zena_css_architecture" };
-        { name = "tfa_scp_scmi"; protocol = "SCMI"; producer = "tfa_bl31"; consumer = "scp_si0"; transport = "MHUv3"; purpose = "secondary_cpu_system_power_reset"; scope = "zena_css_architecture" };
+        { name = "tfa_scp_scmi"; protocol = "SCMI"; producer = "tfa_bl31"; consumer = "scp_si0"; transport = "MHUv3"; shmem_backing = "ap-mhu-ns"; reset_policy = "preserve_on_ap_reset"; purpose = "secondary_cpu_system_power_reset"; scope = "zena_css_architecture" };
         { name = "linux_psci"; protocol = "PSCI"; producer = "linux"; consumer = "tfa_bl31"; transport = "SMC"; purpose = "cpu_idle_frequency_power"; scope = "zena_css_architecture" };
         { name = "ap_pfdi"; protocol = "PFDI"; protocol_id = 0x90; producer = "tfa_bl31"; consumer = "scp_si0"; transport = "SCMI_MHUv3"; channel_count = 16; channel_stride = 40; error_policy = "bounded_timeout"; scope = "rd_aspen_cfg2" };
         { name = "si_cl1_pfdi"; protocol = "PFDI"; protocol_id = 0x90; producer = "zephyr_si1"; consumer = "scp_si0"; transport = "SCMI_MHUv3"; channel_base = 2; channel_stride = 40; error_policy = "bounded_timeout"; scope = "fvp_cfg2_extension" };

@@ -15,7 +15,8 @@ function rse.define(ctx, platform)
     platform.qemu_inst = {
         moduletype = "QemuInstance";
         args = {"&platform.qemu_inst_mgr", "AARCH64"};
-        sync_policy = "multithread-freerunning";
+        tcg_mode = rse_tcg_mode;
+        sync_policy = rse_sync_policy;
         qemu_args = qemu_args;
     }
 
@@ -638,7 +639,8 @@ function rse.define(ctx, platform)
         qemu_inst = {
             moduletype = "QemuInstance";
             args = {"&qemu_inst_mgr", "AARCH64"};
-            sync_policy = "multithread-freerunning";
+            tcg_mode = rse_tcg_mode;
+            sync_policy = rse_sync_policy;
             qemu_args = qemu_args;
         },
 

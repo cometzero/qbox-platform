@@ -8,7 +8,7 @@ return {
     ranges = {
         { name = "ap_shared_sram"; base = 0x00000000; size = 0x00100000; view = "ap"; target = "host_ap_shared_sram"; owner = "smd"; access = "rw"; backing = "ap-shared-sram"; scope = cfg2; source = guide };
         { name = "ap_bl2_header_sram"; base = 0x00100000; size = 0x00080000; view = "ap"; target = "host_ap_bl2_header_sram"; owner = "rse"; access = "rw"; backing = "ap-si-cl1-hipc"; scope = cfg2; source = guide };
-        { name = "ap_mhu_ns_shared_sram"; base = 0x00180000; size = 0x00001000; view = "ap"; target = "host_ap_mhu_ns_shared_sram"; owner = "smd"; access = "rw"; backing = "ap-mhu-ns"; scope = cfg2; source = guide };
+        { name = "ap_mhu_ns_shared_sram"; base = 0x00180000; size = 0x00001000; view = "ap"; target = "host_ap_mhu_ns_shared_sram"; owner = "smd"; access = "rw"; backing = "ap-mhu-ns"; reset_policy = "preserve_on_ap_reset"; scope = cfg2; source = guide };
         { name = "ap_primary_uart"; base = 0x1A400000; size = 0x00010000; view = "ap"; target = "ap_primary_uart"; owner = "ap"; access = "rw"; scope = architecture; source = guide };
         { name = "ap_secure_uart"; base = 0x1A410000; size = 0x00010000; view = "ap"; target = "ap_secure_uart"; owner = "ap"; access = "secure_rw"; scope = architecture; source = guide };
         { name = "ap_watchdog_refresh"; base = 0x1A420000; size = 0x00010000; view = "ap"; target = "ap_watchdog_refresh"; owner = "ap"; access = "rw"; scope = architecture; source = guide };
@@ -21,7 +21,8 @@ return {
         { name = "ap_fmu_cl1"; base = 0x1D100000; size = 0x00050000; view = "ap"; target = "ap_cl1_ni710ae_fmu"; owner = "ap"; access = "rw"; fidelity = "functional_subset"; scope = cfg2; source = guide };
         { name = "ap_fmu_cl2"; base = 0x1D200000; size = 0x00050000; view = "ap"; target = "ap_cl2_ni710ae_fmu"; owner = "ap"; access = "rw"; fidelity = "functional_subset"; scope = cfg2; source = guide };
         { name = "ap_fmu_cl3"; base = 0x1D300000; size = 0x00050000; view = "ap"; target = "ap_cl3_ni710ae_fmu"; owner = "ap"; access = "rw"; fidelity = "functional_subset"; scope = cfg2; source = guide };
-        { name = "ap_gic_legacy_dist"; base = 0x20000000; size = 0x00010000; view = "ap"; target = "ap_gic"; owner = "ap"; access = "secure_rw"; alias_of = "ap_gic_dist"; reason = "OP-TEE secure compatibility view"; scope = cfg2; source = guide };
+        { name = "ap_gic_view0_dist"; base = 0x20000000; size = 0x00080000; view = "ap"; target = "ap_gic_multiview"; owner = "ap"; access = "secure_rw"; fidelity = "control_plane"; scope = cfg2; source = guide };
+        { name = "ap_gic_view0_redist"; base = 0x20080000; size = 0x00400000; view = "ap"; target = "ap_gic_multiview"; owner = "ap"; access = "secure_rw"; fidelity = "control_plane"; scope = cfg2; source = guide };
         { name = "ap_gic_dist"; base = 0x20800000; size = 0x00010000; view = "ap"; target = "ap_gic"; owner = "ap"; access = "rw"; scope = architecture; source = guide };
         { name = "ap_gic_its"; base = 0x20840000; size = 0x00040000; view = "ap"; target = "ap_gic_its"; owner = "ap"; access = "rw"; scope = architecture; source = guide };
         { name = "ap_gic_redist"; base = 0x20880000; size = 0x00400000; view = "ap"; target = "ap_gic"; owner = "ap"; access = "rw"; scope = architecture; source = guide };
@@ -43,11 +44,11 @@ return {
         { name = "ap_dram_high"; base = 0x20000000000; size = 0x80000000; view = "ap"; target = "host_ap_dram2"; owner = "ap"; access = "rw"; backing = "ap-dram-high"; scope = cfg2; source = guide };
 
         { name = "smd_shared_sram"; base = 0x00000000; size = 0x00100000; view = "smd"; target = "host_ap_shared_sram"; owner = "smd"; access = "rw"; backing = "ap-shared-sram"; scope = architecture; source = guide };
-        { name = "system_smcf_sram"; base = 0x2000060000000; size = 0x00002000; view = "system"; target = "host_smcf_sram"; owner = "smd"; access = "rw"; backing = "smcf-sram"; scope = architecture; source = guide };
-        { name = "system_smdexp_atu"; base = 0x20000D0070000; size = 0x00010000; view = "system"; target = "host_smdexp2smd_atu"; owner = "rse"; access = "policy"; bridge = "smd_to_system_nci"; scope = architecture; source = guide };
-        { name = "system_ap_atu"; base = 0x20000D0080000; size = 0x00010000; view = "system"; target = "host_ap_atu"; owner = "rse"; access = "policy"; bridge = "smd_to_system_nci"; scope = architecture; source = guide };
-        { name = "system_css_counters"; base = 0x20000D0100000; size = 0x00030000; view = "system"; target = "host_css_gtimer"; owner = "smd"; access = "rw"; bridge = "smd_to_system_nci"; scope = architecture; source = guide };
-        { name = "system_systop_pik"; base = 0x20000D0200000; size = 0x00010000; view = "system"; target = "host_systop_pik"; owner = "si_cl0"; access = "rw"; bridge = "smd_to_system_nci"; scope = architecture; source = guide };
+        { name = "system_smd_shared_sram"; base = 0x2000060000000; size = 0x00100000; view = "system"; target = "host_smd_shared_sram"; owner = "smd"; access = "rw"; backing = "smd-shared-sram"; scope = architecture; source = guide };
+        { name = "system_smdexp_atu"; base = 0x20000D0070000; size = 0x00010000; view = "system"; target = "host_smdexp2smd_atu"; owner = "rse"; access = "policy"; bridge = "system_to_smd_nci"; scope = architecture; source = guide };
+        { name = "system_ap_atu"; base = 0x20000D0080000; size = 0x00010000; view = "system"; target = "host_ap_atu"; owner = "rse"; access = "policy"; bridge = "system_to_smd_nci"; scope = architecture; source = guide };
+        { name = "system_css_counters"; base = 0x20000D0100000; size = 0x00030000; view = "system"; target = "host_css_gtimer"; owner = "smd"; access = "rw"; bridge = "system_to_smd_nci"; scope = architecture; source = guide };
+        { name = "system_systop_pik"; base = 0x20000D0200000; size = 0x00010000; view = "system"; target = "host_systop_pik"; owner = "si_cl0"; access = "rw"; bridge = "system_to_smd_nci"; scope = architecture; source = guide };
         { name = "system_ap_rse_mhu"; base = 0x300001B600000; size = 0x00060000; view = "system"; target = "host_ap_rse_mhu"; owner = "rse"; access = "secure_rw"; scope = cfg2; source = guide };
         { name = "system_si_cl0_util"; base = 0x4000028000000; size = 0x00800000; view = "system"; target = "host_si_cl0_cub"; owner = "si_cl0"; access = "rw"; scope = architecture; source = guide };
         { name = "system_si_cl1_util"; base = 0x4000028800000; size = 0x00800000; view = "system"; target = "host_si_cl1_cub"; owner = "si_cl1"; access = "rw"; scope = cl1; source = guide };
@@ -84,7 +85,7 @@ return {
         { name = "si_cl0_refclk_count"; base = 0x2A720000; size = 0x00010000; view = "si_cl0"; target = "si_cl0_refclk_count"; owner = "si_cl0"; access = "ro"; scope = architecture; source = guide };
         { name = "si_cl0_gic_view0"; base = 0x30000000; size = 0x000E0000; view = "si_cl0"; target = "si_cl0_gic"; owner = "si_cl0"; access = "rw"; scope = architecture; source = guide };
         { name = "si_cl0_gic_view1"; base = 0x30100000; size = 0x00060000; view = "si_cl0"; target = "si_gic_view1"; owner = "si_cl1"; access = "policy"; scope = cl1; source = guide };
-        { name = "si_cl0_rse_shared"; base = 0x40000000; size = 0x00800000; view = "si_cl0"; target = "si_cl0_rse_shared"; owner = "rse"; access = "rw"; bridge = "si_cl0_to_system_atu_apu"; scope = architecture; source = guide };
+        { name = "si_cl0_rse_shared"; base = 0x40000000; size = 0x00040000; view = "si_cl0"; target = "host_rse_si_ssram"; owner = "rse"; access = "rw"; backing = "rse-si-ssram"; bridge = "si_cl0_to_rse_shared"; scope = architecture; source = guide };
         { name = "si_cl0_si_cl1_scmi_shmem"; base = 0x48000000; size = 0x00001000; view = "si_cl0"; target = "si_cl1_scmi_shmem"; owner = "si_cl0"; access = "rw"; backing = "si-cl1-scmi"; bridge = "si_cl0_to_si_cl1_scmi_apu"; scope = cl1; source = guide };
         { name = "si_cl0_cmn_atw"; base = 0x80000000; size = 0x40000000; view = "si_cl0"; target = "si_cl0_cmn"; owner = "si_cl0"; access = "policy"; bridge = "si_cl0_to_system_atu_apu"; scope = architecture; source = guide };
         { name = "si_cl0_cluster_utility_atw"; base = 0xC0000000; size = 0x10000000; view = "si_cl0"; target = "si_cl0_cluster_utility"; owner = "si_cl0"; access = "policy"; bridge = "si_cl0_to_system_atu_apu"; scope = architecture; source = guide };

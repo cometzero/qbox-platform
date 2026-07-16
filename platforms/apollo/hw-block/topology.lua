@@ -39,9 +39,9 @@ return {
             reset_policy = "rse_only"; scope = "zena_css_architecture";
         };
         {
-            name = "smd_to_system_nci"; from = "smd"; to = "system";
-            kind = "apu"; owner = "rse"; width = 52;
-            reset_policy = "rse_only"; scope = "zena_css_architecture";
+            name = "system_to_smd_nci"; from = "system"; to = "smd";
+            kind = "nci_decode"; owner = "rse"; width = 52;
+            reset_policy = "static_high_nibble"; scope = "zena_css_architecture";
         };
         {
             name = "rse_to_system_atu_apu"; from = "rse"; to = "system";
@@ -54,9 +54,9 @@ return {
             reset_policy = "rse_only"; scope = "zena_css_architecture";
         };
         {
-            name = "si_cl1_to_system_atu_apu"; from = "si_cl1"; to = "system";
-            kind = "atu_apu"; owner = "rse"; width = 40;
-            reset_policy = "rse_only"; scope = "fvp_cfg2_extension";
+            name = "si_cl0_to_rse_shared"; from = "si_cl0"; to = "system";
+            kind = "static_window"; owner = "rse"; width = 40;
+            reset_policy = "static_allow_list"; scope = "zena_css_architecture";
         };
         {
             name = "si_cl0_to_si_cl1_scmi_apu"; from = "si_cl0"; to = "si_cl1";
@@ -70,8 +70,8 @@ return {
         };
         {
             name = "si_cl1_to_ap_hipc"; from = "si_cl1"; to = "ap";
-            kind = "atu_apu"; owner = "rse"; width = 40;
-            reset_policy = "deny_until_rse_programmed"; scope = "fvp_cfg2_extension";
+            kind = "static_window"; owner = "si_cl1"; width = 40;
+            reset_policy = "static_allow_list"; scope = "fvp_cfg2_extension";
         };
     };
     qemu_instances = {
@@ -82,8 +82,8 @@ return {
         };
         {
             name = "si_cl0_qemu_inst"; domain = "si_cl0"; architecture = "AARCH64";
-            cpu = "cortex-r82"; acceleration = "tcg"; tcg_mode = "SINGLE";
-            sync_policy = "quantum"; ram_owner = "systemc";
+            cpu = "cortex-r82"; acceleration = "tcg"; tcg_mode = "MULTI";
+            sync_policy = "multithread-quantum"; ram_owner = "systemc";
         };
         {
             name = "si_cl1_qemu_inst"; domain = "si_cl1"; architecture = "AARCH64";
@@ -93,20 +93,16 @@ return {
         };
         {
             name = "rse_qemu_inst"; domain = "rse"; architecture = "ARM";
-            cpu = "cortex-m55"; acceleration = "tcg"; tcg_mode = "SINGLE";
-            sync_policy = "quantum"; ram_owner = "systemc";
+            cpu = "cortex-m55"; acceleration = "tcg"; tcg_mode = "MULTI";
+            sync_policy = "multithread-freerunning"; ram_owner = "systemc";
         };
     };
     validation = {
         topology_frozen = true;
         required_socket_cardinality = 1;
         forbid_runtime_priority_mutation = true;
-        forbid_broad_passthrough = false;
-        migration_phase = "A3_local_view_isolation";
-        compatibility_debt = {
-            "ap_system_bridge_1_to_1";
-            "si_cl0_system_bridge_1_to_1";
-            "si_cl1_system_bridge_1_to_1";
-        };
+        forbid_broad_passthrough = true;
+        migration_phase = "A4_policy_routing";
+        compatibility_debt = {};
     };
 }

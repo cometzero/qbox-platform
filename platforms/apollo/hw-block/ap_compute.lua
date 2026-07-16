@@ -24,6 +24,12 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
+    platform.ap_cold_reset_fanout = enable_ap_cpus and {
+        moduletype = "reset_fanout";
+        reset_out = {bind = ap_system_reset_bind_targets()};
+        log_level = 0;
+    } or nil
+
     -- AP CPU backend and PCIe root complex
 
     platform.ap_global_peripheral_initiator = enable_ap_cpus and {
@@ -118,6 +124,18 @@ function ap_compute.define(ctx, platform)
         target_socket = {
             address = 0x00180000;
             size = 0x00001000;
+            bind = "&system_router.initiator_socket";
+        };
+        init_mem = true;
+        log_level = 0;
+    }
+
+    platform.host_ap_peripheral_ns_sram_tail = {
+        moduletype = "gs_memory";
+        dmi_allow = host_memory_dmi;
+        target_socket = {
+            address = 0x00181000;
+            size = 0x0007F000;
             bind = "&system_router.initiator_socket";
         };
         init_mem = true;
@@ -248,12 +266,6 @@ function ap_compute.define(ctx, platform)
             address = AP_GIC_DIST_BASE;
             size = 0x00010000;
             bind = "&system_router.initiator_socket";
-            aliases = {
-                optee_secure_view = {
-                    address = AP_GIC_LEGACY_DIST_BASE;
-                    size = 0x00010000;
-                };
-            };
         };
         num_cpus = AP_GIC_NUM_CPUS;
         redist_region = repeat_value(1, AP_GIC_ACTIVE_REDIST_REGIONS);
@@ -267,6 +279,43 @@ function ap_compute.define(ctx, platform)
         has_vpend_valid_dirty = true;
         vpeid_bits = 16;
     } or nil
+
+    platform.ap_gic_multiview = {
+        moduletype = "gicx00_multiview";
+        trace = ctx.getenv_bool_or(
+            "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE", false);
+        trace_limit = ctx.getenv_number_or(
+            "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE_LIMIT", "256");
+        view0_dist = {
+            address = AP_GIC_VIEW0_DIST_BASE;
+            size = AP_GIC_VIEW0_DIST_SIZE;
+            bind = "&ap_router.initiator_socket";
+            priority = 0;
+        };
+    }
+
+    for i=0,(AP_GIC_VIEW0_REDIST_REGIONS-1) do
+        platform.ap_gic_multiview["view0_redist_"..i] = {
+            address = AP_GIC_VIEW0_REDIST_BASE +
+                (i * AP_GIC_VIEW0_REDIST_SIZE);
+            size = AP_GIC_VIEW0_REDIST_SIZE;
+            bind = "&ap_router.initiator_socket";
+            priority = 0;
+        }
+    end
+
+    if enable_ap_cpus and
+       AP_GIC_ACTIVE_REDIST_REGIONS < AP_GIC_REDIST_REGIONS then
+        platform.ap_gic_multiview.inactive_redists = {
+            address = AP_GIC_REDIST_BASE +
+                AP_GIC_ACTIVE_REDIST_REGIONS * AP_GIC_REDIST_SIZE;
+            size =
+                (AP_GIC_REDIST_REGIONS - AP_GIC_ACTIVE_REDIST_REGIONS) *
+                AP_GIC_REDIST_SIZE;
+            bind = "&ap_router.initiator_socket";
+            priority = 0;
+        }
+    end
 
     platform.ap_gic_its = enable_ap_cpus and {
         moduletype = "arm_gicv3_its";
@@ -484,25 +533,6 @@ if enable_ap_cpus then
             address = AP_GIC_REDIST_BASE + (i * AP_GIC_REDIST_SIZE);
             size = AP_GIC_REDIST_SIZE;
             bind = "&system_router.initiator_socket";
-            aliases = {
-                optee_secure_view = {
-                    address = AP_GIC_LEGACY_REDIST_BASE + (i * AP_GIC_LEGACY_REDIST_SIZE);
-                    size = AP_GIC_LEGACY_REDIST_SIZE;
-                };
-            };
-        }
-    end
-
-    for i=AP_GIC_ACTIVE_REDIST_REGIONS,(AP_GIC_REDIST_REGIONS-1) do
-        platform["ap_gicr_reserved_"..i] = {
-            moduletype = "gs_memory";
-            target_socket = {
-                address = AP_GIC_REDIST_BASE + (i * AP_GIC_REDIST_SIZE);
-                size = AP_GIC_REDIST_SIZE;
-                bind = "&system_router.initiator_socket";
-            };
-            dmi_allow = false;
-            log_level = 0;
         }
     end
 
@@ -562,20 +592,6 @@ function ap_compute.enable_ap_router(ctx, platform)
         log_level = 0;
     }
 
-    platform.ap_system_bridge = {
-        moduletype = "addrtr";
-        mapped_base_addr = 0x0;
-        target_socket = {
-            address = 0x0;
-            size = 0x1000000000000;
-            bind = "&ap_router.initiator_socket";
-            relative_addresses = false;
-            priority = 100;
-        };
-        initiator_socket = {bind = "&system_router.target_socket"};
-        log_level = 0;
-    }
-
     platform.ap_hipc_alias = {
         moduletype = "addrtr";
         mapped_base_addr = 0x00100000;
@@ -589,6 +605,31 @@ function ap_compute.enable_ap_router(ctx, platform)
         initiator_socket = {bind = "&ap_router.target_socket"};
         log_level = 0;
     }
+
+    local smd_fmu_aliases = {
+        { local_base = AP_CL0_NI710AE_FMU_BASE;
+          physical_base = HOST_AP_CL0_NI710AE_FMU_PHYS_BASE };
+        { local_base = AP_CL1_NI710AE_FMU_BASE;
+          physical_base = HOST_AP_CL1_NI710AE_FMU_PHYS_BASE };
+        { local_base = AP_CL2_NI710AE_FMU_BASE;
+          physical_base = HOST_AP_CL2_NI710AE_FMU_PHYS_BASE };
+        { local_base = AP_CL3_NI710AE_FMU_BASE;
+          physical_base = HOST_AP_CL3_NI710AE_FMU_PHYS_BASE };
+    }
+    for i, route in ipairs(smd_fmu_aliases) do
+        platform["smd_ap_cl"..(i - 1).."_ni710ae_fmu_alias"] = {
+            moduletype = "addrtr";
+            mapped_base_addr = route.local_base;
+            target_socket = {
+                address = route.physical_base;
+                size = AP_FMU_MODELED_SIZE;
+                bind = "&smd_router.initiator_socket";
+                relative_addresses = false;
+            };
+            initiator_socket = {bind = "&ap_router.target_socket"};
+            log_level = 0;
+        }
+    end
 
     -- Host-to-AP translation and AP masters
     local function bind_ap_target(target)
@@ -616,10 +657,21 @@ function ap_compute.enable_ap_router(ctx, platform)
             bind = "&ap_router.target_socket";
         }
     end
-    if platform.ap_gpex_0 ~= nil then
-        platform.ap_gpex_0.bus_master = {
+    if platform.ap_bl2_reset_loader ~= nil then
+        platform.ap_bl2_reset_loader.initiator_socket = {
             bind = "&ap_router.target_socket";
         }
+    end
+    if platform.ap_gpex_0 ~= nil then
+        if smmu_backend == "systemc-mmu720ae" then
+            platform.ap_gpex_0.bus_master = {
+                bind = "&ap_smmu_0.tbu_lti00_socket";
+            }
+        else
+            platform.ap_gpex_0.bus_master = {
+                bind = "&ap_router.target_socket";
+            }
+        end
         bind_ap_target(platform.ap_gpex_0.pio_iface)
         bind_ap_target(platform.ap_gpex_0.mmio_iface)
         bind_ap_target(platform.ap_gpex_0.ecam_iface)
@@ -627,6 +679,12 @@ function ap_compute.enable_ap_router(ctx, platform)
     end
 
     -- Memory and interrupt controller windows
+    bind_ap_socket(platform.host_ap_shared_sram, "target_socket")
+    bind_ap_socket(platform.host_ap_mhu_ns_shared_sram, "target_socket")
+    bind_ap_socket(platform.host_ap_peripheral_ns_sram_tail, "target_socket")
+    bind_ap_socket(platform.host_ap_bl2_header_sram, "target_socket")
+    bind_ap_socket(platform.host_ap_flash, "target_socket")
+    bind_ap_socket(platform.host_ap_trusted_nvctr, "target_socket")
     bind_ap_socket(platform.host_ap_dram1, "target_socket")
     bind_ap_socket(platform.host_ap_dram2, "target_socket")
     bind_ap_socket(platform.host_ap_ffa_mm_comm_buffer, "target_socket")
@@ -639,6 +697,15 @@ function ap_compute.enable_ap_router(ctx, platform)
     end
     bind_ap_socket(platform.ap_gic_its, "mem")
     bind_ap_socket(platform.ap_smmu_0, "mem")
+    if smmu_backend == "systemc-mmu720ae" and platform.ap_smmu_0 ~= nil then
+        platform.ap_smmu_0.downstream_socket = {
+            bind = "&ap_router.target_socket";
+        }
+        platform.ap_smmu_0.ptw_socket = {
+            bind = "&ap_router.target_socket";
+        }
+        platform.ap_smmu_0.tbu_lti00_default_sid = 0x40
+    end
 
     -- RoS and AP peripherals
     ctx.ros.bind_ap_view_targets(platform, bind_ap_target)
@@ -655,7 +722,6 @@ function ap_compute.enable_ap_router(ctx, platform)
     bind_ap_socket(platform.ap_cl1_ni710ae_fmu, "target_socket")
     bind_ap_socket(platform.ap_cl2_ni710ae_fmu, "target_socket")
     bind_ap_socket(platform.ap_cl3_ni710ae_fmu, "target_socket")
-
     -- AP CPU initiator view
     for i=0,15 do
         local cpu = platform["ap_cpu_"..i]

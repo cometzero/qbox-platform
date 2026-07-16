@@ -47,7 +47,6 @@ ap_compute.define(ctx, platform)
 ros.define(ctx, platform)
 system_mgmt.define(ctx, platform)
 ap_compute.enable_ap_router(ctx, platform)
-system_mgmt.add_ap_logical_mhu_aliases(platform)
 si_cl0.define(ctx, platform)
 si_cl1.define(ctx, platform)
 
