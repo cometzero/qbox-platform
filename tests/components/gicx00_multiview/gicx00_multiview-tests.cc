@@ -246,7 +246,7 @@ TEST(Gicx00MultiviewTest, RejectsInvalidAccesses)
     EXPECT_EQ(raw_access(dut, false, 16, GICR_VIEWR, tlm::TLM_READ_COMMAND,
                          &value),
               tlm::TLM_ADDRESS_ERROR_RESPONSE);
-    EXPECT_EQ(raw_access(dut, true, 0, 0x10000, tlm::TLM_READ_COMMAND, &value),
+    EXPECT_EQ(raw_access(dut, true, 0, 0x80000, tlm::TLM_READ_COMMAND, &value),
               tlm::TLM_ADDRESS_ERROR_RESPONSE);
 
     tlm::tlm_generic_payload trans;
@@ -286,9 +286,86 @@ TEST(Gicx00MultiviewTest, DebugTransportReadsAndWritesRegisters)
     EXPECT_EQ(dut.transport_dbg_redist(3, trans), sizeof(value));
     EXPECT_EQ(value, 2u);
 
-    trans.set_address(0x20000);
+    trans.set_address(0x40000);
     EXPECT_EQ(dut.transport_dbg_redist(3, trans), 0u);
     EXPECT_EQ(trans.get_response_status(), tlm::TLM_ADDRESS_ERROR_RESPONSE);
+}
+
+TEST(Gicx00MultiviewTest, AllocatedFrameReservedTailsAreRazWi)
+{
+    gicx00_multiview dut("gicx00_multiview_reserved_tails");
+
+    write_dist32(dut, 0x7fffcu, 0xffffffffu);
+    EXPECT_EQ(read_dist32(dut, 0x7fffcu), 0u);
+
+    write_redist32(dut, 0, 0x3fffcu, 0xffffffffu);
+    EXPECT_EQ(read_redist32(dut, 0, 0x3fffcu), 0u);
+}
+
+TEST(Gicx00MultiviewTest, InactiveRedistributorApertureIsRazWi)
+{
+    gicx00_multiview dut("gicx00_multiview_inactive_redists");
+    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+    tlm::tlm_generic_payload trans;
+    uint32_t value = 0xffffffffu;
+
+    trans.set_address(0xffe8u);
+    trans.set_command(tlm::TLM_READ_COMMAND);
+    trans.set_data_length(sizeof(value));
+    trans.set_streaming_width(sizeof(value));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+    dut.b_transport_inactive_redists(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(value, 0u);
+
+    value = 0xa5a5a5a5u;
+    trans.set_address(0x2ffffcu);
+    trans.set_command(tlm::TLM_WRITE_COMMAND);
+    dut.b_transport_inactive_redists(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+
+    value = 0xffffffffu;
+    trans.set_command(tlm::TLM_READ_COMMAND);
+    dut.b_transport_inactive_redists(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(value, 0u);
+}
+
+TEST(Gicx00MultiviewTest, NarrowExtensionWindowsTranslateRelativeOffsets)
+{
+    gicx00_multiview dut("gicx00_multiview_windows");
+    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+    tlm::tlm_generic_payload trans;
+
+    uint64_t cfgid = 0;
+    trans.set_address(0);
+    trans.set_command(tlm::TLM_READ_COMMAND);
+    trans.set_data_length(sizeof(cfgid));
+    trans.set_streaming_width(sizeof(cfgid));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&cfgid));
+    dut.b_transport_dist_cfgid(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(cfgid & GICD_CFGID_VIEW, GICD_CFGID_VIEW);
+
+    uint32_t iviewr = 1u << iviewr_shift(105);
+    trans.set_address(iviewr_offset(105) - GICD_IVIEWR_BASE);
+    trans.set_command(tlm::TLM_WRITE_COMMAND);
+    trans.set_data_length(sizeof(iviewr));
+    trans.set_streaming_width(sizeof(iviewr));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&iviewr));
+    dut.b_transport_dist_iviewr(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(iviewr_field(dut, 105), 1u);
+
+    uint32_t viewr = 2u;
+    trans.set_address(0);
+    trans.set_command(tlm::TLM_WRITE_COMMAND);
+    trans.set_data_length(sizeof(viewr));
+    trans.set_streaming_width(sizeof(viewr));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&viewr));
+    dut.b_transport_redist0_viewr(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(read_redist32(dut, 0, GICR_VIEWR), 2u);
 }
 
 int sc_main(int argc, char* argv[])

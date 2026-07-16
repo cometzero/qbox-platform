@@ -177,6 +177,24 @@ tlm::tlm_response_status translate32(rse_atu& dut, uint64_t address,
     return trans.get_response_status();
 }
 
+unsigned int translate32_debug(rse_atu& dut, uint64_t address,
+                               tlm::tlm_command command, uint32_t& value,
+                               tlm::tlm_response_status& status)
+{
+    tlm::tlm_generic_payload trans;
+
+    trans.set_address(address);
+    trans.set_command(command);
+    trans.set_data_length(sizeof(value));
+    trans.set_streaming_width(sizeof(value));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+
+    const unsigned int done = dut.translation_transport_dbg(trans);
+    EXPECT_EQ(trans.get_address(), address);
+    status = trans.get_response_status();
+    return done;
+}
+
 void program_region_offset_pages(rse_atu& dut, uint32_t region,
                                  uint64_t logical, uint64_t offset_pages,
                                  uint64_t size, bool enable = true);
@@ -226,6 +244,35 @@ TEST(RseAtuTest, ResetBuildConfigurationMatchesTfMExpectations)
     rse_atu dut("rse_atu");
 
     EXPECT_EQ(read32(dut, ATUBC), 0x000000c5u);
+}
+
+TEST(RseAtuTest, ResetStateDeniesNormalDebugAndDmiTranslation)
+{
+    rse_atu dut("rse_atu_reset_default_deny");
+    TestMemory memory("rse_atu_reset_default_deny_memory");
+
+    dut.initiator_socket.bind(memory.target_socket);
+    dut.p_enable_dmi = true;
+
+    uint32_t value = 0;
+    EXPECT_EQ(translate32(dut, HOST_LOGICAL_BASE, tlm::TLM_READ_COMMAND, value),
+              tlm::TLM_ADDRESS_ERROR_RESPONSE);
+
+    tlm::tlm_response_status debug_status = tlm::TLM_INCOMPLETE_RESPONSE;
+    EXPECT_EQ(translate32_debug(dut, HOST_LOGICAL_BASE,
+                                tlm::TLM_READ_COMMAND, value, debug_status),
+              0u);
+    EXPECT_EQ(debug_status, tlm::TLM_ADDRESS_ERROR_RESPONSE);
+
+    tlm::tlm_generic_payload dmi_trans;
+    dmi_trans.set_command(tlm::TLM_READ_COMMAND);
+    dmi_trans.set_address(HOST_LOGICAL_BASE);
+    dmi_trans.set_data_length(sizeof(value));
+    dmi_trans.set_streaming_width(sizeof(value));
+    dmi_trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+    tlm::tlm_dmi dmi;
+    EXPECT_FALSE(dut.translation_get_direct_mem_ptr(dmi_trans, dmi));
+    EXPECT_EQ(dmi_trans.get_address(), HOST_LOGICAL_BASE);
 }
 
 TEST(RseAtuTest, BuildConfigPresetControlsPageSize)

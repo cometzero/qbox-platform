@@ -32,6 +32,7 @@ class SignalSink : public sc_core::sc_module
 public:
     TargetSignalSocket<bool> signal;
     std::vector<bool> values;
+    std::vector<uint64_t> deltas;
 
     explicit SignalSink(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
@@ -39,6 +40,7 @@ public:
     {
         signal.register_value_changed_cb([this](bool value) {
             values.push_back(value);
+            deltas.push_back(sc_core::sc_delta_count());
         });
     }
 };
@@ -56,7 +58,8 @@ public:
 };
 
 uint32_t access32(host_ppu& dut, uint64_t offset, tlm::tlm_command command,
-                  uint32_t value = 0)
+                  uint32_t value = 0,
+                  sc_core::sc_time* observed_delay = nullptr)
 {
     tlm::tlm_generic_payload trans;
     auto data = value;
@@ -69,6 +72,9 @@ uint32_t access32(host_ppu& dut, uint64_t offset, tlm::tlm_command command,
 
     sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
     dut.b_transport(trans, delay);
+    if (observed_delay != nullptr) {
+        *observed_delay = delay;
+    }
 
     EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
     return data;
@@ -145,18 +151,53 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
                                 cci::cci_value(1ull));
     broker.set_preset_cci_value("host_ppu_signal.power_on_load_to_reset_delay_ns",
                                 cci::cci_value(1ull));
+    broker.set_preset_cci_value("host_ppu_signal.power_on_status_delay_ns",
+                                cci::cci_value(2ull));
+    broker.set_preset_cci_value("host_ppu_signal.access_latency_ns",
+                                cci::cci_value(100ull));
+    broker.set_preset_cci_value("host_ppu_zero_signal.assert_power_on_reset",
+                                cci::cci_value(true));
+    broker.set_preset_cci_value("host_ppu_zero_signal.assert_power_on_load",
+                                cci::cci_value(true));
+    broker.set_preset_cci_value(
+        "host_ppu_zero_signal.power_on_load_pulse_width_ns",
+        cci::cci_value(0ull));
+    broker.set_preset_cci_value(
+        "host_ppu_zero_signal.power_on_load_to_reset_delay_ns",
+        cci::cci_value(0ull));
 
     host_ppu dut("host_ppu_signal");
+    host_ppu zero_delay_dut("host_ppu_zero_signal");
     TlmInitiator initiator("host_ppu_initiator");
+    TlmInitiator zero_initiator("host_ppu_zero_initiator");
     SignalSink reset_sink("host_ppu_reset_sink");
     SignalSink load_sink("host_ppu_load_sink");
+    SignalSink zero_reset_sink("host_ppu_zero_reset_sink");
+    SignalSink zero_load_sink("host_ppu_zero_load_sink");
 
     initiator.socket.bind(dut.target_socket);
+    zero_initiator.socket.bind(zero_delay_dut.target_socket);
     dut.power_on_reset.bind(reset_sink.signal);
     dut.power_on_load.bind(load_sink.signal);
+    zero_delay_dut.power_on_reset.bind(zero_reset_sink.signal);
+    zero_delay_dut.power_on_load.bind(zero_load_sink.signal);
+
+    sc_core::sc_start(sc_core::SC_ZERO_TIME);
+    ASSERT_EQ(reset_sink.values.size(), 1u);
+    EXPECT_TRUE(reset_sink.values.back());
+    ASSERT_EQ(zero_reset_sink.values.size(), 1u);
+    EXPECT_TRUE(zero_reset_sink.values.back());
+
+    sc_core::sc_time read_delay = sc_core::SC_ZERO_TIME;
+    (void)access32(dut, PPU_PWSR, tlm::TLM_READ_COMMAND, 0, &read_delay);
+    EXPECT_EQ(read_delay, sc_core::sc_time(100, sc_core::SC_NS));
 
     write32(dut, PPU_PWPR, 0x8u);
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 0xfu, 0x0u);
     sc_core::sc_start(sc_core::sc_time(3, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 0xfu, 0x0u);
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 0xfu, 0x8u);
 
     bool load_asserted = false;
     bool load_deasserted_after_assert = false;
@@ -179,10 +220,23 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     EXPECT_FALSE(reset_sink.values.back());
 
     write32(dut, PPU_PWPR, 0x0u);
-    sc_core::sc_start(sc_core::SC_ZERO_TIME);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
 
     ASSERT_GE(reset_sink.values.size(), 2u);
     EXPECT_TRUE(reset_sink.values.back());
+
+    write32(zero_delay_dut, PPU_PWPR, 0x8u);
+    EXPECT_EQ(read32(zero_delay_dut, PPU_PWSR) & 0xfu, 0x0u);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(read32(zero_delay_dut, PPU_PWSR) & 0xfu, 0x8u);
+
+    ASSERT_EQ(zero_load_sink.values.size(), 2u);
+    EXPECT_TRUE(zero_load_sink.values[0]);
+    EXPECT_FALSE(zero_load_sink.values[1]);
+    ASSERT_GE(zero_reset_sink.values.size(), 2u);
+    EXPECT_FALSE(zero_reset_sink.values.back());
+    EXPECT_LT(zero_load_sink.deltas[0], zero_load_sink.deltas[1]);
+    EXPECT_LT(zero_load_sink.deltas[1], zero_reset_sink.deltas.back());
 }
 
 int sc_main(int argc, char* argv[])

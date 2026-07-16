@@ -19,6 +19,7 @@
 
 class host_gtimer : public sc_core::sc_module
 {
+    static constexpr uint64_t FRAME_BYTES = 0x10000;
     static constexpr uint64_t REG_BYTES = 0x1000;
     static constexpr uint32_t PCTL = 0x000;
     static constexpr uint32_t PCTH = 0x004;
@@ -171,7 +172,25 @@ class host_gtimer : public sc_core::sc_module
         uint8_t* data = trans.get_data_ptr();
 
         if (data == nullptr || !is_supported_length(len) ||
-            offset + len > m_regs.size()) {
+            len > FRAME_BYTES || offset > FRAME_BYTES - len) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+
+        if (offset >= REG_BYTES) {
+            if (trans.get_command() == tlm::TLM_READ_COMMAND) {
+                std::memset(data, 0, len);
+            } else if (trans.get_command() != tlm::TLM_WRITE_COMMAND) {
+                trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+                return false;
+            }
+
+            trace_access(trans, offset, len, debug);
+            trans.set_response_status(tlm::TLM_OK_RESPONSE);
+            return true;
+        }
+
+        if (offset + len > REG_BYTES) {
             trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
             return false;
         }

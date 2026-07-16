@@ -20,8 +20,12 @@
 class gicx00_multiview : public sc_core::sc_module
 {
     static constexpr uint64_t DIST_BYTES = 0x10000;
+    static constexpr uint64_t DIST_FRAME_BYTES = 0x80000;
     static constexpr uint64_t REDIST_BYTES = 0x20000;
+    static constexpr uint64_t REDIST_FRAME_BYTES = 0x40000;
     static constexpr unsigned int REDIST_COUNT = 16;
+    static constexpr uint64_t INACTIVE_REDIST_BYTES =
+        REDIST_FRAME_BYTES * REDIST_COUNT;
 
     static constexpr uint32_t GICD_CTLR = 0x0000;
     static constexpr uint32_t GICD_CFGID = 0xf000;
@@ -114,6 +118,32 @@ class gicx00_multiview : public sc_core::sc_module
                   << std::dec << std::endl;
     }
 
+    bool access_reserved(const char* region, unsigned int index,
+                         uint64_t frame_bytes,
+                         tlm::tlm_generic_payload& trans, bool debug)
+    {
+        const uint64_t offset = trans.get_address();
+        const unsigned int len = trans.get_data_length();
+        uint8_t* data = trans.get_data_ptr();
+
+        if (data == nullptr || !is_supported_length(len) ||
+            offset >= frame_bytes || len > frame_bytes - offset) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+
+        if (trans.get_command() == tlm::TLM_READ_COMMAND) {
+            std::memset(data, 0, len);
+        } else if (trans.get_command() != tlm::TLM_WRITE_COMMAND) {
+            trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+            return false;
+        }
+
+        trace_access(region, index, trans, offset, len, debug);
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+        return true;
+    }
+
     template <size_t N>
     bool access_array(std::array<uint8_t, N>& regs, const char* region,
                       unsigned int index, tlm::tlm_generic_payload& trans,
@@ -164,6 +194,11 @@ class gicx00_multiview : public sc_core::sc_module
     bool access_dist(tlm::tlm_generic_payload& trans, bool debug)
     {
         const uint64_t offset = trans.get_address();
+        if (offset >= DIST_BYTES) {
+            return access_reserved("dist-reserved", UINT32_MAX,
+                                   DIST_FRAME_BYTES, trans, debug);
+        }
+
         if (is_iviewr_window(offset)) {
             if (trans.get_data_ptr() == nullptr ||
                 trans.get_data_length() != sizeof(uint32_t)) {
@@ -198,6 +233,11 @@ class gicx00_multiview : public sc_core::sc_module
         }
 
         const uint64_t offset = trans.get_address();
+        if (offset >= REDIST_BYTES) {
+            return access_reserved("redist-reserved", index,
+                                   REDIST_FRAME_BYTES, trans, debug);
+        }
+
         if (trans.get_data_ptr() != nullptr &&
             trans.get_data_length() == sizeof(uint32_t) &&
             trans.get_command() == tlm::TLM_WRITE_COMMAND) {
@@ -218,12 +258,37 @@ class gicx00_multiview : public sc_core::sc_module
         return access_array(m_redist_regs[index], "redist", index, trans, debug);
     }
 
+    bool access_dist_window(tlm::tlm_generic_payload& trans, bool debug,
+                            uint64_t base)
+    {
+        const uint64_t offset = trans.get_address();
+        trans.set_address(base + offset);
+        const bool success = access_dist(trans, debug);
+        trans.set_address(offset);
+        return success;
+    }
+
+    bool access_redist_window(tlm::tlm_generic_payload& trans, bool debug,
+                              uint64_t base)
+    {
+        const uint64_t offset = trans.get_address();
+        trans.set_address(base + offset);
+        const bool success = access_redist(0, trans, debug);
+        trans.set_address(offset);
+        return success;
+    }
+
 public:
     cci::cci_param<bool> p_trace;
     cci::cci_param<unsigned int> p_trace_limit;
 
     target_socket_t view0_dist;
+    target_socket_t view0_dist_cfgid;
+    target_socket_t view0_dist_iviewr;
     target_socket_t view0_redist_0;
+    target_socket_t view0_redist_0_pwrr;
+    target_socket_t view0_redist_0_viewr;
+    target_socket_t view0_redist_0_flushr;
     target_socket_t view0_redist_1;
     target_socket_t view0_redist_2;
     target_socket_t view0_redist_3;
@@ -239,13 +304,19 @@ public:
     target_socket_t view0_redist_13;
     target_socket_t view0_redist_14;
     target_socket_t view0_redist_15;
+    target_socket_t inactive_redists;
 
     explicit gicx00_multiview(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 128)
         , view0_dist("view0_dist")
+        , view0_dist_cfgid("view0_dist_cfgid")
+        , view0_dist_iviewr("view0_dist_iviewr")
         , view0_redist_0("view0_redist_0")
+        , view0_redist_0_pwrr("view0_redist_0_pwrr")
+        , view0_redist_0_viewr("view0_redist_0_viewr")
+        , view0_redist_0_flushr("view0_redist_0_flushr")
         , view0_redist_1("view0_redist_1")
         , view0_redist_2("view0_redist_2")
         , view0_redist_3("view0_redist_3")
@@ -261,12 +332,33 @@ public:
         , view0_redist_13("view0_redist_13")
         , view0_redist_14("view0_redist_14")
         , view0_redist_15("view0_redist_15")
+        , inactive_redists("inactive_redists")
     {
         reset_registers();
         view0_dist.register_b_transport(this, &gicx00_multiview::b_transport_dist);
         view0_dist.register_transport_dbg(this, &gicx00_multiview::transport_dbg_dist);
+        view0_dist_cfgid.register_b_transport(
+            this, &gicx00_multiview::b_transport_dist_cfgid);
+        view0_dist_cfgid.register_transport_dbg(
+            this, &gicx00_multiview::transport_dbg_dist_cfgid);
+        view0_dist_iviewr.register_b_transport(
+            this, &gicx00_multiview::b_transport_dist_iviewr);
+        view0_dist_iviewr.register_transport_dbg(
+            this, &gicx00_multiview::transport_dbg_dist_iviewr);
         view0_redist_0.register_b_transport(this, &gicx00_multiview::b_transport_redist0);
         view0_redist_0.register_transport_dbg(this, &gicx00_multiview::transport_dbg_redist0);
+        view0_redist_0_pwrr.register_b_transport(
+            this, &gicx00_multiview::b_transport_redist0_pwrr);
+        view0_redist_0_pwrr.register_transport_dbg(
+            this, &gicx00_multiview::transport_dbg_redist0_pwrr);
+        view0_redist_0_viewr.register_b_transport(
+            this, &gicx00_multiview::b_transport_redist0_viewr);
+        view0_redist_0_viewr.register_transport_dbg(
+            this, &gicx00_multiview::transport_dbg_redist0_viewr);
+        view0_redist_0_flushr.register_b_transport(
+            this, &gicx00_multiview::b_transport_redist0_flushr);
+        view0_redist_0_flushr.register_transport_dbg(
+            this, &gicx00_multiview::transport_dbg_redist0_flushr);
         view0_redist_1.register_b_transport(this, &gicx00_multiview::b_transport_redist1);
         view0_redist_1.register_transport_dbg(this, &gicx00_multiview::transport_dbg_redist1);
         view0_redist_2.register_b_transport(this, &gicx00_multiview::b_transport_redist2);
@@ -297,6 +389,10 @@ public:
         view0_redist_14.register_transport_dbg(this, &gicx00_multiview::transport_dbg_redist14);
         view0_redist_15.register_b_transport(this, &gicx00_multiview::b_transport_redist15);
         view0_redist_15.register_transport_dbg(this, &gicx00_multiview::transport_dbg_redist15);
+        inactive_redists.register_b_transport(
+            this, &gicx00_multiview::b_transport_inactive_redists);
+        inactive_redists.register_transport_dbg(
+            this, &gicx00_multiview::transport_dbg_inactive_redists);
     }
 
     void b_transport_dist(tlm::tlm_generic_payload& trans,
@@ -312,6 +408,34 @@ public:
         return access_dist(trans, true) ? trans.get_data_length() : 0;
     }
 
+    void b_transport_dist_cfgid(tlm::tlm_generic_payload& trans,
+                                sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        access_dist_window(trans, false, GICD_CFGID);
+    }
+
+    unsigned int transport_dbg_dist_cfgid(tlm::tlm_generic_payload& trans)
+    {
+        return access_dist_window(trans, true, GICD_CFGID) ?
+            trans.get_data_length() : 0;
+    }
+
+    void b_transport_dist_iviewr(tlm::tlm_generic_payload& trans,
+                                 sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        access_dist_window(trans, false, GICD_IVIEWR_BASE);
+    }
+
+    unsigned int transport_dbg_dist_iviewr(tlm::tlm_generic_payload& trans)
+    {
+        return access_dist_window(trans, true, GICD_IVIEWR_BASE) ?
+            trans.get_data_length() : 0;
+    }
+
     void b_transport_redist(unsigned int index, tlm::tlm_generic_payload& trans,
                             sc_core::sc_time& delay)
     {
@@ -324,6 +448,68 @@ public:
                                       tlm::tlm_generic_payload& trans)
     {
         return access_redist(index, trans, true) ? trans.get_data_length() : 0;
+    }
+
+    void b_transport_inactive_redists(tlm::tlm_generic_payload& trans,
+                                      sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        access_reserved("inactive-redists", UINT32_MAX,
+                        INACTIVE_REDIST_BYTES, trans, false);
+    }
+
+    unsigned int transport_dbg_inactive_redists(
+        tlm::tlm_generic_payload& trans)
+    {
+        return access_reserved("inactive-redists", UINT32_MAX,
+                               INACTIVE_REDIST_BYTES, trans, true) ?
+            trans.get_data_length() : 0;
+    }
+
+    void b_transport_redist0_pwrr(tlm::tlm_generic_payload& trans,
+                                  sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        access_redist_window(trans, false, GICR_PWRR);
+    }
+
+    unsigned int transport_dbg_redist0_pwrr(
+        tlm::tlm_generic_payload& trans)
+    {
+        return access_redist_window(trans, true, GICR_PWRR) ?
+            trans.get_data_length() : 0;
+    }
+
+    void b_transport_redist0_viewr(tlm::tlm_generic_payload& trans,
+                                   sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        access_redist_window(trans, false, GICR_VIEWR);
+    }
+
+    unsigned int transport_dbg_redist0_viewr(
+        tlm::tlm_generic_payload& trans)
+    {
+        return access_redist_window(trans, true, GICR_VIEWR) ?
+            trans.get_data_length() : 0;
+    }
+
+    void b_transport_redist0_flushr(tlm::tlm_generic_payload& trans,
+                                    sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        access_redist_window(trans, false, GICR_FLUSHR);
+    }
+
+    unsigned int transport_dbg_redist0_flushr(
+        tlm::tlm_generic_payload& trans)
+    {
+        return access_redist_window(trans, true, GICR_FLUSHR) ?
+            trans.get_data_length() : 0;
     }
 
     void b_transport_redist0(tlm::tlm_generic_payload& trans,

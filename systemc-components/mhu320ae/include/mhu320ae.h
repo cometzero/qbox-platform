@@ -12,12 +12,14 @@
 #include <deque>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include <async_event.h>
 #include <cci_configuration>
 #include <cciutils.h>
 #include <module_factory_registery.h>
@@ -39,6 +41,7 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint64_t CTRL_FEAT_SPT0 = 0x010;
     static constexpr uint64_t CTRL_FEAT_SPT1 = 0x014;
     static constexpr uint64_t CTRL_DBCH_CFG0 = 0x020;
+    static constexpr uint64_t CTRL_OP = 0x100;
     static constexpr uint64_t CTRL_DBCH_INT_ST0 = 0x400;
     static constexpr uint64_t CTRL_IIDR = 0xfc8;
     static constexpr uint64_t CTRL_AIDR = 0xfcc;
@@ -73,6 +76,7 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint64_t MBX_DBCW_CTRL = DBCW0 + 0x1c;
 
     static constexpr uint64_t SCMI_CHAN_STATUS = 0x04;
+    static constexpr uint64_t SCMI_FLAGS = 0x10;
     static constexpr uint64_t SCMI_LENGTH = 0x14;
     static constexpr uint64_t SCMI_HEADER = 0x18;
     static constexpr uint64_t SCMI_PAYLOAD = 0x1c;
@@ -186,7 +190,8 @@ public:
         {
             m_is_mbx = is_mbx;
             m_channel_count = std::max(1u, std::min(channel_count, DBCH_CHANNELS));
-            m_db_mask.fill(is_mbx ? 0xffffffffu : 0);
+            m_db_mask.fill(0);
+            m_db_ctrl.fill(1);
 
             store<uint32_t>(CTRL_BLK_ID, is_mbx ? 1 : 0);
             store<uint32_t>(CTRL_FEAT_SPT0, feat_spt0);
@@ -281,7 +286,7 @@ public:
 
         void set_ctrl(unsigned int channel, uint32_t value)
         {
-            m_db_ctrl[channel] = value;
+            m_db_ctrl[channel] = value & 1u;
             store_channel_regs(channel);
         }
 
@@ -315,10 +320,11 @@ public:
             const unsigned int last = std::min(first + 32, m_channel_count);
 
             for (unsigned int channel = first; channel < last; ++channel) {
-                const bool asserted =
-                    m_is_mbx ? (channel_masked_status(channel) != 0)
-                             : ((m_db_int_status[channel] &
-                                 m_db_int_enable[channel]) != 0);
+                const bool combined_enabled = (m_db_ctrl[channel] & 1u) != 0;
+                const bool asserted = combined_enabled &&
+                    (m_is_mbx ? (channel_masked_status(channel) != 0)
+                              : ((m_db_int_status[channel] &
+                                  m_db_int_enable[channel]) != 0));
                 if (asserted) {
                     status |= 1u << (channel - first);
                 }
@@ -394,6 +400,20 @@ private:
     static inline mhu320ae* s_pbx = nullptr;
     static inline std::unordered_map<std::string, mhu320ae*> s_mbx_by_pair;
     static inline std::unordered_map<std::string, mhu320ae*> s_pbx_by_pair;
+    static inline std::unordered_map<
+        std::string, std::shared_ptr<std::recursive_mutex>> s_lock_by_pair;
+    static inline std::mutex s_pair_lock;
+
+    static std::shared_ptr<std::recursive_mutex>
+    pair_lock(const std::string& pair)
+    {
+        std::lock_guard<std::mutex> lock(s_pair_lock);
+        auto& pair_mutex = s_lock_by_pair[pair];
+        if (!pair_mutex) {
+            pair_mutex = std::make_shared<std::recursive_mutex>();
+        }
+        return pair_mutex;
+    }
 
     cci::cci_param<std::string> p_pair;
     cci::cci_param<std::string> p_protocol;
@@ -487,10 +507,17 @@ private:
     };
 
     mhu320ae_frame_model m_frame;
+    std::shared_ptr<std::recursive_mutex> m_pair_lock;
+    bool m_pending_irq_update = false;
+    bool m_pending_irq_level = false;
+    bool m_emitted_irq_valid = false;
+    bool m_emitted_irq_level = false;
+    gs::async_event m_irq_update_event;
+    std::mutex m_irq_update_lock;
     std::array<uint32_t, 256> m_power_domain_states {};
     std::array<uint32_t, SCMI_PERF_DOMAIN_COUNT> m_performance_levels {};
     uint32_t m_power_domain_state = 0;
-    bool m_pending_power_on_reset = false;
+    std::deque<bool> m_pending_power_on_resets;
     sc_core::sc_event m_power_on_reset_event;
     std::deque<pending_power_domain_reset> m_pending_power_domain_resets;
     sc_core::sc_event_queue m_power_domain_reset_events;
@@ -634,6 +661,10 @@ private:
 
     void write_power_on_reset(bool asserted)
     {
+        std::ostringstream detail;
+        detail << "asserted=" << asserted
+               << " bound=" << (power_on_reset.size() != 0);
+        trace_event("power-on-reset-write", detail.str());
         if (power_on_reset.size() != 0) {
             power_on_reset->write(asserted);
         }
@@ -675,11 +706,11 @@ private:
                 write_power_domain_reset(domain_id, true);
             }
             write_power_domain_reset(domain_id, false);
-            write_power_on_reset(false);
+            schedule_power_on_reset(false);
         } else if (power_state_is_off(power_state)) {
             if (p_power_domain_reset_assert_on_power_off.get_value()) {
                 write_power_domain_reset(domain_id, true);
-                write_power_on_reset(true);
+                schedule_power_on_reset(true);
             } else {
                 std::ostringstream detail;
                 detail << "domain=" << domain_id
@@ -736,24 +767,40 @@ private:
         return m_power_domain_state;
     }
 
+protected:
     void schedule_power_on_reset(bool asserted)
     {
-        m_pending_power_on_reset = asserted;
+        m_pending_power_on_resets.push_back(asserted);
+        std::ostringstream detail;
+        detail << "asserted=" << asserted
+               << " queue_depth=" << m_pending_power_on_resets.size();
+        trace_event("power-on-reset-scheduled", detail.str());
         m_power_on_reset_event.notify(sc_core::SC_ZERO_TIME);
     }
 
-    void emit_power_on_reset() { write_power_on_reset(m_pending_power_on_reset); }
+private:
+    void emit_power_on_reset()
+    {
+        for (;;) {
+            while (m_pending_power_on_resets.empty()) {
+                wait(m_power_on_reset_event);
+            }
+            while (!m_pending_power_on_resets.empty()) {
+                const bool asserted = m_pending_power_on_resets.front();
+                m_pending_power_on_resets.pop_front();
+                write_power_on_reset(asserted);
+                wait(sc_core::SC_ZERO_TIME);
+            }
+        }
+    }
 
     void emit_power_domain_reset()
     {
         for (;;) {
-            wait(m_power_domain_reset_events.default_event());
-            if (m_pending_power_domain_resets.empty()) {
-                continue;
-            }
-            if (m_pending_power_domain_resets.front().due_time >
-                sc_core::sc_time_stamp()) {
-                continue;
+            while (m_pending_power_domain_resets.empty() ||
+                   m_pending_power_domain_resets.front().due_time >
+                       sc_core::sc_time_stamp()) {
+                wait(m_power_domain_reset_events.default_event());
             }
 
             const pending_power_domain_reset pending = m_pending_power_domain_resets.front();
@@ -880,9 +927,31 @@ private:
     void update_combined_irq()
     {
         m_frame.refresh_combined_irq_regs();
+        {
+            std::lock_guard<std::mutex> lock(m_irq_update_lock);
+            m_pending_irq_level = m_frame.any_combined_irq();
+            m_pending_irq_update = true;
+        }
+        m_irq_update_event.notify(sc_core::SC_ZERO_TIME);
+    }
 
-        if (irq.size() != 0) {
-            irq->write(m_frame.any_combined_irq());
+    void emit_combined_irq()
+    {
+        bool level = false;
+        {
+            std::lock_guard<std::mutex> lock(m_irq_update_lock);
+            if (!m_pending_irq_update) {
+                return;
+            }
+            level = m_pending_irq_level;
+            m_pending_irq_update = false;
+        }
+
+        if (irq.size() != 0 &&
+            (!m_emitted_irq_valid || level != m_emitted_irq_level)) {
+            irq->write(level);
+            m_emitted_irq_level = level;
+            m_emitted_irq_valid = true;
         }
     }
 
@@ -1795,6 +1864,20 @@ private:
                << " status=0x" << m_frame.status(channel) << std::dec;
         trace_event("postbox-doorbell-write", detail.str());
 
+        if (p_trace.get_value() && p_protocol.get_value() == "doorbell-bridge") {
+            const uint64_t shmem = p_tx_shmem.get_value();
+            std::ostringstream mailbox_detail;
+            mailbox_detail << "shmem=0x" << std::hex << shmem
+                           << " status=0x" << mem_read32(shmem + SCMI_CHAN_STATUS)
+                           << " flags=0x" << mem_read32(shmem + SCMI_FLAGS)
+                           << " length=0x" << mem_read32(shmem + SCMI_LENGTH)
+                           << " header=0x" << mem_read32(shmem + SCMI_HEADER)
+                           << " payload0=0x" << mem_read32(shmem + SCMI_PAYLOAD)
+                           << " payload1=0x"
+                           << mem_read32(shmem + SCMI_PAYLOAD + sizeof(uint32_t));
+            trace_event("doorbell-bridge-mailbox", mailbox_detail.str());
+        }
+
         if (p_protocol.get_value() == "rse-ps-proxy") {
             if (channel == notify_channel() && value == MHU_NOTIFY_VALUE) {
                 const auto request = read_doorbell_message();
@@ -1879,6 +1962,7 @@ private:
 
     void emit_synthetic_postbox_completions()
     {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
         while (!m_synthetic_postbox_completions.empty()) {
             const auto completion = m_synthetic_postbox_completions.front();
             m_synthetic_postbox_completions.pop_front();
@@ -2511,10 +2595,20 @@ private:
         }
 
         store<uint32_t>(offset, value);
+        if (offset == CTRL_OP) {
+            update_combined_irq();
+
+            std::ostringstream detail;
+            detail << "value=0x" << std::hex << value
+                   << " pending=" << std::boolalpha
+                   << m_frame.any_combined_irq();
+            trace_event("control-write", detail.str());
+        }
     }
 
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
     {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
         const uint64_t offset = trans.get_address();
         const unsigned int len = trans.get_data_length();
         uint8_t* data = trans.get_data_ptr();
@@ -2644,6 +2738,8 @@ public:
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 256)
         , p_trace_file("trace_file", std::string(""))
+        , m_pair_lock(pair_lock(p_pair.get_value()))
+        , m_irq_update_event(false)
         , m_power_domain_reset_events("power_domain_reset_events")
         , target_socket("target_socket")
         , initiator_socket("initiator_socket")
@@ -2655,9 +2751,11 @@ public:
     {
         m_doorbell_ack_seed_words = load_doorbell_ack_seed_words();
 
-        SC_METHOD(emit_power_on_reset);
-        sensitive << m_power_on_reset_event;
+        SC_METHOD(emit_combined_irq);
+        sensitive << m_irq_update_event;
         dont_initialize();
+
+        SC_THREAD(emit_power_on_reset);
 
         SC_METHOD(emit_synthetic_postbox_completions);
         sensitive << m_synthetic_postbox_completion_event;

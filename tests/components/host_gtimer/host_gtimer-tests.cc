@@ -173,6 +173,17 @@ TEST(HostGtimerTest, SyncRejectsUndocumentedOffsets)
               tlm::TLM_ADDRESS_ERROR_RESPONSE);
 }
 
+TEST(HostGtimerTest, AllocatedFrameReservedTailIsRazWi)
+{
+    host_gtimer dut("host_gtimer_reserved_tail");
+    dut.p_sync_frame = true;
+    dut.before_end_of_elaboration();
+
+    EXPECT_EQ(read32(dut, 0xfffc), 0u);
+    write32(dut, 0xfffc, 0xa5a5a5a5u);
+    EXPECT_EQ(read32(dut, 0xfffc), 0u);
+}
+
 TEST(HostGtimerTest, SyncRejectsUnsupportedRegisterAccessSizes)
 {
     host_gtimer dut("host_gtimer_sync_access_size");

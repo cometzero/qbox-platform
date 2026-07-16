@@ -8,12 +8,14 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 
 #include <cci_configuration>
 #include <module_factory_registery.h>
 #include <ports/initiator-signal-socket.h>
+#include <runonsysc.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
@@ -38,8 +40,14 @@ class host_ppu : public sc_core::sc_module
 
     std::array<uint8_t, REG_BYTES> m_regs{};
     unsigned int m_trace_count = 0;
-    unsigned int m_pending_power_on_sequences = 0;
+    struct pending_power_transition {
+        bool power_on;
+        uint32_t final_status;
+    };
+
+    std::deque<pending_power_transition> m_pending_power_transitions;
     sc_core::sc_event m_power_on_sequence_event;
+    gs::runonsysc m_power_transition_run_on_sysc;
 
     static bool is_supported_length(unsigned int len)
     {
@@ -99,7 +107,20 @@ class host_ppu : public sc_core::sc_module
             if (op_dynamic) {
                 status |= PPU_OP_DYN_STATUS;
             }
-            store32(PPU_PWSR, status);
+            const bool defer_power_on_status =
+                !power_status_is_on(previous_status) &&
+                power_status_is_on(status) &&
+                (p_power_on_status_delay_ns.get_value() != 0 ||
+                 p_assert_power_on_load.get_value() ||
+                 p_assert_power_on_reset.get_value());
+            if (defer_power_on_status) {
+                const uint32_t transitional_status =
+                    (status & ~PPU_POWER_MASK) |
+                    (previous_status & PPU_POWER_MASK);
+                store32(PPU_PWSR, transitional_status);
+            } else {
+                store32(PPU_PWSR, status);
+            }
             observe_power_transition(previous_status, status);
             break;
         }
@@ -128,12 +149,26 @@ class host_ppu : public sc_core::sc_module
     {
         if (!power_status_is_on(previous_status) && power_status_is_on(status)) {
             trace_signal("power-on-sequence-scheduled", true);
-            ++m_pending_power_on_sequences;
-            m_power_on_sequence_event.notify(sc_core::SC_ZERO_TIME);
+            queue_power_transition(true, status);
         } else if (power_status_is_on(previous_status) && power_status_is_off(status) &&
                    p_power_on_reset_assert_on_power_off.get_value()) {
-            write_power_on_reset(true);
+            queue_power_transition(false, status);
         }
+    }
+
+    void queue_power_transition(bool power_on, uint32_t final_status)
+    {
+        m_power_transition_run_on_sysc.run_on_sysc(
+            [this, power_on, final_status] {
+                if (!power_on) {
+                    write_power_on_reset(true);
+                    return;
+                }
+
+                m_pending_power_transitions.push_back(
+                    {true, final_status});
+                m_power_on_sequence_event.notify(sc_core::SC_ZERO_TIME);
+            });
     }
 
     static void wait_ns(uint64_t ns)
@@ -147,11 +182,24 @@ class host_ppu : public sc_core::sc_module
 
     void emit_power_on_sequence()
     {
+        if (p_assert_power_on_reset.get_value() &&
+            p_power_on_reset_assert_on_power_off.get_value() &&
+            power_status_is_off(load32(PPU_PWSR))) {
+            write_power_on_reset(true);
+        }
+
         for (;;) {
-            while (m_pending_power_on_sequences == 0) {
+            while (m_pending_power_transitions.empty()) {
                 sc_core::wait(m_power_on_sequence_event);
             }
-            --m_pending_power_on_sequences;
+            const pending_power_transition transition =
+                m_pending_power_transitions.front();
+            m_pending_power_transitions.pop_front();
+
+            if (!transition.power_on) {
+                write_power_on_reset(true);
+                continue;
+            }
 
             if (p_assert_power_on_load.get_value()) {
                 write_power_on_load(true);
@@ -162,6 +210,12 @@ class host_ppu : public sc_core::sc_module
             if (p_assert_power_on_reset.get_value()) {
                 wait_ns(p_power_on_load_to_reset_delay_ns.get_value());
                 write_power_on_reset(false);
+            }
+
+            wait_ns(p_power_on_status_delay_ns.get_value());
+            if (power_status_is_on(load32(PPU_PWPR))) {
+                store32(PPU_PWSR, transition.final_status);
+                trace_signal("power-on-status", true);
             }
         }
     }
@@ -258,12 +312,15 @@ public:
     cci::cci_param<bool> p_assert_power_on_load;
     cci::cci_param<uint64_t> p_power_on_load_pulse_width_ns;
     cci::cci_param<uint64_t> p_power_on_load_to_reset_delay_ns;
+    cci::cci_param<uint64_t> p_power_on_status_delay_ns;
+    cci::cci_param<uint64_t> p_access_latency_ns;
     tlm_utils::simple_target_socket<host_ppu, DEFAULT_TLM_BUSWIDTH> target_socket;
     InitiatorSignalSocket<bool> power_on_reset;
     InitiatorSignalSocket<bool> power_on_load;
 
     explicit host_ppu(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
+        , m_power_transition_run_on_sysc("power_transition_run_on_sysc")
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 64)
         , p_initial_power_status("initial_power_status", 0x00000000)
@@ -273,6 +330,8 @@ public:
         , p_assert_power_on_load("assert_power_on_load", false)
         , p_power_on_load_pulse_width_ns("power_on_load_pulse_width_ns", 1)
         , p_power_on_load_to_reset_delay_ns("power_on_load_to_reset_delay_ns", 1)
+        , p_power_on_status_delay_ns("power_on_status_delay_ns", 0)
+        , p_access_latency_ns("access_latency_ns", 0)
         , target_socket("target_socket")
         , power_on_reset("power_on_reset")
         , power_on_load("power_on_load")
@@ -285,7 +344,8 @@ public:
 
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
     {
-        (void)delay;
+        delay += sc_core::sc_time(p_access_latency_ns.get_value(),
+                                  sc_core::SC_NS);
         trans.set_dmi_allowed(false);
         access(trans, false);
     }
