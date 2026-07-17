@@ -1,6 +1,34 @@
 local ap_compute = {}
 
 function ap_compute.define(ctx, platform)
+    local pcie_irq_test_enabled =
+        enable_ap_cpus and
+        ctx.getenv_bool_or("QBOX_APOLLO_PCIE_IRQ_TEST", false)
+    local fault_event_test_enabled =
+        enable_ap_cpus and
+        ctx.getenv_bool_or("QBOX_APOLLO_FAULT_EVENT_TEST", false)
+
+    platform.ap_smmu_event_fanout = fault_event_test_enabled and {
+        moduletype = "signal_fanout";
+        signal_out = {
+            bind = "&ap_gic.spi_in_65;&ap_smmu_fault_observer.fault_in";
+        };
+    } or nil
+
+    platform.ap_smmu_fault_observer = fault_event_test_enabled and {
+        moduletype = "zena_fmu";
+        bank_count = 1;
+        record_count = 2;
+        enforce_sys_key = false;
+        fault_input_enabled = true;
+        fault_input_record = 1;
+        fault_source = "ap_smmu_0.irq_eventq";
+        fault_id = "smmuv3-eventq";
+        fault_sink = "ap_gic.spi_in_65";
+        event_log = ctx.getenv_or("QBOX_APOLLO_FAULT_EVENT_LOG", "");
+        log_level = 0;
+    } or nil
+
     platform.ap_qemu_inst_mgr = enable_ap_cpus and {
         moduletype = "QemuInstanceManager";
         construction_priority = -300;
@@ -35,12 +63,17 @@ function ap_compute.define(ctx, platform)
     platform.ap_global_peripheral_initiator = enable_ap_cpus and {
         moduletype = "global_peripheral_initiator";
         args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
+        request_origin_id = ctx.request_context.origin.ap_global_peripheral;
+        request_domain_id = ctx.request_context.domain.ap;
         global_initiator = {bind = "&system_router.target_socket"};
     } or nil
 
     platform.ap_gpex_0 = enable_ap_cpus and {
         moduletype = "qemu_gpex";
         args = {"&platform.ap_qemu_inst"};
+        request_origin_id = ctx.request_context.origin.ap_gpex;
+        request_domain_id = ctx.request_context.domain.ap;
+        requester_id = 0x40;
         bus_master = {bind = "&system_router.target_socket"};
         pio_iface = {
             address = 0x60200000;
@@ -68,6 +101,14 @@ function ap_compute.define(ctx, platform)
         irq_out_3 = {bind = "&ap_gic.spi_in_303"};
     } or nil
 
+    platform.ap_pcie_irq_test_endpoint = pcie_irq_test_enabled and {
+        moduletype = "virtio_net_pci";
+        args = {"&platform.ap_qemu_inst", "&platform.ap_gpex_0"};
+        addr = "01.0";
+        mac = "52:54:00:12:34:56";
+        netdev_str = "type=user";
+    } or nil
+
     platform.host_ap_shared_sram = {
         moduletype = "gs_memory";
         dmi_allow = host_memory_dmi;
@@ -86,6 +127,11 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_bl2_reset_loader = enable_ap_cpus and {
         moduletype = "loader";
+        request_origin_id = ctx.request_context.origin.ap_loader;
+        request_domain_id = ctx.request_context.domain.ap;
+        request_capabilities = ctx.request_context.capability.boot_loader;
+        request_secure = true;
+        request_secure_valid = true;
         initiator_socket = {bind = "&system_router.target_socket"};
         {
             bin_file = AP_BL2_ELF;
@@ -327,7 +373,7 @@ function ap_compute.define(ctx, platform)
         args = {"&platform.ap_qemu_inst", "&platform.ap_gic"};
         has_gicv4_1 = true;
         gicv4_1_svpet = 1;
-        gicv4_1_cte_size = 2;
+        gicv4_1_cte_size = 8;
         mem = {
             address = 0x20840000;
             size = 0x00040000;
@@ -336,6 +382,15 @@ function ap_compute.define(ctx, platform)
     } or nil
 
     platform.ap_smmu_0 = enable_ap_cpus and ap_smmu_component() or nil
+
+    platform.ap_smmu_lti00 = enable_ap_cpus and
+        smmu_backend == "systemc-mmu720ae" and {
+            moduletype = "smmuv3_tbu";
+            args = {"&platform.ap_smmu_0"};
+            topology_id = 0x40;
+            upstream_socket = {};
+            downstream_socket = {bind = "&system_router.target_socket"};
+        } or nil
 
     platform.ap_watchdog_0 = enable_ap_cpus and {
         moduletype = "sbsa_gwdt";
@@ -576,6 +631,9 @@ if enable_ap_cpus then
             trace_pc_limit = ap_pc_trace_limit;
             trace_exception_state = ap_exception_trace;
             construction_priority = -200 + i;
+            request_origin_id = ctx.request_context.origin.ap_cpu_base + i;
+            request_domain_id = ctx.request_context.domain.ap;
+            requester_id = i;
         }
         platform["ap_cpu_"..tostring(i)] = cpu
 
@@ -670,7 +728,7 @@ function ap_compute.enable_ap_router(ctx, platform)
     if platform.ap_gpex_0 ~= nil then
         if smmu_backend == "systemc-mmu720ae" then
             platform.ap_gpex_0.bus_master = {
-                bind = "&ap_smmu_0.tbu_lti00_socket";
+                bind = "&ap_smmu_lti00.upstream_socket";
             }
         else
             platform.ap_gpex_0.bus_master = {
@@ -701,15 +759,18 @@ function ap_compute.enable_ap_router(ctx, platform)
         end
     end
     bind_ap_socket(platform.ap_gic_its, "mem")
-    bind_ap_socket(platform.ap_smmu_0, "mem")
+    if smmu_backend == "systemc-mmu720ae" then
+        bind_ap_socket(platform.ap_smmu_0, "target_socket")
+    else
+        bind_ap_socket(platform.ap_smmu_0, "mem")
+    end
     if smmu_backend == "systemc-mmu720ae" and platform.ap_smmu_0 ~= nil then
-        platform.ap_smmu_0.downstream_socket = {
+        platform.ap_smmu_0.dma = {
             bind = "&ap_router.target_socket";
         }
-        platform.ap_smmu_0.ptw_socket = {
+        platform.ap_smmu_lti00.downstream_socket = {
             bind = "&ap_router.target_socket";
         }
-        platform.ap_smmu_0.tbu_lti00_default_sid = 0x40
     end
 
     -- RoS and AP peripherals

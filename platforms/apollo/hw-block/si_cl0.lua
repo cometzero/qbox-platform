@@ -675,12 +675,16 @@ function si_cl0.enable(ctx, platform)
     platform.si_cl0_ni710ae_primary_nci = {
         moduletype = "host_ni710ae_nci";
         topology = 4;
+        protected_apu_index = 0;
+        reset_owner_domain_id = ctx.request_context.domain.si_cl0;
+        allow_trusted_loader = true;
         target_socket = {
             address = SI_CL0_NI710AE_PRIMARY_NCI_BASE;
             size = SI_CL0_NI710AE_NCI_SIZE;
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
         };
+        initiator_socket = {bind = "&si_cl0_router.target_socket"};
         log_level = 0;
     }
 
@@ -1008,6 +1012,11 @@ function si_cl0.enable(ctx, platform)
     -- CL0 boot image and Cortex-R82 CPU
     platform.si_cl0_loader = {
         moduletype = "loader";
+        request_origin_id = ctx.request_context.origin.si_cl0_loader;
+        request_domain_id = ctx.request_context.domain.si_cl0;
+        request_capabilities = ctx.request_context.capability.authenticated_image;
+        request_secure = true;
+        request_secure_valid = true;
         initiator_socket = {bind = "&si_cl0_router.target_socket"};
         { bin_file = si_cl0_image, address = SI_CL0_SRAM_BASE };
     }
@@ -1015,7 +1024,7 @@ function si_cl0.enable(ctx, platform)
     platform.si_cl0_cpu_0 = {
         moduletype = "cpu_arm_cortexR82";
         args = {"&platform.si_cl0_qemu_inst"};
-        mem = {bind = "&si_cl0_router.target_socket"};
+        mem = {bind = "&si_cl0_ni710ae_primary_nci.protected_target_socket"};
         has_el2 = true;
         psci_conduit = "smc";
         start_powered_off = false;
@@ -1023,6 +1032,11 @@ function si_cl0.enable(ctx, platform)
         reset_power_on = true;
         rvbar = SI_CL0_ENTRY;
         mp_affinity = 0x0;
+        request_origin_id = ctx.request_context.origin.si_cl0_cpu_base;
+        request_domain_id = ctx.request_context.domain.si_cl0;
+        requester_id = 0;
+        request_secure = true;
+        request_secure_valid = true;
         trace_pc = ctx.getenv_bool_or("QBOX_APOLLO_FULL_SI_CL0_PC_TRACE", false);
         trace_exception_state = ctx.getenv_bool_or(
             "QBOX_APOLLO_FULL_SI_CL0_EXCEPTION_TRACE",

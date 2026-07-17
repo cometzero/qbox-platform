@@ -696,6 +696,9 @@ function rse.define(ctx, platform)
             cpu = {
                 init_svtor = RSE_ROM_BASE_S;
                 init_nsvtor = RSE_ROM_BASE_S;
+                request_origin_id = ctx.request_context.origin.rse_cpu;
+                request_domain_id = ctx.request_context.domain.rse;
+                requester_id = 0;
                 start_powered_off = false;
                 trace_pc = rse_pc_trace;
                 trace_exception_state = rse_exception_trace;

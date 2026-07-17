@@ -54,6 +54,11 @@ return {
             reset_policy = "rse_only"; scope = "zena_css_architecture";
         };
         {
+            name = "si_cl0_ni710ae_primary_nci"; from = "si_cl0"; to = "si_cl0";
+            kind = "apu"; owner = "si_cl0"; width = 40;
+            reset_policy = "owner_only"; scope = "zena_css_architecture";
+        };
+        {
             name = "si_cl0_to_rse_shared"; from = "si_cl0"; to = "system";
             kind = "static_window"; owner = "rse"; width = 40;
             reset_policy = "static_allow_list"; scope = "zena_css_architecture";

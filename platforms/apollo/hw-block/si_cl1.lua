@@ -239,6 +239,7 @@ function si_cl1.enable(ctx, platform)
         scmi_channel_base_index = SI_CL1_PFDI_MHU_CHANNEL_BASE;
         scmi_channel_count = 4;
         init_shmem = true;
+        requester_hold_enable = true;
         trace = mhu_trace;
         trace_file = mhu_trace_file;
         trace_limit = mhu_trace_limit;
@@ -251,6 +252,12 @@ function si_cl1.enable(ctx, platform)
         irq = {bind = "&si_cl1_gic.spi_in_50"};
         log_level = 0;
     }
+
+    for i=0,3 do
+        platform.si_cl1_pfdi_mhu_pbx["requester_hold_"..i] = {
+            bind = "&si_cl1_cpu_"..i..".sync_hold";
+        }
+    end
 
     platform.si_cl1_pfdi_reply_mhu_mbx = {
         moduletype = "mhu320ae";
@@ -280,6 +287,11 @@ function si_cl1.enable(ctx, platform)
     -- CL1 boot image
     platform.si_cl1_loader = {
         moduletype = "loader";
+        request_origin_id = ctx.request_context.origin.si_cl1_loader;
+        request_domain_id = ctx.request_context.domain.si_cl1;
+        request_capabilities = ctx.request_context.capability.authenticated_image;
+        request_secure = true;
+        request_secure_valid = true;
         initiator_socket = {bind = "&si_cl1_router.target_socket"};
         { bin_file = si_cl1_image, address = SI_CL1_SRAM_BASE };
     }
@@ -298,6 +310,9 @@ function si_cl1.enable(ctx, platform)
             rvbar = SI_CL1_ENTRY;
             mp_affinity = 0x10000 + (i * 0x100);
             cntfrq_hz = ARCH_TIMER_FREQUENCY_HZ;
+            request_origin_id = ctx.request_context.origin.si_cl1_cpu_base + i;
+            request_domain_id = ctx.request_context.domain.si_cl1;
+            requester_id = i;
             irq_timer_sec_out = {
                 bind = "&si_cl1_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_SEC_PPI;
             };

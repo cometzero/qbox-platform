@@ -58,6 +58,10 @@ function ap_system_reset_bind_targets()
         "&ap_reset_gpio.reset_in";
     }
 
+    if smmu_backend == "systemc-mmu720ae" then
+        targets[#targets + 1] = "&ap_smmu_0.reset"
+    end
+
     -- The AP/SI non-secure MHU SRAM is owned by the System Management
     -- Domain.  SI0 initializes its SCMI channel before AP reset release, so
     -- an AP reset must not erase the channel-free state.
@@ -603,19 +607,26 @@ function rse_tcm_aliases(split_cpu0_alias, ns_address, cpu0_s_address, cpu0_ns_a
 end
 
 function ap_smmu_component()
+    local event_irq_target = "&ap_gic.spi_in_65"
+    if getenv_bool_or("QBOX_APOLLO_FAULT_EVENT_TEST", false) then
+        event_irq_target = "&ap_smmu_event_fanout.signal_in"
+    end
+
     if smmu_backend == "systemc-mmu720ae" then
         return {
-            moduletype = "mmu720ae";
-            mem = {
+            moduletype = "smmuv3";
+            pamax = 48;
+            sidsize = 8;
+            ato = false;
+            num_tbu = 1;
+            iidr = 0x720AE000;
+            target_socket = {
                 address = 0x1C0000000;
                 size = 0x08000000;
                 bind = "&system_router.initiator_socket";
             };
-            downstream_socket = {bind = "&system_router.target_socket"};
-            ptw_socket = {bind = "&system_router.target_socket"};
-            irq_combined = {bind = "&ap_gic.spi_in_65"};
-            stage = "1";
-            profile = "zena-css-cfg2";
+            dma = {bind = "&system_router.target_socket"};
+            irq_eventq = {bind = event_irq_target};
         }
     end
 
@@ -627,7 +638,7 @@ function ap_smmu_component()
             size = 0x08000000;
             bind = "&system_router.initiator_socket";
         };
-        irq_out_0 = {bind = "&ap_gic.spi_in_65"};
+        irq_out_0 = {bind = event_irq_target};
         stage = "1";
     }
 end
@@ -650,6 +661,31 @@ function config.create(apollo_dir, machine_contract, machine)
         apollo_live_cl1 = apollo_live_cl1;
         machine_contract = machine;
         machine_contract_module = machine_contract;
+        request_context = {
+            domain = {
+                system = 0;
+                ap = 1;
+                smd = 2;
+                rse = 3;
+                si_cl0 = 4;
+                si_cl1 = 5;
+            };
+            origin = {
+                ap_cpu_base = 0x1000;
+                ap_gpex = 0x1100;
+                ap_global_peripheral = 0x1200;
+                ap_loader = 0x1F00;
+                rse_cpu = 0x3000;
+                si_cl0_cpu_base = 0x4000;
+                si_cl0_loader = 0x4F00;
+                si_cl1_cpu_base = 0x5000;
+                si_cl1_loader = 0x5F00;
+            };
+            capability = {
+                boot_loader = 1;
+                authenticated_image = 2;
+            };
+        };
         APOLLO_SI_CL1_HIPC_SHARED_BASE = hipc.base;
         APOLLO_SI_CL1_HIPC_SHARED_SIZE = hipc.size;
         getenv_or = getenv_or;

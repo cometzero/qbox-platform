@@ -180,10 +180,12 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     arm_gicv3
     arm_gicv3_its
     qemu_gpex
+    virtio_net_pci
     virtio_mmio_blk
     virtio_mmio_net
     virtio_mmio_rng
     arm_smmuv3
+    smmuv3
     mmu720ae
     reset_gpio
     pl031
@@ -214,6 +216,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     strata_flash_j3
     host_smcf_mgi
     host_system_pll
+    signal_fanout
     reset_fanout
     rse_sysctrl
 )

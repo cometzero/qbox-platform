@@ -8,7 +8,7 @@ return {
         { name = "ap_watchdog"; source = "ap_watchdog_0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 50; owner = "ap"; scope = "rd_aspen_cfg2" };
         { name = "ap_primary_uart"; source = "ap_primary_uart"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 52; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_secure_uart"; source = "ap_secure_uart"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 53; owner = "ap"; scope = "zena_css_architecture" };
-        { name = "ap_smmu_event"; source = "ap_smmu_0.event"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 65; owner = "ap"; scope = "zena_css_architecture" };
+        { name = "ap_smmu_event"; source = "ap_smmu_0.irq_eventq"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 65; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_ras_ffh"; source = "ap_ras.corrected_deferred"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 89; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_si_ns_mhu_pbx"; source = "host_ap_si_ns_scmi_mhu_pbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 112; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
         { name = "ap_si_ns_mhu_mbx"; source = "host_ap_si_ns_scmi_mhu_mbx"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 113; owner = "si_cl0"; scope = "rd_aspen_cfg2" };
@@ -40,6 +40,18 @@ return {
         { name = "rse_mhu2"; source = "rse_mhu2_receiver"; sink = "rse_nvic"; controller = "rse_nvic"; kind = "IRQ"; id = 45; owner = "rse"; scope = "zena_css_architecture" };
         { name = "rse_si_mhu"; source = "host_rse_si_mhu_mbx"; sink = "rse_nvic"; controller = "rse_nvic"; kind = "IRQ"; id = 139; owner = "rse"; scope = "zena_css_architecture" };
     };
+    pcie_irq_test = {
+        profile = "QBOX_APOLLO_PCIE_IRQ_TEST";
+        endpoint = "virtio-net-pci";
+        bdf = "0000:00:01.0";
+        device_id = 0x0008;
+        stream_id = 0x0040;
+        event_id_base = 0;
+        event_id_policy = "msi_index";
+        its_translator = 0x20850040;
+        legacy_intx_spi = 301;
+        affinity_cpu = 0;
+    };
     reset_routes = {
         { name = "rse_to_ap_primary_reset"; source = "rse_ap_power_request"; sink = "ap_reset_gpio"; owner = "rse"; order = 40; scope = "zena_css_architecture" };
         { name = "si_cl0_to_ap_secondary_reset"; source = "si_cl0_ap_core_ppu.power_on_reset"; sink = "ap_cpu.reset"; owner = "si_cl0"; order = 50; scope = "zena_css_architecture" };
@@ -48,6 +60,7 @@ return {
         { name = "si_cl1_cluster_reset"; source = "host_si_cl1_clus_ppu"; sink = "si_cl1_cpu.reset"; owner = "si_cl1"; order = 30; scope = "fvp_cfg2_extension" };
     };
     fault_routes = {
+        { name = "ap_smmu_event_to_test_fmu_observer"; source = "ap_smmu_0.irq_eventq"; sink = "ap_smmu_fault_observer.record1"; result = "record_and_json_event"; owner = "qbox_test_profile"; enabled_by = "QBOX_APOLLO_FAULT_EVENT_TEST"; scope = "qbox_test_profile" };
         { name = "si_fmu_critical_to_ssu"; source = "si_cl0_fmu.critical"; sink = "si_cl0_ssu"; result = "escalate"; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "si_ssu_to_esm"; source = "si_cl0_ssu"; sink = "external_esm"; result = "status_and_reset_policy"; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "ap_ras_to_ffh"; source = "ap_ras"; sink = "tfa_ffh"; result = "spi_89_and_notification"; owner = "ap"; scope = "zena_css_architecture" };

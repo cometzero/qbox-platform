@@ -72,6 +72,10 @@ local extra_disk_images = {
     getenv_or("QBOX_APOLLO_EXTRA_BLK3", root.."build/qbox-apollo-fvp/apollo-extra-blk3.raw"),
 }
 local netdev = getenv_or("QBOX_APOLLO_NETDEV", "type=user,hostfwd=tcp::2222-:22")
+local pcie_irq_test_enabled =
+    getenv_bool_or("QBOX_APOLLO_PCIE_IRQ_TEST", false)
+local fault_event_test_enabled =
+    getenv_bool_or("QBOX_APOLLO_FAULT_EVENT_TEST", false)
 
 if ACCEL == nil then
     ACCEL = getenv_or("QBOX_APOLLO_ACCEL", "tcg")
@@ -246,13 +250,103 @@ platform = {
         args = {"&platform.qemu_inst", "&platform.gic_0"};
         has_gicv4_1 = true;
         gicv4_1_svpet = 1;
-        gicv4_1_cte_size = 2;
+        gicv4_1_cte_size = 8;
         mem = {
             address = 0x20840000,
             size = 0x40000,
             bind = "&router.initiator_socket"
         };
     };
+
+    smmu_0 = {
+        moduletype = "smmuv3";
+        pamax = 48;
+        sidsize = 8;
+        ato = false;
+        num_tbu = 1;
+        iidr = 0x720AE000;
+        target_socket = {
+            address = 0x1c0000000;
+            size = 0x08000000;
+            bind = "&router.initiator_socket";
+        };
+        dma = {bind = "&router.target_socket"};
+        irq_eventq = {
+            bind = fault_event_test_enabled and
+                "&smmu_event_fanout.signal_in" or
+                "&gic_0.spi_in_65";
+        };
+    };
+
+    smmu_event_fanout = fault_event_test_enabled and {
+        moduletype = "signal_fanout";
+        signal_out = {
+            bind = "&gic_0.spi_in_65;&smmu_fault_observer.fault_in";
+        };
+    } or nil;
+
+    smmu_fault_observer = fault_event_test_enabled and {
+        moduletype = "zena_fmu";
+        bank_count = 1;
+        record_count = 2;
+        enforce_sys_key = false;
+        fault_input_enabled = true;
+        fault_input_record = 1;
+        fault_source = "smmu_0.irq_eventq";
+        fault_id = "smmuv3-eventq";
+        fault_sink = "gic_0.spi_in_65";
+        event_log = getenv_or("QBOX_APOLLO_FAULT_EVENT_LOG", "");
+        log_level = 0;
+    } or nil;
+
+    smmu_lti00 = {
+        moduletype = "smmuv3_tbu";
+        args = {"&platform.smmu_0"};
+        topology_id = 0x40;
+        upstream_socket = {};
+        downstream_socket = {bind = "&router.target_socket"};
+    };
+
+    gpex_0 = {
+        moduletype = "qemu_gpex";
+        args = {"&platform.qemu_inst"};
+        request_origin_id = 0x1100;
+        request_domain_id = 1;
+        requester_id = 0x40;
+        bus_master = {bind = "&smmu_lti00.upstream_socket"};
+        pio_iface = {
+            address = 0x60200000;
+            size = 0x00100000;
+            bind = "&router.initiator_socket";
+        };
+        mmio_iface = {
+            address = 0x60300000;
+            size = 0x1fd00000;
+            bind = "&router.initiator_socket";
+        };
+        ecam_iface = {
+            address = 0x43b50000;
+            size = 0x10000000;
+            bind = "&router.initiator_socket";
+        };
+        mmio_iface_high = {
+            address = 0x400000000;
+            size = 0x200000000;
+            bind = "&router.initiator_socket";
+        };
+        irq_out_0 = {bind = "&gic_0.spi_in_300"};
+        irq_out_1 = {bind = "&gic_0.spi_in_301"};
+        irq_out_2 = {bind = "&gic_0.spi_in_302"};
+        irq_out_3 = {bind = "&gic_0.spi_in_303"};
+    };
+
+    pcie_irq_test_endpoint = pcie_irq_test_enabled and {
+        moduletype = "virtio_net_pci";
+        args = {"&platform.qemu_inst", "&platform.gpex_0"};
+        addr = "01.0";
+        mac = "52:54:00:12:34:56";
+        netdev_str = "type=user";
+    } or nil;
 
     -- RoS peripherals visible to Linux
     virtioblk_1 = {

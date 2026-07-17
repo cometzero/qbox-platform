@@ -77,6 +77,15 @@ the other secure completer channels share this policy. Preserving only the MHU
 doorbell is insufficient: mailbox status, flags, length, and payload remain
 requester-owned until SI0 consumes the message or publishes an error response.
 
+The QBox-owned SCMI/PFDI completer validates the shared-memory message length
+before protocol dispatch. A length smaller than the four-byte SCMI header or
+larger than the channel capacity returns `SCMI_PROTOCOL_ERROR`, publishes the
+channel as FREE, and performs no power/reset side effect. The next valid
+request on the same channel is accepted. The service-modeled RPMsg name-service
+path similarly bounds an invalid descriptor poll and permits a corrected
+descriptor on the next doorbell. PSCI and FF-A error semantics remain owned by
+TF-A and OP-TEE rather than being synthesized by the platform model.
+
 The full-system AP, RSE, and both Safety Islands use multi-thread TCG so each
 vCPU has an independent wake condition. QBox completes managed start-in-reset
 release on the target vCPU and does not start a reset-held CPU's quantum
@@ -94,6 +103,17 @@ preserves the current power state when firmware enables a lower dynamic
 minimum policy, so that policy update does not reassert CPU reset. Each CL1
 Cortex-R82 generic timer runs at 100 MHz to match the Zephyr system-clock
 configuration.
+
+The SI1 PFDI postbox also uses the propagated TLM request context to identify
+the vCPU that issued each doorbell. It asserts that vCPU's co-simulation
+`sync_hold` until the real SI0 firmware publishes the shared-memory channel as
+FREE, preventing the requester's virtual timeout from advancing ahead of the
+separate SI0 QEMU instance. A channel is not a CPU identity: CPU0 issues all
+four initial setup requests before steady-state channels 2 through 5 map to
+CPUs 0 through 3. `sync_hold` pauses only QEMU/SystemC scheduling and the
+requester's quantum keeper; it does not synthesize an MHU response or expose a
+guest-visible halt, reset, IRQ, or power transition.
+
 Override the TCG defaults with `QBOX_APOLLO_FULL_AP_TCG_MODE`,
 `QBOX_RDASPEN_RSE_TCG_MODE`, `QBOX_RDASPEN_RSE_SYNC_POLICY`,
 `QBOX_APOLLO_FULL_SI_CL0_TCG_MODE`, `QBOX_APOLLO_FULL_SI_CL0_SYNC_POLICY`,
@@ -130,6 +150,22 @@ python3 scripts/test/validate_qbox_apollo_topology.py \
   --emit build/qbox-apollo-qvp/topology/topology.json
 ```
 
+Run the same four-CPU smoke contract with either local-build or Yocto-owned
+artifacts through the top-level fidelity wrapper:
+
+```bash
+python3 scripts/run/run_qbox_apollo_fidelity.py \
+  --artifacts local --cpus 4 --profile smoke
+python3 scripts/run/run_qbox_apollo_fidelity.py \
+  --artifacts yocto --cpus 4 --profile smoke
+```
+
+Each run writes `manifest.json`, `result.json`,
+`full-coverage-audit.json`, `fidelity-contract.json`, and
+`fidelity-summary.json` below `build/qbox-apollo-qvp/`. The wrapper rejects
+local/Yocto artifact mixing and requires the Linux CPU IDs to be exactly
+0 through 3. It does not impose an emulator performance threshold.
+
 `hw-block/ros.lua` tracks the modeled Rest of System subset from the Arm Zena
 CSS FVP RoS peripheral table: AP-visible virtio block/net/rng and PL031 RTC.
 
@@ -140,6 +176,15 @@ RSE secure boot and RSE-local security peripherals remain in `hw-block/rse.lua`;
 AP firmware-chain and AP hardware construction live in `hw-block/ap_compute.lua`;
 SI host-visible SRAM/PPU windows live in `hw-block/si_cl0.lua` and
 `hw-block/si_cl1.lua`.
+
+The SI CL0 Cortex-R82 memory path crosses the primary NI-710AE protected
+socket. Before the selected APU is enabled, only the configured reset owner or
+trusted loader context can access the downstream target. After programming,
+normal, debug, and DMI accesses use the same region, requester, security, and
+read/write permissions. A downstream DMI grant is exposed only when one
+allowed region contains its entire range. Enabling or reprogramming the APU
+coalesces protected DMI invalidation into the next SystemC delta so the MMIO
+instruction that changes policy can complete before QEMU retranslates code.
 
 ## Timer Topology
 
@@ -160,6 +205,73 @@ paths.
   Arm generic timer contract.
 - SI0, CSS, and RSE counter windows use the `host_gtimer` control/read/sync
   frame model for REFCLK counter behavior.
+
+## PCIe MSI-X/LPI And INTx Test Profile
+
+The Apollo PCIe interrupt endpoint is opt-in. Set
+`QBOX_APOLLO_PCIE_IRQ_TEST=true` to instantiate one `virtio-net-pci` endpoint
+at `0000:00:01.0`. Its fixed test identity is PCI requester/ITS DeviceID
+`0x0008`, SMMU SID `0x0040`, EventID base `0`, and ITS translator
+`0x20850040`. The endpoint-only `iommu-map` avoids assigning the host bridge
+RID to the same SID.
+
+Prepare the generated DT/initramfs test profile and run both modes with the
+top-level helpers:
+
+```bash
+python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py
+QBOX_APOLLO_PCIE_IRQ_TEST=true \
+python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+  --skip-build --timeout 600 \
+  --base-dtb build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq.dtb \
+  --initramfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq-initramfs.cpio.gz \
+  --disk build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-msix-disk.img \
+  --out-dir <msix-output>
+QBOX_APOLLO_PCIE_IRQ_TEST=true \
+python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+  --skip-build --timeout 600 \
+  --base-dtb build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq.dtb \
+  --initramfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq-initramfs.cpio.gz \
+  --disk build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-intx-disk.img \
+  --out-dir <intx-output>
+python3 scripts/test/validate_qbox_apollo_pcie_irq_runtime.py \
+  --msix-log <msix-output>/qbox-apollo-fvp.log \
+  --intx-log <intx-output>/qbox-apollo-fvp.log \
+  --output build/qbox-apollo-fvp/i4-pcie-irq-runtime-validation.json
+```
+
+The generated MSI-X disk is used for the first run and the generated INTx disk
+adds `pci=nomsi` for the second run. Linux reports the legacy GIC SPI input 301
+as architectural INTID 333. Both tests pin the selected interrupt affinity to
+CPU0 before generating network traffic. These direct-boot runs qualify the AP
+PCIe data and interrupt path; they do not qualify the full RSE-first firmware
+chain.
+
+## Fault Event Test Profile
+
+`QBOX_APOLLO_FAULT_EVENT_TEST=true` enables a test-only event observer without
+adding an MMIO aperture. The SMMU event-queue level is passed through
+`signal_fanout` to its normal GIC SPI 65 sink and to a separate `zena_fmu`
+observer. Set `QBOX_APOLLO_FAULT_EVENT_LOG` to write the ordered event JSON.
+
+```bash
+QBOX_APOLLO_NUM_CPUS=4 \
+QBOX_APOLLO_FAULT_EVENT_TEST=true \
+QBOX_APOLLO_FAULT_EVENT_LOG="$PWD/build/qbox-apollo-qvp/fault-events.json" \
+python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+  --skip-build \
+  --local-build-dir build/local-apollo-qvp \
+  --base-dtb build/local-apollo-qvp/deploy/boot/apollo-qvp.dtb \
+  --timeout 60 \
+  --out-dir build/qbox-apollo-qvp/fault-event-construction
+```
+
+The observer writes `source`, `record`, `sink_assert`, `clear`,
+`sink_deassert`, and `recovery` phases when a fault is injected and cleared.
+The component test is the acceptance path for injection and clear; a normal
+boot only validates construction when no SMMU fault occurs. The observer is
+QBox test instrumentation and does not assert an undocumented physical
+SMMU-to-NI-710AE-FMU route in Zena CSS.
 
 ## Build Local Artifacts
 
@@ -318,6 +430,17 @@ Generated runtime evidence is under
 durable report is
 `doc/apollo-qvp-architecture-debt-validation-2026-07-16.md` in the top-level
 project.
+
+The 2026-07-17 recorded FVP/QBox non-AP differential additionally fixed RSE
+CC3XX identification-register writes and the SI1 cross-instance PFDI deadline
+race. Two trace-off local runs and one Yocto provider/image run passed with no
+PFDI status, protocol-version, timeout-errno, or agent-not-ready marker; the
+final coverage audits passed. Evidence is under
+`build/qbox-apollo-qvp/pfdi-requester-context-local-20260717-r{2,3}/` and
+`build/qbox-apollo-qvp/pfdi-requester-context-yocto-20260717-r1/`. The Korean
+analysis is
+`doc/apollo-qvp-fvp-qbox-non-ap-pfdi-analysis-2026-07-17-ko.md` in the
+top-level project.
 
 ## Headless Boot
 
