@@ -199,7 +199,7 @@ function ap_compute.define(ctx, platform)
         map_file = host_ap_bl2_header_sram_map_file;
         shared_memory = host_sram_shared_memory_enabled(host_ap_bl2_header_sram_map_file);
         shared_memory_prefix = "ra-aph-";
-        init_mem = host_ap_bl2_header_sram_map_file == "";
+        init_mem = false;
         log_level = 0;
     }
 
@@ -224,25 +224,6 @@ function ap_compute.define(ctx, platform)
             bind = "&system_router.initiator_socket";
         };
         load = {bin_file = ap_flash, offset = 0};
-        log_level = 0;
-    }
-
-    platform.rse_ap_fip_logical = host_sram_shared_memory and {
-        moduletype = "gs_memory";
-        read_only = true;
-        dmi_allow = host_memory_dmi;
-        target_socket = {
-            address = HOST_AP_FLASH_LOGICAL_BASE + AP_FLASH_FIP_PRIMARY_OFFSET;
-            size = AP_FLASH_FIP_SIZE;
-            priority = 0;
-            bind = "&rse_router.initiator_socket";
-        };
-        load = {
-            bin_file = ap_flash;
-            offset = 0;
-            bin_file_offset = AP_FLASH_FIP_PRIMARY_OFFSET;
-            bin_file_size = AP_FLASH_FIP_SIZE;
-        };
         log_level = 0;
     }
 
@@ -288,7 +269,7 @@ function ap_compute.define(ctx, platform)
         dmi_allow = host_memory_dmi;
         target_socket = {
             address = HOST_AP_SPMC_BASE;
-            size = HOST_AP_SPMC_SIZE;
+            size = HOST_AP_SPMC_LOCAL_SIZE;
             bind = "&system_router.initiator_socket";
         };
         log_level = 0;
@@ -664,6 +645,33 @@ function ap_compute.enable_ap_router(ctx, platform)
             bind = "&ap_router.initiator_socket";
             relative_addresses = false;
             priority = 0;
+        };
+        initiator_socket = {bind = "&ap_router.target_socket"};
+        log_level = 0;
+    }
+
+    platform.ap_to_system_rse_carveout_bridge = {
+        moduletype = "addrtr";
+        mapped_base_addr = HOST_AP_MHU_POINTER_ACCESS_PHYS_BASE;
+        target_socket = {
+            address = HOST_AP_MHU_POINTER_ACCESS_PHYS_BASE;
+            size = HOST_AP_MHU_POINTER_ACCESS_SIZE;
+            bind = "&ap_router.initiator_socket";
+            relative_addresses = false;
+            priority = 0;
+        };
+        initiator_socket = {bind = "&system_router.target_socket"};
+        log_level = 0;
+    }
+
+    platform.system_to_ap_flash_bridge = {
+        moduletype = "addrtr";
+        mapped_base_addr = HOST_AP_FLASH_PHY_BASE;
+        target_socket = {
+            address = HOST_AP_FLASH_PHY_BASE;
+            size = HOST_AP_FLASH_IMAGE_SIZE;
+            bind = "&system_router.initiator_socket";
+            relative_addresses = false;
         };
         initiator_socket = {bind = "&ap_router.target_socket"};
         log_level = 0;

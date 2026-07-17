@@ -503,6 +503,7 @@ function rse.define(ctx, platform)
         frame = "mbx";
         pair = "ap_s_to_rse";
         protocol = "doorbell-bridge";
+        doorbell_commit_on_notify = true;
         init_shmem = false;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;

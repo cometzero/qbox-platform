@@ -605,6 +605,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     broker.set_preset_cci_value("bridge_rse_mbx.frame", cci::cci_value(std::string("mbx")));
     broker.set_preset_cci_value("bridge_rse_mbx.protocol",
                                 cci::cci_value(std::string("doorbell-bridge")));
+    broker.set_preset_cci_value("bridge_rse_mbx.doorbell_commit_on_notify",
+                                cci::cci_value(true));
     broker.set_preset_cci_value("bridge_rse_mbx.tx_shmem",
                                 cci::cci_value(SHMEM_BASE));
     broker.set_preset_cci_value("bridge_rse_mbx.scmi_channel_stride",
@@ -1369,6 +1371,10 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     write32(bridge_ap_pbx_bus, DBCW_SET, 8);
     write32_as_requester(bridge_ap_pbx_bus, DBCW_SET + DBCW_STRIDE,
                          0x44556677, 3);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(bridge_rse_mbx_irq.write_count, bridge_irq_write_count);
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
+
     write32(bridge_ap_pbx_bus, bridge_notify_base + (DBCW_SET - 0x1000),
             MHU_NOTIFY_VALUE);
 
@@ -1392,6 +1398,7 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_ST), 0u);
     EXPECT_EQ(read32(bridge_ap_pbx_bus, DBCW_ST), 0u);
     EXPECT_EQ(read32(bridge_ap_pbx_bus, bridge_notify_base), 0u);
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
 
     EXPECT_FALSE(bridge_ap_requester1_hold.saw_asserted);
     EXPECT_TRUE(bridge_ap_requester3_hold.saw_asserted);

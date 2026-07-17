@@ -261,23 +261,25 @@ function system_mgmt.define(ctx, platform)
     platform.host_ap_si_cl1_mhu_pbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "pbx";
-        pair = "ap_si_cl1";
-        protocol = "doorbell";
-        doorbell_ack_trigger_channel = 0;
-        doorbell_ack_trigger_value = 0x8;
-        doorbell_ack_channel = 0;
-        doorbell_ack_value = 0x4;
+        pair = ctx.apollo_live_cl1 and "apollo_ap_to_si_cl1" or "ap_si_cl1";
+        protocol = ctx.apollo_live_cl1 and "doorbell-bridge" or "doorbell";
+        channel_count = 32;
+        doorbell_ack_trigger_channel = not ctx.apollo_live_cl1 and 0 or nil;
+        doorbell_ack_trigger_value = not ctx.apollo_live_cl1 and 0x8 or nil;
+        doorbell_ack_channel = not ctx.apollo_live_cl1 and 0 or nil;
+        doorbell_ack_value = not ctx.apollo_live_cl1 and 0x4 or nil;
         -- si_cl1_rproc_rsctbl@0x00100000 from the AP DTS HIPC layout.
-        doorbell_ack_seed_address = 0x00100000;
-        doorbell_ack_seed_words = {
+        doorbell_ack_seed_address =
+            not ctx.apollo_live_cl1 and 0x00100000 or nil;
+        doorbell_ack_seed_words = not ctx.apollo_live_cl1 and {
             0x00000001, 0x00000001, 0x00000000, 0x00000000,
             0x00000014, 0x00000003, 0x00000007, 0x00000000,
             0x00000001, 0x00000000, 0x00000000, 0x00000200,
             0xffffffff, 0x00000010, 0x00000020, 0x00000000,
             0x00000000, 0xffffffff, 0x00000010, 0x00000020,
             0x00000001, 0x00000000,
-        };
-        rpmsg_ns_enable = true;
+        } or nil;
+        rpmsg_ns_enable = not ctx.apollo_live_cl1;
         rpmsg_ns_name = "ethsi1";
         rpmsg_ns_remote_addr = 0x400;
         -- si_cl1_vdev0vring0@0x00120000 from the AP DTS HIPC layout.
@@ -305,8 +307,9 @@ function system_mgmt.define(ctx, platform)
     platform.host_ap_si_cl1_mhu_mbx = enable_ap_cpus and {
         moduletype = "mhu320ae";
         frame = "mbx";
-        pair = "ap_si_cl1";
-        protocol = "doorbell";
+        pair = ctx.apollo_live_cl1 and "apollo_si_cl1_to_ap" or "ap_si_cl1";
+        protocol = ctx.apollo_live_cl1 and "doorbell-bridge" or "doorbell";
+        channel_count = 32;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
@@ -439,7 +442,7 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-    local ap_rse_ps_proxy = getenv_bool_or("QBOX_RDASPEN_RSE_PS_PROXY", true)
+    local ap_rse_ps_proxy = getenv_bool_or("QBOX_RDASPEN_RSE_PS_PROXY", false)
     local ap_rse_mhu_protocol = ap_rse_ps_proxy and "rse-ps-proxy" or "doorbell-bridge"
     local ap_rse_mhu_pbx_pair = ap_rse_ps_proxy and "ap_rse_ps_proxy" or "ap_s_to_rse"
     local ap_rse_mhu_mbx_pair = ap_rse_ps_proxy and "ap_rse_ps_proxy" or "rse_to_ap_s"
@@ -469,6 +472,7 @@ function system_mgmt.define(ctx, platform)
         frame = "mbx";
         pair = ap_rse_mhu_mbx_pair;
         protocol = ap_rse_mhu_protocol;
+        doorbell_commit_on_notify = not ap_rse_ps_proxy;
         tx_shmem = HOST_AP_RSE_MAILBOX_PHYS_BASE;
         rx_shmem = HOST_AP_RSE_MAILBOX_PHYS_BASE;
         init_shmem = false;
@@ -486,9 +490,8 @@ function system_mgmt.define(ctx, platform)
 
     platform.host_ap_rse_mailbox = {
         moduletype = "gs_memory";
+        dmi_allow = false;
         target_socket = {
-            -- The MHU outband mailbox at 0xffffc000 sits inside the larger
-            -- AP MHU pointer-access window used by TF-M SFCP requests.
             address = HOST_AP_MHU_POINTER_ACCESS_PHYS_BASE;
             size = HOST_AP_MHU_POINTER_ACCESS_SIZE;
             bind = "&system_router.initiator_socket";

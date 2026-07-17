@@ -426,6 +426,7 @@ private:
     cci::cci_param<uint32_t> p_feat_spt1;
     cci::cci_param<uint32_t> p_iidr;
     cci::cci_param<uint32_t> p_aidr;
+    cci::cci_param<bool> p_doorbell_commit_on_notify;
     cci::cci_param<bool> p_direct_boot_compat;
     cci::cci_param<std::string> p_scmi_transport;
     cci::cci_param<uint64_t> p_tx_shmem;
@@ -934,10 +935,29 @@ private:
     void update_combined_irq()
     {
         m_frame.refresh_combined_irq_regs();
+        const bool level = m_frame.any_combined_irq();
+        bool deassert_now = false;
         {
             std::lock_guard<std::mutex> lock(m_irq_update_lock);
-            m_pending_irq_level = m_frame.any_combined_irq();
+            m_pending_irq_level = level;
             m_pending_irq_update = true;
+            if (!level && m_emitted_irq_valid && m_emitted_irq_level) {
+                m_pending_irq_update = false;
+                m_emitted_irq_level = false;
+                deassert_now = true;
+            }
+        }
+
+        if (deassert_now) {
+            if (p_trace.get_value()) {
+                trace_event("combined-irq", "level=false bound=" +
+                    std::string(irq.size() != 0 ? "true" : "false") +
+                    " synchronous=true");
+            }
+            if (irq.size() != 0) {
+                irq->write(false);
+            }
+            return;
         }
         m_irq_update_event.notify(sc_core::SC_ZERO_TIME);
     }
@@ -952,6 +972,13 @@ private:
             }
             level = m_pending_irq_level;
             m_pending_irq_update = false;
+        }
+
+        if (p_trace.get_value()) {
+            std::ostringstream detail;
+            detail << "level=" << std::boolalpha << level
+                   << " bound=" << (irq.size() != 0);
+            trace_event("combined-irq", detail.str());
         }
 
         if (irq.size() != 0 &&
@@ -1580,7 +1607,11 @@ private:
         }
 
         m_frame.set_status_bits(channel, value);
-        update_combined_irq();
+        if (!p_doorbell_commit_on_notify.get_value() ||
+            p_protocol.get_value() != "doorbell-bridge" ||
+            channel == notify_channel()) {
+            update_combined_irq();
+        }
 
         std::ostringstream detail;
         detail << "channel=" << channel
@@ -2715,17 +2746,35 @@ private:
 
                 if (reg_offset == DBCW_INT_CLR) {
                     set_mbx_mask(channel, value);
+                    if (channel == notify_channel()) {
+                        std::ostringstream detail;
+                        detail << "channel=" << channel
+                               << " mask_set=0x" << std::hex << value;
+                        trace_event("mailbox-mask-set", detail.str());
+                    }
                     return;
                 }
 
                 if (reg_offset == DBCW_INT_EN) {
                     clear_mbx_mask(channel, value);
+                    if (channel == notify_channel()) {
+                        std::ostringstream detail;
+                        detail << "channel=" << channel
+                               << " mask_clear=0x" << std::hex << value;
+                        trace_event("mailbox-mask-clear", detail.str());
+                    }
                     return;
                 }
 
                 if (reg_offset == DBCW_CTRL) {
                     m_frame.set_ctrl(channel, value);
                     update_combined_irq();
+                    if (channel == notify_channel()) {
+                        std::ostringstream detail;
+                        detail << "channel=" << channel
+                               << " ctrl=0x" << std::hex << value;
+                        trace_event("mailbox-control", detail.str());
+                    }
                     return;
                 }
             }
@@ -2760,6 +2809,15 @@ private:
             if (len == 4) {
                 const uint32_t value = read32(offset);
                 std::memcpy(data, &value, sizeof(value));
+                if (offset == CTRL_BLK_ID || offset == CTRL_FEAT_SPT0 ||
+                    offset == CTRL_FEAT_SPT1 || offset == CTRL_DBCH_CFG0 ||
+                    offset == CTRL_OP || offset == CTRL_IIDR ||
+                    offset == CTRL_AIDR) {
+                    std::ostringstream detail;
+                    detail << "offset=0x" << std::hex << offset
+                           << " value=0x" << value;
+                    trace_event("control-read", detail.str());
+                }
             } else {
                 m_frame.copy_read(offset, data, len);
             }
@@ -2835,6 +2893,7 @@ public:
         , p_feat_spt1("feat_spt1", 0)
         , p_iidr("iidr", 0x0000043b)
         , p_aidr("aidr", 0x20)
+        , p_doorbell_commit_on_notify("doorbell_commit_on_notify", false)
         , p_direct_boot_compat("direct_boot_compat", false)
         , p_scmi_transport("scmi_transport", std::string("mailbox"))
         , p_tx_shmem("tx_shmem", 0x00180000)

@@ -10,7 +10,7 @@ return {
         { name = "linux_psci"; protocol = "PSCI"; producer = "linux"; consumer = "tfa_bl31"; transport = "SMC"; purpose = "cpu_idle_frequency_power"; scope = "zena_css_architecture" };
         { name = "ap_pfdi"; protocol = "PFDI"; protocol_id = 0x90; producer = "tfa_bl31"; consumer = "scp_si0"; transport = "SCMI_MHUv3"; channel_count = 16; channel_stride = 40; error_policy = "bounded_timeout"; malformed_request = "protocol_error"; recovery = "channel_free_next_request"; scope = "rd_aspen_cfg2" };
         { name = "si_cl1_pfdi"; protocol = "PFDI"; protocol_id = 0x90; producer = "zephyr_si1"; consumer = "scp_si0"; transport = "SCMI_MHUv3"; channel_base = 2; channel_stride = 40; error_policy = "bounded_timeout"; malformed_request = "protocol_error"; recovery = "channel_free_next_request"; scope = "fvp_cfg2_extension" };
-        { name = "hipc"; protocol = "RPMsg"; producer = "zephyr_si1"; consumer = "linux"; transport = "MHUv3_shared_memory"; malformed_descriptor = "bounded_poll_timeout"; recovery = "next_doorbell_retry"; remoteproc_state = "detached"; scope = "fvp_cfg2_extension" };
+        { name = "hipc"; protocol = "RPMsg"; producer = "zephyr_si1"; consumer = "linux"; transport = "MHUv3_shared_memory"; reset_policy = "preserve_on_ap_reset"; malformed_descriptor = "bounded_poll_timeout"; recovery = "next_doorbell_retry"; remoteproc_state = "detached"; scope = "fvp_cfg2_extension" };
         { name = "ffa"; protocol = "FF-A"; producer = "optee"; consumer = "linux"; transport = "SMC_shared_memory"; error_policy = "deny_invalid_descriptor"; scope = "rd_aspen_cfg2" };
         { name = "boot_dtb"; protocol = "FDT"; producer = "tfa_bl2"; consumer = "uboot"; secondary_consumer = "linux"; source = "fip"; systemready_version = "3.1"; scope = "rd_aspen_cfg2" };
         { name = "ras_ffh"; protocol = "FFH"; producer = "tfa_bl31"; consumer = "linux"; transport = "SPI_89"; error_policy = "classify_corrected_deferred_uncorrected"; scope = "zena_css_architecture" };
@@ -19,6 +19,7 @@ return {
         {
             name = "si_cl1_hipc"; base = 0xE0130000; size = 0x00080000;
             backing = "ap-si-cl1-hipc"; producer = "zephyr_si1"; consumer = "linux";
+            reset_policy = "preserve_on_ap_reset";
             remoteproc_state = "detached"; scope = "fvp_cfg2_extension";
             regions = {
                 { name = "resource_table"; offset = 0x00000000; size = 0x00020000 };

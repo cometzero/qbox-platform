@@ -54,7 +54,6 @@ end
 function ap_system_reset_bind_targets()
     local targets = {
         "&ap_bl2_reset_loader.reset";
-        "&host_ap_bl2_header_sram.reset";
         "&ap_reset_gpio.reset_in";
     }
 
@@ -62,9 +61,6 @@ function ap_system_reset_bind_targets()
         targets[#targets + 1] = "&ap_smmu_0.reset"
     end
 
-    -- The AP/SI non-secure MHU SRAM is owned by the System Management
-    -- Domain.  SI0 initializes its SCMI channel before AP reset release, so
-    -- an AP reset must not erase the channel-free state.
     return table.concat(targets, ";")
 end
 
@@ -461,6 +457,7 @@ HOST_AP_DRAM1_BASE = 0x80000000
 HOST_AP_DRAM1_SIZE = 0x7F000000
 HOST_AP_SPMC_BASE = 0xFFC00000
 HOST_AP_SPMC_SIZE = 0x003FC000
+HOST_AP_SPMC_LOCAL_SIZE = 0x003E0000
 HOST_AP_DRAM2_BASE = 0x20000000000
 HOST_AP_DRAM2_SIZE = 0x80000000
 HOST_AP_ATU_LOGICAL_BASE = 0x40000000
