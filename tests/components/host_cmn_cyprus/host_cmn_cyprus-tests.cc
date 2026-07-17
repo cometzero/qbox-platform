@@ -16,21 +16,26 @@ constexpr uint64_t CFGM_PERIPH_ID1 = 0x010;
 constexpr uint64_t CFGM_CHILD_INFO = 0x080;
 constexpr uint64_t CFGM_CHILD_POINTER = 0x100;
 constexpr uint64_t MXP_BASE = 0x10000;
-constexpr uint64_t NODE_BASE = 0x20000;
 constexpr uint64_t NODE_STRIDE = 0x10000;
-constexpr uint64_t MXP_CHILD_INFO = MXP_BASE + 0x080;
-constexpr uint64_t MXP_CHILD_POINTER = MXP_BASE + 0x100;
-constexpr uint64_t MXP_PORT_DISABLE = MXP_BASE + 0xa70;
-constexpr uint64_t HNS0_SAM_CONTROL = NODE_BASE + 0xd00;
-constexpr uint64_t RNSAM_BASE = NODE_BASE + (8 * NODE_STRIDE);
-constexpr uint64_t RNSAM_UNIT_INFO0 = RNSAM_BASE + 0x900;
-constexpr uint64_t RNSAM_UNIT_INFO1 = RNSAM_BASE + 0x908;
-constexpr uint64_t RNSAM_STATUS = RNSAM_BASE + 0x1100;
+constexpr uint64_t MXP_PORT_CONNECT_INFO = 0x008;
+constexpr uint64_t MXP_CHILD_INFO = 0x080;
+constexpr uint64_t MXP_CHILD_POINTER = 0x100;
+constexpr uint64_t MXP_PORT_DISABLE = 0xa70;
+constexpr uint64_t HNS_SAM_CONTROL = 0xd00;
+constexpr uint64_t RNSAM_UNIT_INFO0 = 0x900;
+constexpr uint64_t RNSAM_UNIT_INFO1 = 0x908;
+constexpr uint64_t RNSAM_STATUS = 0x1100;
 
 constexpr uint64_t NODE_TYPE_CFG = 0x002;
 constexpr uint64_t NODE_TYPE_XP = 0x006;
+constexpr uint64_t NODE_TYPE_RN_I = 0x00a;
+constexpr uint64_t NODE_TYPE_RN_D = 0x00d;
 constexpr uint64_t NODE_TYPE_RN_SAM = 0x00f;
+constexpr uint64_t NODE_TYPE_CCRA = 0x103;
+constexpr uint64_t NODE_TYPE_CCHA = 0x104;
+constexpr uint64_t NODE_TYPE_CCLA = 0x105;
 constexpr uint64_t NODE_TYPE_HN_S = 0x200;
+constexpr uint64_t DEVICE_TYPE_RN_F_CHIF_ESAM = 0x21;
 constexpr uint64_t RNSAM_NONHASH_RCOMP_EN = UINT64_C(1) << 31;
 constexpr uint64_t RNSAM_HTG_RCOMP_EN = UINT64_C(1) << 27;
 
@@ -70,35 +75,109 @@ void write64(host_cmn_cyprus& dut, uint64_t offset, uint64_t value)
     (void)access(dut, offset, tlm::TLM_WRITE_COMMAND, value);
 }
 
+uint64_t find_node(host_cmn_cyprus& dut, uint16_t type)
+{
+    const auto xp_count = read64(dut, CFGM_CHILD_INFO) & 0xffffu;
+    for (unsigned int xp_index = 0; xp_index < xp_count; ++xp_index) {
+        const uint64_t xp = read64(
+            dut, CFGM_CHILD_POINTER + (xp_index * sizeof(uint64_t)));
+        const auto child_count = read64(dut, xp + MXP_CHILD_INFO) & 0xffffu;
+        for (unsigned int child_index = 0; child_index < child_count;
+             ++child_index) {
+            const uint64_t child = read64(
+                dut, xp + MXP_CHILD_POINTER +
+                         (child_index * sizeof(uint64_t)));
+            if ((read64(dut, child) & 0xffffu) == type)
+                return child;
+        }
+    }
+    return 0;
+}
+
+unsigned int count_nodes(host_cmn_cyprus& dut, uint16_t type)
+{
+    unsigned int count = 0;
+    const auto xp_count = read64(dut, CFGM_CHILD_INFO) & 0xffffu;
+    for (unsigned int xp_index = 0; xp_index < xp_count; ++xp_index) {
+        const uint64_t xp = read64(
+            dut, CFGM_CHILD_POINTER + (xp_index * sizeof(uint64_t)));
+        const auto child_count = read64(dut, xp + MXP_CHILD_INFO) & 0xffffu;
+        for (unsigned int child_index = 0; child_index < child_count;
+             ++child_index) {
+            const uint64_t child = read64(
+                dut, xp + MXP_CHILD_POINTER +
+                         (child_index * sizeof(uint64_t)));
+            if ((read64(dut, child) & 0xffffu) == type)
+                ++count;
+        }
+    }
+    return count;
+}
+
+unsigned int count_rnf_ports(host_cmn_cyprus& dut)
+{
+    unsigned int count = 0;
+    const auto xp_count = read64(dut, CFGM_CHILD_INFO) & 0xffffu;
+    for (unsigned int xp_index = 0; xp_index < xp_count; ++xp_index) {
+        const uint64_t xp = read64(
+            dut, CFGM_CHILD_POINTER + (xp_index * sizeof(uint64_t)));
+        const uint64_t xp_info = read64(dut, xp);
+        const unsigned int port_count = (xp_info >> 48) & 0xfu;
+        const auto child_count = read64(dut, xp + MXP_CHILD_INFO) & 0xffffu;
+        for (unsigned int child_index = 0; child_index < child_count;
+             ++child_index) {
+            const uint64_t child = read64(
+                dut, xp + MXP_CHILD_POINTER +
+                         (child_index * sizeof(uint64_t)));
+            const uint64_t child_info = read64(dut, child);
+            if ((child_info & 0xffffu) != NODE_TYPE_RN_SAM)
+                continue;
+
+            const unsigned int node_id = (child_info >> 16) & 0xffffu;
+            const unsigned int port = port_count <= 2 ?
+                ((node_id >> 2) & 1u) : ((node_id >> 1) & 3u);
+            const uint64_t device_type = read64(
+                dut, xp + MXP_PORT_CONNECT_INFO +
+                         (port * sizeof(uint64_t))) & 0x3fu;
+            if (device_type == DEVICE_TYPE_RN_F_CHIF_ESAM)
+                ++count;
+        }
+    }
+    return count;
+}
+
 } // namespace
 
 TEST(HostCmnCyprusTest, ExposesCfgmRootAndMxpDiscovery)
 {
     host_cmn_cyprus dut("host_cmn_cfgm");
-    dut.p_revision = 2u;
     dut.before_end_of_elaboration();
 
     EXPECT_EQ(read64(dut, 0), node(NODE_TYPE_CFG, 0, 0));
-    EXPECT_EQ(read64(dut, CFGM_PERIPH_ID1), 0x20u);
-    EXPECT_EQ(read64(dut, CFGM_CHILD_INFO), 1u);
+    EXPECT_EQ(read64(dut, CFGM_PERIPH_ID1), 0x30u);
+    EXPECT_EQ(read64(dut, CFGM_CHILD_INFO), 24u);
     EXPECT_EQ(read64(dut, CFGM_CHILD_POINTER), MXP_BASE);
-    EXPECT_EQ(read64(dut, MXP_BASE) & 0xffffu, NODE_TYPE_XP);
+    EXPECT_EQ(read64(dut, CFGM_CHILD_POINTER + (23 * sizeof(uint64_t))),
+              MXP_BASE + (23 * NODE_STRIDE));
+    EXPECT_EQ(read64(dut, MXP_BASE), node(NODE_TYPE_XP, 344, 23) |
+                  (UINT64_C(4) << 48));
     EXPECT_EQ((read64(dut, MXP_BASE) >> 48) & 0xfu, 4u);
-    EXPECT_EQ(read64(dut, MXP_CHILD_INFO), 9u);
+    EXPECT_EQ(read64(dut, MXP_BASE + MXP_CHILD_INFO), 6u);
 }
 
-TEST(HostCmnCyprusTest, ExposesEightHnsNodesAndOneRnSam)
+TEST(HostCmnCyprusTest, ExposesApolloDiscoveryGraph)
 {
     host_cmn_cyprus dut("host_cmn_nodes");
     dut.before_end_of_elaboration();
 
-    EXPECT_EQ(read64(dut, MXP_CHILD_POINTER), NODE_BASE);
-    EXPECT_EQ(read64(dut, NODE_BASE), node(NODE_TYPE_HN_S, 64, 0));
-    EXPECT_EQ(read64(dut, NODE_BASE + (7 * NODE_STRIDE)),
-              node(NODE_TYPE_HN_S, 280, 7));
-    EXPECT_EQ(read64(dut, MXP_CHILD_POINTER + (8 * sizeof(uint64_t))),
-              RNSAM_BASE);
-    EXPECT_EQ(read64(dut, RNSAM_BASE), node(NODE_TYPE_RN_SAM, 12, 0));
+    EXPECT_EQ(count_nodes(dut, NODE_TYPE_RN_SAM), 21u);
+    EXPECT_EQ(count_nodes(dut, NODE_TYPE_HN_S), 8u);
+    EXPECT_EQ(count_nodes(dut, NODE_TYPE_RN_D), 3u);
+    EXPECT_EQ(count_rnf_ports(dut), 8u);
+    EXPECT_EQ(count_nodes(dut, NODE_TYPE_RN_I), 8u);
+    EXPECT_EQ(count_nodes(dut, NODE_TYPE_CCRA), 2u);
+    EXPECT_EQ(count_nodes(dut, NODE_TYPE_CCHA), 2u);
+    EXPECT_EQ(count_nodes(dut, NODE_TYPE_CCLA), 2u);
 }
 
 TEST(HostCmnCyprusTest, RnSamAdvertisesRangeComparisonMode)
@@ -106,10 +185,12 @@ TEST(HostCmnCyprusTest, RnSamAdvertisesRangeComparisonMode)
     host_cmn_cyprus dut("host_cmn_rnsam");
     dut.before_end_of_elaboration();
 
-    EXPECT_EQ(read64(dut, RNSAM_UNIT_INFO0),
+    const uint64_t rnsam = find_node(dut, NODE_TYPE_RN_SAM);
+    ASSERT_NE(rnsam, 0u);
+    EXPECT_EQ(read64(dut, rnsam + RNSAM_UNIT_INFO0),
               RNSAM_NONHASH_RCOMP_EN | RNSAM_HTG_RCOMP_EN);
-    EXPECT_EQ(read64(dut, RNSAM_UNIT_INFO1), (20u << 5) | 20u);
-    EXPECT_EQ(read64(dut, RNSAM_STATUS), 0x2u);
+    EXPECT_EQ(read64(dut, rnsam + RNSAM_UNIT_INFO1), (20u << 5) | 20u);
+    EXPECT_EQ(read64(dut, rnsam + RNSAM_STATUS), 0x2u);
 }
 
 TEST(HostCmnCyprusTest, PreservesFirmwareProgrammingWrites)
@@ -117,13 +198,20 @@ TEST(HostCmnCyprusTest, PreservesFirmwareProgrammingWrites)
     host_cmn_cyprus dut("host_cmn_writes");
     dut.before_end_of_elaboration();
 
-    write64(dut, HNS0_SAM_CONTROL, 0x123456789abcdef0ULL);
-    write64(dut, RNSAM_STATUS, 0x0000000000000001ULL);
-    write64(dut, MXP_PORT_DISABLE, 0x00000000ffff0000ULL);
+    const uint64_t hns = find_node(dut, NODE_TYPE_HN_S);
+    const uint64_t rnsam = find_node(dut, NODE_TYPE_RN_SAM);
+    ASSERT_NE(hns, 0u);
+    ASSERT_NE(rnsam, 0u);
 
-    EXPECT_EQ(read64(dut, HNS0_SAM_CONTROL), 0x123456789abcdef0ULL);
-    EXPECT_EQ(read64(dut, RNSAM_STATUS), 0x0000000000000001ULL);
-    EXPECT_EQ(read64(dut, MXP_PORT_DISABLE), 0x00000000ffff0000ULL);
+    write64(dut, hns + HNS_SAM_CONTROL, 0x123456789abcdef0ULL);
+    write64(dut, rnsam + RNSAM_STATUS, 0x0000000000000001ULL);
+    write64(dut, MXP_BASE + MXP_PORT_DISABLE,
+            0x00000000ffff0000ULL);
+
+    EXPECT_EQ(read64(dut, hns + HNS_SAM_CONTROL), 0x123456789abcdef0ULL);
+    EXPECT_EQ(read64(dut, rnsam + RNSAM_STATUS), 0x0000000000000001ULL);
+    EXPECT_EQ(read64(dut, MXP_BASE + MXP_PORT_DISABLE),
+              0x00000000ffff0000ULL);
 }
 
 TEST(HostCmnCyprusTest, UnseededRegistersReadAsZero)

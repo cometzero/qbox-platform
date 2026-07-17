@@ -24,9 +24,15 @@ constexpr uint64_t AP_GIC_REDIST_STRIDE = 0x40000;
 constexpr uint64_t GICR_PWRR = 0x0024;
 constexpr uint64_t GICR_VIEWR = 0x002c;
 constexpr uint64_t GICR_FLUSHR = 0x0030;
+constexpr uint64_t GICR_TYPER = 0x0008;
+constexpr uint64_t GICR_PIDR2 = 0xffe8;
 constexpr uint64_t GICD_CFGID_VIEW = 1ull << 53;
 constexpr uint32_t GICR_FLUSHR_RESET = 0x3cfffff0u;
 constexpr uint32_t GICR_FLUSHR_RW_MASK = 0x3cfffff1u;
+constexpr uint64_t GICR_TYPER_LAST = 1ull << 4;
+constexpr uint64_t GICR_TYPER_FEATURES =
+    (1ull << 24) | (1ull << 7) | (1ull << 3) |
+    (1ull << 2) | (1ull << 1) | (1ull << 0);
 constexpr uint16_t SPI_MIN = 32;
 constexpr uint16_t SPI_LIMIT = 992;
 
@@ -151,6 +157,13 @@ uint32_t read_redist32(gicx00_multiview& dut, unsigned int redist,
     return access<uint32_t>(dut, false, redist, offset, tlm::TLM_READ_COMMAND);
 }
 
+uint64_t read_redist64(gicx00_multiview& dut, unsigned int redist,
+                       uint64_t offset)
+{
+    return access<uint64_t>(dut, false, redist, offset,
+                            tlm::TLM_READ_COMMAND);
+}
+
 void write_redist32(gicx00_multiview& dut, unsigned int redist,
                     uint64_t offset, uint32_t value)
 {
@@ -215,20 +228,28 @@ TEST(Gicx00MultiviewTest,
     EXPECT_EQ(read_dist32(dut, GICD_CTLR), 0xa5a55a5au);
     EXPECT_EQ(backend.last_address, AP_GIC_DIST_BASE + GICD_CTLR);
 
-    EXPECT_EQ(read_redist32(dut, 1, 0x0008), 0xa5a55a5au);
-    EXPECT_EQ(backend.last_address, AP_GIC_REDIST_BASE + 0x0008);
-
-    EXPECT_EQ(read_redist32(dut, 1, 0x20008), 0xa5a55a5au);
+    EXPECT_EQ(read_redist32(dut, 1, 0x0040), 0xa5a55a5au);
     EXPECT_EQ(backend.last_address,
-              AP_GIC_REDIST_BASE + AP_GIC_REDIST_STRIDE + 0x0008);
+              AP_GIC_REDIST_BASE + AP_GIC_REDIST_STRIDE + 0x0040);
 
-    EXPECT_EQ(read_redist32(dut, 2, 0x0008), 0xa5a55a5au);
-    EXPECT_EQ(backend.last_address,
-              AP_GIC_REDIST_BASE + (2 * AP_GIC_REDIST_STRIDE) + 0x0008);
+    const unsigned int before_reserved = backend.accesses;
+    EXPECT_EQ(read_redist32(dut, 1, 0x20008), 0u);
+    EXPECT_EQ(backend.accesses, before_reserved);
 
-    EXPECT_EQ(read_redist32(dut, 2, 0x20008), 0xa5a55a5au);
+    EXPECT_EQ(read_redist32(dut, 2, 0x0040), 0xa5a55a5au);
     EXPECT_EQ(backend.last_address,
-              AP_GIC_REDIST_BASE + (3 * AP_GIC_REDIST_STRIDE) + 0x0008);
+              AP_GIC_REDIST_BASE + (2 * AP_GIC_REDIST_STRIDE) + 0x0040);
+
+    EXPECT_EQ(read_redist32(dut, 3, 0x0040), 0xa5a55a5au);
+    EXPECT_EQ(backend.last_address,
+              AP_GIC_REDIST_BASE + (3 * AP_GIC_REDIST_STRIDE) + 0x0040);
+
+    const unsigned int before_discovery = backend.accesses;
+    const uint64_t cpu1_typer = read_redist64(dut, 1, GICR_TYPER);
+    EXPECT_EQ(cpu1_typer >> 32, 0x100u);
+    EXPECT_EQ(cpu1_typer & GICR_TYPER_FEATURES, GICR_TYPER_FEATURES);
+    EXPECT_EQ(cpu1_typer & GICR_TYPER_LAST, 0u);
+    EXPECT_EQ(backend.accesses, before_discovery);
 
     const unsigned int standard_accesses = backend.accesses;
     EXPECT_NE(read_dist64(dut, GICD_CFGID) & GICD_CFGID_VIEW, 0u);
@@ -392,25 +413,47 @@ TEST(Gicx00MultiviewTest, AllocatedFrameReservedTailsAreRazWi)
     EXPECT_EQ(read_redist32(dut, 0, 0x3fffcu), 0u);
 }
 
-TEST(Gicx00MultiviewTest, InactiveRedistributorApertureIsRazWi)
+TEST(Gicx00MultiviewTest,
+     InactiveCanonicalRegionsReportFootprintAndTerminateIndividually)
 {
     gicx00_multiview dut("gicx00_multiview_inactive_redists");
     sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
     tlm::tlm_generic_payload trans;
     uint32_t value = 0xffffffffu;
 
-    trans.set_address(0xffe8u);
+    trans.set_address(GICR_PIDR2);
     trans.set_command(tlm::TLM_READ_COMMAND);
     trans.set_data_length(sizeof(value));
     trans.set_streaming_width(sizeof(value));
     trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
     dut.b_transport_inactive_redists(trans, delay);
     EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
-    EXPECT_EQ(value, 0u);
+    EXPECT_EQ(value, 0x4bu);
+
+    uint64_t typer = 0;
+    trans.set_address(GICR_TYPER);
+    trans.set_data_length(sizeof(typer));
+    trans.set_streaming_width(sizeof(typer));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&typer));
+    dut.b_transport_inactive_redists(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(typer >> 32, 0x10000u);
+    EXPECT_EQ(typer & GICR_TYPER_FEATURES, GICR_TYPER_FEATURES);
+    EXPECT_NE(typer & GICR_TYPER_LAST, 0u);
+
+    typer = 0;
+    trans.set_address((11 * AP_GIC_REDIST_STRIDE) + GICR_TYPER);
+    dut.b_transport_inactive_redists(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(typer >> 32, 0x30300u);
+    EXPECT_NE(typer & GICR_TYPER_LAST, 0u);
 
     value = 0xa5a5a5a5u;
     trans.set_address(0x2ffffcu);
     trans.set_command(tlm::TLM_WRITE_COMMAND);
+    trans.set_data_length(sizeof(value));
+    trans.set_streaming_width(sizeof(value));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
     dut.b_transport_inactive_redists(trans, delay);
     EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
 

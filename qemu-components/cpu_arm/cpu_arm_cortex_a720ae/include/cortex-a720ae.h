@@ -67,6 +67,7 @@ public:
     cci::cci_param<bool> p_has_el3;
     cci::cci_param<bool> p_start_powered_off;
     cci::cci_param<bool> p_en_pauth;
+    cci::cci_param<bool> p_pauth_qarma3;
     cci::cci_param<std::string> p_psci_conduit;
     cci::cci_param<uint64_t> p_rvbar;
     cci::cci_param<uint64_t> p_cntfrq_hz;
@@ -91,10 +92,12 @@ public:
         , p_mp_affinity("mp_affinity", 0, "Multi-processor affinity value")
         , p_has_el2("has_el2", true, "ARM virtualization extensions")
         , p_has_el3("has_el3", true, "ARM secure-mode extensions")
-        , p_en_pauth("enable_pauth", true, "ARM pointer authentication")
         , p_start_powered_off("start_powered_off", false,
                               "Start and reset the CPU "
                               "in powered-off state")
+        , p_en_pauth("enable_pauth", true, "ARM pointer authentication")
+        , p_pauth_qarma3("pauth_qarma3", true,
+                         "Use the architected QARMA3 algorithm")
         , p_psci_conduit("psci_conduit", "disabled",
                          "Set the QEMU PSCI conduit: "
                          "disabled->no conduit, "
@@ -133,9 +136,10 @@ public:
         cpu.set_prop_bool("has_el2", p_has_el2);
         cpu.set_prop_bool("has_el3", p_has_el3);
 
-        if (!p_en_pauth.is_default_value()) {
-            cpu.set_prop_bool("pauth", p_en_pauth);
-        }
+        cpu.set_prop_bool("pauth", p_en_pauth);
+        cpu.set_prop_bool("pauth-qarma3",
+                          p_en_pauth.get_value() &&
+                          p_pauth_qarma3.get_value());
         cpu.set_prop_bool("start-powered-off", p_start_powered_off);
         cpu.set_prop_int("psci-conduit", get_psci_conduit_val());
 

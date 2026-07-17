@@ -39,8 +39,16 @@ TEST_BENCH(Pl011ApertureBench, Pl011Aperture)
     ASSERT_EQ(value, 0x11u);
 
     value = 0;
+    ASSERT_EQ(initiator.do_read(0xfe8, value), tlm::TLM_OK_RESPONSE);
+    ASSERT_EQ(value, 0x34u);
+
+    value = 0;
     ASSERT_EQ(initiator.do_read(0xffe0, value), tlm::TLM_OK_RESPONSE);
     ASSERT_EQ(value, 0x11u);
+
+    value = 0;
+    ASSERT_EQ(initiator.do_read(0xffe8, value), tlm::TLM_OK_RESPONSE);
+    ASSERT_EQ(value, 0x34u);
 
     value = 0;
     ASSERT_EQ(initiator.do_read(0xf018, value), tlm::TLM_OK_RESPONSE);
@@ -71,6 +79,7 @@ int sc_main(int argc, char* argv[])
         { "Pl011Aperture.backend.write_file",
           cci::cci_value(std::string(null_device)) },
         { "Pl011Aperture.backend.baudrate", cci::cci_value(0) },
+        { "Pl011Aperture.uart.revision", cci::cci_value(3) },
     });
 
     ::testing::InitGoogleTest(&argc, argv);

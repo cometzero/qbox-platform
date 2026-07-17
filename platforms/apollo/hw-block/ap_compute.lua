@@ -354,7 +354,7 @@ function ap_compute.define(ctx, platform)
         args = {"&platform.ap_qemu_inst", "&platform.ap_gic"};
         has_gicv4_1 = true;
         gicv4_1_svpet = 1;
-        gicv4_1_cte_size = 8;
+        gicv4_1_cte_size = 2;
         mem = {
             address = 0x20840000;
             size = 0x00040000;
@@ -414,6 +414,7 @@ function ap_compute.define(ctx, platform)
     platform.ap_secure_uart = enable_ap_cpus and {
         moduletype = "Pl011";
         dylib_path = "uart-pl011";
+        revision = 3;
         target_socket = {
             address = AP_SECURE_UART_BASE;
             size = 0x00010000;
@@ -426,6 +427,7 @@ function ap_compute.define(ctx, platform)
     platform.ap_primary_uart = enable_ap_cpus and {
         moduletype = "Pl011";
         dylib_path = "uart-pl011";
+        revision = 3;
         target_socket = {
             address = AP_PRIMARY_UART_BASE;
             size = 0x00010000;

@@ -511,6 +511,7 @@ function si_cl0.enable(ctx, platform)
     -- CL0 interconnect and GIC multiviews
     platform.si_cl0_cmn_cyprus = {
         moduletype = "host_cmn_cyprus";
+        revision = 3;
         trace = si_cmn_trace;
         trace_limit = si_cmn_trace_limit;
         target_socket = {

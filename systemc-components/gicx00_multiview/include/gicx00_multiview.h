@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -30,9 +31,6 @@ class gicx00_multiview : public sc_core::sc_module
     static constexpr uint64_t DEFAULT_BACKEND_REDIST_STRIDE = 0x40000;
     static constexpr unsigned int DEFAULT_BACKEND_REDIST_COUNT = 4;
     static constexpr unsigned int LEGACY_REDIST_FIRST_FRAME = 1;
-    static constexpr uint64_t INACTIVE_REDIST_BYTES =
-        REDIST_FRAME_BYTES * REDIST_COUNT;
-
     static constexpr uint32_t GICD_CFGID = 0xf000;
     static constexpr uint32_t GICD_IVIEWR_BASE = 0xf600;
     static constexpr uint32_t GICD_IVIEWR_LIMIT = 0xfa00;
@@ -43,9 +41,19 @@ class gicx00_multiview : public sc_core::sc_module
     static constexpr uint32_t GICR_PWRR = 0x0024;
     static constexpr uint32_t GICR_VIEWR = 0x002c;
     static constexpr uint32_t GICR_FLUSHR = 0x0030;
+    static constexpr uint32_t GICR_IIDR = 0x0004;
+    static constexpr uint32_t GICR_TYPER = 0x0008;
+    static constexpr uint32_t GICR_IDREGS = 0xffd0;
     static constexpr uint32_t GICR_VIEWR_MASK = 0x3;
     static constexpr uint32_t GICR_FLUSHR_RESET = 0x3cfffff0;
     static constexpr uint32_t GICR_FLUSHR_RW_MASK = 0x3cfffff1;
+    static constexpr uint64_t GICR_TYPER_PLPIS = 1ull << 0;
+    static constexpr uint64_t GICR_TYPER_VLPIS = 1ull << 1;
+    static constexpr uint64_t GICR_TYPER_DIRTY = 1ull << 2;
+    static constexpr uint64_t GICR_TYPER_DIRECTLPI = 1ull << 3;
+    static constexpr uint64_t GICR_TYPER_LAST = 1ull << 4;
+    static constexpr uint64_t GICR_TYPER_RVPEID = 1ull << 7;
+    static constexpr uint64_t GICR_TYPER_COMMONLPIAFF = 1ull << 24;
 
     using target_socket_t =
         tlm_utils::simple_target_socket_b<
@@ -87,11 +95,43 @@ class gicx00_multiview : public sc_core::sc_module
         std::memcpy(&regs[offset], &value, sizeof(value));
     }
 
+    static uint32_t redist_affinity(unsigned int cpu)
+    {
+        return ((cpu / 4) << 16) | ((cpu % 4) << 8);
+    }
+
+    static uint64_t redist_typer(unsigned int cpu)
+    {
+        uint64_t value = static_cast<uint64_t>(redist_affinity(cpu)) << 32;
+
+        value |= GICR_TYPER_COMMONLPIAFF |
+                 (static_cast<uint64_t>(cpu) << 8) |
+                 GICR_TYPER_PLPIS | GICR_TYPER_VLPIS |
+                 GICR_TYPER_DIRTY | GICR_TYPER_DIRECTLPI |
+                 GICR_TYPER_RVPEID;
+        if (cpu == REDIST_COUNT - 1) {
+            value |= GICR_TYPER_LAST;
+        }
+        return value;
+    }
+
     void reset_registers()
     {
         m_dist_regs.fill(0);
-        for (auto& regs : m_redist_regs) {
+        static constexpr std::array<uint8_t, 12> redist_ids {{
+            0x44, 0x00, 0x00, 0x00, 0x93, 0xb4,
+            0x4b, 0x00, 0x0d, 0xf0, 0x05, 0xb1,
+        }};
+
+        for (unsigned int index = 0; index < m_redist_regs.size(); ++index) {
+            auto& regs = m_redist_regs[index];
             regs.fill(0);
+            store32(regs, GICR_IIDR, 0x43b);
+            store64(regs, GICR_TYPER, redist_typer(index));
+            for (unsigned int id = 0; id < redist_ids.size(); ++id) {
+                store32(regs, GICR_IDREGS + id * sizeof(uint32_t),
+                        redist_ids[id]);
+            }
             store32(regs, GICR_PWRR, 0);
             store32(regs, GICR_VIEWR, 0);
             store32(regs, GICR_FLUSHR, GICR_FLUSHR_RESET);
@@ -177,6 +217,54 @@ class gicx00_multiview : public sc_core::sc_module
         }
 
         trace_access(region, index, trans, offset, len, debug);
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+        return true;
+    }
+
+    static bool is_redist_discovery_access(uint64_t offset,
+                                           unsigned int len)
+    {
+        const uint64_t end = offset + len;
+        return (offset >= GICR_IIDR && end <= GICR_TYPER + sizeof(uint64_t)) ||
+               (offset >= GICR_IDREGS && end <= GICR_IDREGS + 0x30);
+    }
+
+    bool access_synthetic_redist(unsigned int index,
+                                 tlm::tlm_generic_payload& trans,
+                                 bool debug,
+                                 bool terminate_region = false)
+    {
+        const uint64_t offset = trans.get_address();
+        const unsigned int len = trans.get_data_length();
+        uint8_t* data = trans.get_data_ptr();
+
+        if (index >= m_redist_regs.size() || data == nullptr ||
+            !is_supported_length(len) || offset >= REDIST_BYTES ||
+            len > REDIST_BYTES - offset) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+
+        if (trans.get_command() == tlm::TLM_READ_COMMAND) {
+            std::memcpy(data, &m_redist_regs[index][offset], len);
+            const uint64_t end = offset + len;
+            if (terminate_region && offset < GICR_TYPER + sizeof(uint64_t) &&
+                end > GICR_TYPER) {
+                const uint64_t typer = redist_typer(index) | GICR_TYPER_LAST;
+                const uint64_t first = std::max<uint64_t>(offset, GICR_TYPER);
+                const uint64_t last = std::min<uint64_t>(
+                    end, GICR_TYPER + sizeof(typer));
+                std::memcpy(data + first - offset,
+                            reinterpret_cast<const uint8_t*>(&typer) +
+                                first - GICR_TYPER,
+                            last - first);
+            }
+        } else if (trans.get_command() != tlm::TLM_WRITE_COMMAND) {
+            trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+            return false;
+        }
+
+        trace_access("redist-discovery", index, trans, offset, len, debug);
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
         return true;
     }
@@ -343,31 +431,31 @@ class gicx00_multiview : public sc_core::sc_module
                                 trans, debug);
         }
 
-        /*
-         * RD-Aspen overlays a 128 KiB secure redistributor aperture on
-         * view-0 frames that have a 256 KiB stride. Consequently, two
-         * functional redistributors occupy each frame from frame 1 onward.
-         */
-        if (backend_socket.size() != 0 &&
-            index >= LEGACY_REDIST_FIRST_FRAME) {
-            const unsigned int cpu =
-                (index - LEGACY_REDIST_FIRST_FRAME) * 2 +
-                static_cast<unsigned int>(offset / REDIST_BYTES);
-            if (cpu < p_backend_redist_count.get_value()) {
-                const uint64_t backend_offset = offset % REDIST_BYTES;
-                trans.set_address(backend_offset);
+        if (index >= LEGACY_REDIST_FIRST_FRAME &&
+            offset < REDIST_BYTES) {
+            if (is_redist_discovery_access(offset,
+                                           trans.get_data_length())) {
+                return access_synthetic_redist(index, trans, debug);
+            }
+
+            if (backend_socket.size() != 0 &&
+                index < p_backend_redist_count.get_value()) {
+                trans.set_address(offset);
                 if (!validate_backend_access(trans, REDIST_BYTES)) {
                     trans.set_address(offset);
                     return false;
                 }
                 const bool success = forward_backend(
-                    "redist-backend", cpu, trans, delay,
+                    "redist-backend", index, trans, delay,
                     p_backend_redist_base.get_value() +
-                        (cpu * p_backend_redist_stride.get_value()) +
-                        backend_offset,
+                        (index * p_backend_redist_stride.get_value()) + offset,
                     debug);
                 trans.set_address(offset);
                 return success;
+            }
+
+            if (index >= p_backend_redist_count.get_value()) {
+                return access_synthetic_redist(index, trans, debug);
             }
         }
 
@@ -376,6 +464,34 @@ class gicx00_multiview : public sc_core::sc_module
                                    REDIST_FRAME_BYTES, trans, debug);
         }
         return access_array(m_redist_regs[index], "redist", index, trans, debug);
+    }
+
+    bool access_inactive_redists(tlm::tlm_generic_payload& trans, bool debug)
+    {
+        const uint64_t offset = trans.get_address();
+        const unsigned int active = std::min(
+            p_backend_redist_count.get_value(), REDIST_COUNT);
+        const uint64_t aperture_bytes =
+            (REDIST_COUNT - active) * REDIST_FRAME_BYTES;
+
+        if (trans.get_data_ptr() == nullptr ||
+            !is_supported_length(trans.get_data_length()) ||
+            offset >= aperture_bytes ||
+            trans.get_data_length() > aperture_bytes - offset) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+
+        const unsigned int index = active +
+            static_cast<unsigned int>(offset / REDIST_FRAME_BYTES);
+        const uint64_t frame_offset = offset % REDIST_FRAME_BYTES;
+        trans.set_address(frame_offset);
+        const bool success = frame_offset < REDIST_BYTES ?
+            access_synthetic_redist(index, trans, debug, true) :
+            access_reserved("inactive-redist-reserved", index,
+                            REDIST_FRAME_BYTES, trans, debug);
+        trans.set_address(offset);
+        return success;
     }
 
     bool access_dist_window(tlm::tlm_generic_payload& trans, bool debug,
@@ -590,15 +706,13 @@ public:
     {
         (void)delay;
         trans.set_dmi_allowed(false);
-        access_reserved("inactive-redists", UINT32_MAX,
-                        INACTIVE_REDIST_BYTES, trans, false);
+        access_inactive_redists(trans, false);
     }
 
     unsigned int transport_dbg_inactive_redists(
         tlm::tlm_generic_payload& trans)
     {
-        return access_reserved("inactive-redists", UINT32_MAX,
-                               INACTIVE_REDIST_BYTES, trans, true) ?
+        return access_inactive_redists(trans, true) ?
             trans.get_data_length() : 0;
     }
 
