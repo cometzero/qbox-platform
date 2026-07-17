@@ -5,6 +5,7 @@ function rse.define(ctx, platform)
 
     platform.rse_router = {
         moduletype = "router";
+        broadcast_invalidation = true;
         log_level = 0;
     }
 
@@ -582,6 +583,7 @@ function rse.define(ctx, platform)
 
         remote_main_router = rse_local_peripherals and {
             moduletype = "router";
+            broadcast_invalidation = true;
             target_socket = {
                 address = 0x00000000;
                 size = RSE_NVIC_BASE;
@@ -693,6 +695,9 @@ function rse.define(ctx, platform)
         cpu_0 = {
             moduletype = "ApolloRseCPU";
             args = {"&qemu_inst"};
+            router = {
+                broadcast_invalidation = true;
+            };
             cpu = {
                 init_svtor = RSE_ROM_BASE_S;
                 init_nsvtor = RSE_ROM_BASE_S;

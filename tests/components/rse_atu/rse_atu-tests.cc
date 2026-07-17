@@ -131,6 +131,33 @@ public:
     }
 };
 
+class InvalidationObserver : public sc_core::sc_module
+{
+public:
+    tlm_utils::simple_initiator_socket<InvalidationObserver,
+                                       DEFAULT_TLM_BUSWIDTH>
+        initiator_socket;
+    unsigned int count = 0;
+    uint64_t start = 0;
+    uint64_t end = 0;
+
+    explicit InvalidationObserver(sc_core::sc_module_name name)
+        : sc_core::sc_module(name)
+        , initiator_socket("initiator_socket")
+    {
+        initiator_socket.register_invalidate_direct_mem_ptr(
+            this, &InvalidationObserver::invalidate_direct_mem_ptr);
+    }
+
+    void invalidate_direct_mem_ptr(sc_dt::uint64 start_range,
+                                   sc_dt::uint64 end_range)
+    {
+        ++count;
+        start = start_range;
+        end = end_range;
+    }
+};
+
 uint32_t access32(rse_atu& dut, uint64_t offset, tlm::tlm_command command,
                   uint32_t value = 0)
 {
@@ -273,6 +300,27 @@ TEST(RseAtuTest, ResetStateDeniesNormalDebugAndDmiTranslation)
     tlm::tlm_dmi dmi;
     EXPECT_FALSE(dut.translation_get_direct_mem_ptr(dmi_trans, dmi));
     EXPECT_EQ(dmi_trans.get_address(), HOST_LOGICAL_BASE);
+}
+
+TEST(RseAtuTest, MappingChangeInvalidatesUpstreamWhenDmiIsDisabled)
+{
+    rse_atu dut("rse_atu_invalidate_without_dmi");
+    InvalidationObserver upstream("rse_atu_invalidate_without_dmi_upstream");
+
+    upstream.initiator_socket.bind(dut.translation_socket);
+    ASSERT_FALSE(dut.p_enable_dmi.get_value());
+
+    program_region0(dut, HOST_LOGICAL_BASE, HOST_PHYSICAL_BASE,
+                    TEST_REGION_SIZE);
+    upstream.count = 0;
+    upstream.start = 0;
+    upstream.end = 0;
+
+    write32(dut, ATURAV_L0, read32(dut, ATURAV_L0) + 1u);
+
+    EXPECT_EQ(upstream.count, 2u);
+    EXPECT_EQ(upstream.start, HOST_LOGICAL_BASE);
+    EXPECT_EQ(upstream.end, HOST_LOGICAL_BASE + TEST_REGION_SIZE - 1u);
 }
 
 TEST(RseAtuTest, BuildConfigPresetControlsPageSize)

@@ -227,20 +227,60 @@ class rse_atu : public sc_core::sc_module
         store32(ATUBC, p_build_config.get_value());
     }
 
-    void invalidate_translation_dmi()
+    static uint32_t region_from_array_offset(uint32_t offset)
     {
-        if (!p_enable_dmi.get_value() || translation_socket.size() == 0) {
+        if (in_range(offset, ATURSLA_BASE)) {
+            return (offset - ATURSLA_BASE) / REGION_STRIDE;
+        }
+        if (in_range(offset, ATURELA_BASE)) {
+            return (offset - ATURELA_BASE) / REGION_STRIDE;
+        }
+        if (in_range(offset, ATURAV_L_BASE)) {
+            return (offset - ATURAV_L_BASE) / REGION_STRIDE;
+        }
+        if (in_range(offset, ATURAV_M_BASE)) {
+            return (offset - ATURAV_M_BASE) / REGION_STRIDE;
+        }
+        if (in_range(offset, ATUROBA_BASE)) {
+            return (offset - ATUROBA_BASE) / REGION_STRIDE;
+        }
+        return (offset - ATURGPV_BASE) / REGION_STRIDE;
+    }
+
+    bool region_logical_range(uint32_t region, uint64_t& start,
+                              uint64_t& end) const
+    {
+        if (!region_configured(region) ||
+            region_end_page(region) < region_start_page(region)) {
+            return false;
+        }
+
+        const uint8_t ps = page_shift();
+        start = static_cast<uint64_t>(region_start_page(region)) << ps;
+        end = ((static_cast<uint64_t>(region_end_page(region)) + 1u) << ps) - 1u;
+        return true;
+    }
+
+    void invalidate_upstream_translation_cache(uint64_t start, uint64_t end)
+    {
+        if (translation_socket.size() == 0) {
             return;
         }
 
-        translation_socket->invalidate_direct_mem_ptr(
-            0, std::numeric_limits<sc_dt::uint64>::max());
+        translation_socket->invalidate_direct_mem_ptr(start, end);
+    }
+
+    void invalidate_region_translation_cache(uint32_t region)
+    {
+        uint64_t start = 0;
+        uint64_t end = 0;
+        if (region_logical_range(region, start, end)) {
+            invalidate_upstream_translation_cache(start, end);
+        }
     }
 
     void write32(uint32_t offset, uint32_t value)
     {
-        bool mapping_changed = false;
-
         switch (offset) {
         case ATUBC:
         case ATUIS:
@@ -251,25 +291,37 @@ class rse_atu : public sc_core::sc_module
             store32(ATUIC, value);
             break;
         case ATUC:
+        {
+            const uint32_t changed = load32(ATUC) ^ value;
+            store32(offset, value);
+            for (uint32_t region = 0; region < supported_region_count(); ++region) {
+                if ((changed & (1u << region)) != 0) {
+                    invalidate_region_translation_cache(region);
+                }
+            }
+            break;
+        }
         case ATUIE:
             store32(offset, value);
-            mapping_changed = offset == ATUC;
             break;
         default:
             if (is_region_array_offset(offset)) {
                 if (in_range(offset, ATUROBA_BASE)) {
                     value &= ATU_REGION_ROBA_MASK;
                 }
+                const uint32_t region = region_from_array_offset(offset);
+                const bool enabled = (load32(ATUC) & (1u << region)) != 0;
+                if (enabled) {
+                    invalidate_region_translation_cache(region);
+                }
                 store32(offset, value);
-                mapping_changed = true;
+                if (enabled) {
+                    invalidate_region_translation_cache(region);
+                }
             } else {
                 store32(offset, value);
             }
             break;
-        }
-
-        if (mapping_changed) {
-            invalidate_translation_dmi();
         }
     }
 
@@ -626,7 +678,8 @@ class rse_atu : public sc_core::sc_module
     {
         (void)start;
         (void)end;
-        invalidate_translation_dmi();
+        invalidate_upstream_translation_cache(
+            0, std::numeric_limits<sc_dt::uint64>::max());
     }
 
 public:
