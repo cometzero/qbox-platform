@@ -325,6 +325,12 @@ private:
         return len == 1 || len == 2 || len == 4 || len == 8;
     }
 
+    static bool overlaps_identification_registers(uint64_t offset,
+                                                  unsigned int len)
+    {
+        return offset < CIDR1 + sizeof(uint32_t) && offset + len > PIDR0;
+    }
+
     uint32_t load32(uint32_t offset) const
     {
         uint32_t value = 0;
@@ -2000,12 +2006,14 @@ public:
             return { access_status::address_error, 0 };
         }
 
-        if (len == sizeof(uint32_t) && (offset % sizeof(uint32_t)) == 0) {
-            uint32_t value = 0;
-            std::memcpy(&value, data, sizeof(value));
-            write32(static_cast<uint32_t>(offset), value);
-        } else {
-            std::memcpy(&m_regs[offset], data, len);
+        if (!overlaps_identification_registers(offset, len)) {
+            if (len == sizeof(uint32_t) && (offset % sizeof(uint32_t)) == 0) {
+                uint32_t value = 0;
+                std::memcpy(&value, data, sizeof(value));
+                write32(static_cast<uint32_t>(offset), value);
+            } else {
+                std::memcpy(&m_regs[offset], data, len);
+            }
         }
 
         trace_access(command::write, offset, len, data, debug);

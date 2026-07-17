@@ -40,6 +40,12 @@ constexpr uint64_t DIN_SRC_LLI_WORD0 = 0xc28;
 constexpr uint64_t DIN_SRC_LLI_WORD1 = 0xc2c;
 constexpr uint64_t DOUT_DST_LLI_WORD0 = 0xd28;
 constexpr uint64_t DOUT_DST_LLI_WORD1 = 0xd2c;
+constexpr uint64_t PIDR0 = 0xfe0;
+constexpr uint64_t PIDR1 = 0xfe4;
+constexpr uint64_t PIDR2 = 0xfe8;
+constexpr uint64_t PIDR3 = 0xfec;
+constexpr uint64_t CIDR0 = 0xff0;
+constexpr uint64_t CIDR1 = 0xff4;
 constexpr uint64_t LCS_REG = 0x1f14;
 
 constexpr uint32_t SYM_DMA_COMPLETED = 1u << 11;
@@ -177,6 +183,22 @@ TEST(Cc3xxCoreTest, ResetInitializesReadableStatus)
     EXPECT_EQ(read32(dut, AES_RBG_SEEDING_RDY), 0x1u);
     EXPECT_NE(read32(dut, AES_HW_FLAGS) & (1u << 0), 0u);
     EXPECT_EQ(read32(dut, LCS_REG), 0x5u);
+}
+
+TEST(Cc3xxCoreTest, IdentificationRegistersIgnoreWrites)
+{
+    Cc3xxCore dut("cc3xx_core");
+    constexpr std::array<uint64_t, 6> offsets = {
+        PIDR0, PIDR1, PIDR2, PIDR3, CIDR0, CIDR1,
+    };
+    constexpr std::array<uint32_t, 6> expected = {
+        0xc1u, 0xb0u, 0x0bu, 0x00u, 0x0du, 0xf0u,
+    };
+
+    for (size_t i = 0; i < offsets.size(); ++i) {
+        write32(dut, offsets[i], ~expected[i]);
+        EXPECT_EQ(read32(dut, offsets[i]), expected[i]);
+    }
 }
 
 TEST(Cc3xxCoreTest, UnsupportedAddressReturnsAddressError)
