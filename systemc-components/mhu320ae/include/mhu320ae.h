@@ -28,6 +28,7 @@
 #include <scp/report.h>
 #include <systemc>
 #include <tlm>
+#include <tlm-extensions/request-context.h>
 #include <tlm_sockets_buswidth.h>
 #include <tlm_utils/simple_initiator_socket.h>
 #include <tlm_utils/simple_target_socket.h>
@@ -81,8 +82,10 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint64_t SCMI_HEADER = 0x18;
     static constexpr uint64_t SCMI_PAYLOAD = 0x1c;
     static constexpr uint32_t SCMI_CHAN_FREE = 1u;
+    static constexpr uint32_t SCMI_MAX_MESSAGE_LENGTH = 128u;
     static constexpr uint32_t SCMI_SUCCESS = 0;
     static constexpr uint32_t SCMI_ERR_SUPPORT = static_cast<uint32_t>(-1);
+    static constexpr uint32_t SCMI_ERR_PROTOCOL = static_cast<uint32_t>(-10);
     static constexpr uint8_t SCMI_PROTOCOL_BASE = 0x10;
     static constexpr uint8_t SCMI_PROTOCOL_POWER_DOMAIN = 0x11;
     static constexpr uint8_t SCMI_PROTOCOL_SYS_POWER = 0x12;
@@ -431,6 +434,7 @@ private:
     cci::cci_param<unsigned int> p_scmi_channel_base_index;
     cci::cci_param<unsigned int> p_scmi_channel_count;
     cci::cci_param<bool> p_init_shmem;
+    cci::cci_param<bool> p_requester_hold_enable;
     cci::cci_param<unsigned int> p_ack_bit;
     cci::cci_param<uint32_t> p_power_domain_version;
     cci::cci_param<uint32_t> p_sys_power_version;
@@ -529,6 +533,9 @@ private:
     uint16_t m_rpmsg_ns_last_avail_idx = 0;
     unsigned int m_rpmsg_ns_poll_count = 0;
     sc_core::sc_event m_rpmsg_ns_event;
+    std::array<bool, DBCH_CHANNELS> m_requester_hold_pending {};
+    std::array<unsigned int, DBCH_CHANNELS> m_requester_hold_requester {};
+    sc_core::sc_event m_requester_hold_event;
     unsigned int m_trace_count = 0;
     std::vector<unsigned int> m_doorbell_ack_seed_words;
     std::deque<synthetic_postbox_completion> m_synthetic_postbox_completions;
@@ -1035,6 +1042,19 @@ private:
         return p_tx_shmem.get_value() + (p_scmi_channel_stride.get_value() * slot);
     }
 
+    uint32_t scmi_message_capacity() const
+    {
+        const uint32_t stride = p_scmi_channel_stride.get_value();
+        if (stride == 0) {
+            return SCMI_MAX_MESSAGE_LENGTH;
+        }
+        if (stride <= SCMI_HEADER) {
+            return 0;
+        }
+        return std::min<uint32_t>(SCMI_MAX_MESSAGE_LENGTH,
+                                  stride - SCMI_HEADER);
+    }
+
     void write_scmi_response(unsigned int channel, uint32_t header, uint32_t status,
                              const std::vector<uint8_t>& payload)
     {
@@ -1451,9 +1471,21 @@ private:
         const uint64_t shmem = scmi_shmem(channel);
         const uint32_t length = mem_read32(shmem + SCMI_LENGTH);
         const uint32_t header = mem_read32(shmem + SCMI_HEADER);
-        const std::vector<uint8_t> request = read_scmi_request_payload(channel, length);
+        const uint32_t capacity = scmi_message_capacity();
+        const bool valid_length = length >= sizeof(uint32_t) && length <= capacity;
+        std::vector<uint8_t> request;
         std::vector<uint8_t> payload;
-        uint32_t status = SCMI_SUCCESS;
+        uint32_t status = valid_length ? SCMI_SUCCESS : SCMI_ERR_PROTOCOL;
+
+        if (valid_length) {
+            request = read_scmi_request_payload(channel, length);
+        } else {
+            std::ostringstream detail;
+            detail << "channel=" << channel
+                   << " length=" << length
+                   << " capacity=" << capacity;
+            trace_event("scmi-malformed-length", detail.str());
+        }
 
         {
             std::ostringstream detail;
@@ -1467,29 +1499,31 @@ private:
             trace_event("scmi-request", detail.str());
         }
 
-        switch (protocol_id(header)) {
-        case SCMI_PROTOCOL_BASE:
-            respond_scmi_base(header, status, payload);
-            break;
-        case SCMI_PROTOCOL_POWER_DOMAIN:
-            respond_scmi_power_domain(header, request, status, payload);
-            break;
-        case SCMI_PROTOCOL_SYS_POWER:
-            respond_scmi_sys_power(header, request, status, payload);
-            break;
-        case SCMI_PROTOCOL_PERFORMANCE:
-            respond_scmi_performance(header, request, status, payload);
-            break;
-        case SCMI_PROTOCOL_PFDI_MONITOR:
-            if (p_scmi_transport.get_value() == "pfdi-monitor") {
-                respond_scmi_pfdi_monitor(header, status, payload);
-            } else {
+        if (valid_length) {
+            switch (protocol_id(header)) {
+            case SCMI_PROTOCOL_BASE:
+                respond_scmi_base(header, status, payload);
+                break;
+            case SCMI_PROTOCOL_POWER_DOMAIN:
+                respond_scmi_power_domain(header, request, status, payload);
+                break;
+            case SCMI_PROTOCOL_SYS_POWER:
+                respond_scmi_sys_power(header, request, status, payload);
+                break;
+            case SCMI_PROTOCOL_PERFORMANCE:
+                respond_scmi_performance(header, request, status, payload);
+                break;
+            case SCMI_PROTOCOL_PFDI_MONITOR:
+                if (p_scmi_transport.get_value() == "pfdi-monitor") {
+                    respond_scmi_pfdi_monitor(header, status, payload);
+                } else {
+                    status = SCMI_ERR_SUPPORT;
+                }
+                break;
+            default:
                 status = SCMI_ERR_SUPPORT;
+                break;
             }
-            break;
-        default:
-            status = SCMI_ERR_SUPPORT;
-            break;
         }
 
         {
@@ -1509,7 +1543,8 @@ private:
             mbx->signal_doorbell(p_ack_bit.get_value());
             trace_event("scmi-ack-signaled");
         }
-        if (protocol_id(header) == SCMI_PROTOCOL_POWER_DOMAIN &&
+        if (valid_length &&
+            protocol_id(header) == SCMI_PROTOCOL_POWER_DOMAIN &&
             msg_id(header) == 0x5) {
             const uint32_t domain_id = read_le32(request, 0);
             const auto pending = std::find_if(
@@ -1582,7 +1617,16 @@ private:
         std::ostringstream detail;
         detail << "channel=" << channel
                << " mask=0x" << std::hex << mask
-               << " status=0x" << m_frame.status(channel) << std::dec;
+               << " status=0x" << m_frame.status(channel);
+        if (p_trace.get_value() &&
+            p_protocol.get_value() == "doorbell-bridge" &&
+            scmi_channel_in_range(channel)) {
+            const uint64_t shmem = scmi_shmem(channel);
+            detail << " shmem=0x" << shmem
+                   << " channel_status=0x"
+                   << mem_read32(shmem + SCMI_CHAN_STATUS);
+        }
+        detail << std::dec;
         trace_event("doorbell-clear", detail.str());
 
         if (auto pbx = paired_pbx()) {
@@ -1853,19 +1897,107 @@ private:
         update_combined_irq();
     }
 
-    void write_postbox_doorbell(unsigned int channel, uint32_t value)
+    unsigned int requester_for_transaction(
+        tlm::tlm_generic_payload& trans, unsigned int channel) const
+    {
+        RequestContextTlmExtension* extension = nullptr;
+        trans.get_extension(extension);
+        if (extension != nullptr) {
+            const RequestContext& context = extension->get_context();
+            if (context.requester_valid &&
+                context.requester_id < requester_hold.size()) {
+                return context.requester_id;
+            }
+        }
+
+        if (scmi_channel_in_range(channel)) {
+            return channel - p_scmi_channel_base_index.get_value();
+        }
+        return requester_hold.size();
+    }
+
+    void schedule_requester_hold(unsigned int channel,
+                                 unsigned int requester)
+    {
+        if (!p_requester_hold_enable.get_value() ||
+            p_protocol.get_value() != "doorbell-bridge" ||
+            !scmi_channel_in_range(channel)) {
+            return;
+        }
+
+        if (requester < requester_hold.size() &&
+            requester_hold[requester].size() != 0) {
+            requester_hold[requester]->write(true);
+        }
+
+        m_requester_hold_pending[channel] = true;
+        m_requester_hold_requester[channel] = requester;
+        m_requester_hold_event.notify(sc_core::SC_ZERO_TIME);
+    }
+
+    void requester_hold_worker()
+    {
+        for (;;) {
+            wait(m_requester_hold_event);
+
+            bool pending = true;
+            while (pending) {
+                pending = false;
+
+                for (unsigned int channel = 0; channel < channel_count();
+                     ++channel) {
+                    if (!m_requester_hold_pending[channel]) {
+                        continue;
+                    }
+
+                    const uint64_t shmem = scmi_shmem(channel);
+                    const uint32_t status =
+                        mem_read32(shmem + SCMI_CHAN_STATUS);
+                    if ((status & SCMI_CHAN_FREE) == 0) {
+                        pending = true;
+                        continue;
+                    }
+
+                    m_requester_hold_pending[channel] = false;
+                    const unsigned int requester =
+                        m_requester_hold_requester[channel];
+                    if (requester < requester_hold.size() &&
+                        requester_hold[requester].size() != 0) {
+                        requester_hold[requester]->write(false);
+                    }
+
+                    std::ostringstream detail;
+                    detail << "channel=" << channel
+                           << " requester=" << requester
+                           << " shmem=0x" << std::hex << shmem
+                           << " channel_status=0x" << status << std::dec;
+                    trace_event("scmi-requester-release", detail.str());
+                }
+                if (pending) {
+                    wait(sc_core::sc_time(10, sc_core::SC_US),
+                         m_requester_hold_event);
+                }
+            }
+        }
+    }
+
+    void write_postbox_doorbell(unsigned int channel, uint32_t value,
+                                unsigned int requester)
     {
         m_frame.set_status_bits(channel, value);
         update_combined_irq();
 
         std::ostringstream detail;
         detail << "channel=" << channel
+               << " requester=" << requester
                << " value=0x" << std::hex << value
                << " status=0x" << m_frame.status(channel) << std::dec;
         trace_event("postbox-doorbell-write", detail.str());
 
         if (p_trace.get_value() && p_protocol.get_value() == "doorbell-bridge") {
-            const uint64_t shmem = p_tx_shmem.get_value();
+            const uint64_t shmem = scmi_channel_in_range(channel) ?
+                                       scmi_shmem(channel) :
+                                       p_tx_shmem.get_value();
             std::ostringstream mailbox_detail;
             mailbox_detail << "shmem=0x" << std::hex << shmem
                            << " status=0x" << mem_read32(shmem + SCMI_CHAN_STATUS)
@@ -1898,6 +2030,7 @@ private:
             if (auto mbx = paired_mbx()) {
                 mbx->signal_doorbell_channel(channel, value);
             }
+            schedule_requester_hold(channel, requester);
         } else if (p_doorbell_ack_trigger_value.get_value() != 0 &&
                    channel == p_doorbell_ack_trigger_channel.get_value() &&
                    (value & p_doorbell_ack_trigger_value.get_value()) ==
@@ -2532,7 +2665,8 @@ private:
         }
     }
 
-    void write32(uint64_t offset, uint32_t value)
+    void write32(uint64_t offset, uint32_t value,
+                 tlm::tlm_generic_payload* trans = nullptr)
     {
         unsigned int channel = 0;
         uint64_t reg_offset = 0;
@@ -2543,7 +2677,10 @@ private:
                         scmi_channel_in_range(channel)) {
                         respond_scmi(channel);
                     } else {
-                        write_postbox_doorbell(channel, value);
+                        const unsigned int requester = trans != nullptr ?
+                            requester_for_transaction(*trans, channel) :
+                            requester_hold.size();
+                        write_postbox_doorbell(channel, value, requester);
                         if (p_direct_boot_compat.get_value() &&
                             p_protocol.get_value() == "doorbell" &&
                             channel == notify_channel() &&
@@ -2630,7 +2767,7 @@ private:
             if (len == 4) {
                 uint32_t value;
                 std::memcpy(&value, data, sizeof(value));
-                write32(offset, value);
+                write32(offset, value, &trans);
             } else {
                 m_frame.copy_write(offset, data, len);
             }
@@ -2685,6 +2822,7 @@ public:
     InitiatorSignalSocket<bool> irq;
     InitiatorSignalSocket<bool> power_on_reset;
     MultiInitiatorSignalSocket<> system_reset;
+    sc_core::sc_vector<InitiatorSignalSocket<bool>> requester_hold;
     sc_core::sc_vector<InitiatorSignalSocket<bool>> power_domain_reset;
 
     explicit mhu320ae(sc_core::sc_module_name name)
@@ -2705,6 +2843,7 @@ public:
         , p_scmi_channel_base_index("scmi_channel_base_index", 0)
         , p_scmi_channel_count("scmi_channel_count", 1)
         , p_init_shmem("init_shmem", true)
+        , p_requester_hold_enable("requester_hold_enable", false)
         , p_ack_bit("ack_bit", 0)
         , p_power_domain_version("power_domain_version", 0x00020000)
         , p_sys_power_version("sys_power_version", 0x00020000)
@@ -2746,6 +2885,8 @@ public:
         , irq("irq")
         , power_on_reset("power_on_reset")
         , system_reset("system_reset")
+        , requester_hold("requester_hold", p_scmi_channel_count.get_value(),
+                         [](const char* n, size_t) { return new InitiatorSignalSocket<bool>(n); })
         , power_domain_reset("power_domain_reset", p_power_domain_reset_count.get_value(),
                              [](const char* n, size_t) { return new InitiatorSignalSocket<bool>(n); })
     {
@@ -2764,6 +2905,7 @@ public:
         SC_THREAD(emit_power_domain_reset);
         SC_THREAD(emit_system_power_reset);
         SC_THREAD(rpmsg_ns_worker);
+        SC_THREAD(requester_hold_worker);
 
         target_socket.register_b_transport(this, &mhu320ae::b_transport);
     }
