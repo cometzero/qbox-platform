@@ -2,17 +2,24 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#include <cstdio>
 #include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include <cci/utils/broker.h>
 #include <gtest/gtest.h>
+#include <ports/initiator-signal-socket.h>
 #include <ports/target-signal-socket.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
 #include <tlm_utils/simple_initiator_socket.h>
 #include <zena_fmu.h>
+#include <zena_ssu.h>
 
 namespace {
 
@@ -38,6 +45,43 @@ constexpr uint32_t STATUS_V = 1u << 30;
 constexpr uint32_t STATUS_UE = 1u << 29;
 constexpr uint32_t STATUS_CI = 1u << 19;
 constexpr uint32_t IMPDEF_IE = 1u << 9;
+constexpr uint64_t SSU_ERR_STATUS = 0x010;
+constexpr uint64_t SSU_SYS_KEY = 0x804;
+constexpr uint64_t SSU_SYS_STATUS = 0x808;
+constexpr uint32_t SSU_SYS_KEY_VALUE = 0xbe;
+constexpr uint32_t SSU_STATUS_ERRC = 1u << 3;
+constexpr uint32_t SSU_STATUS_SAFE = 1u << 1;
+
+class FaultSource : public sc_core::sc_module
+{
+    bool m_pending = false;
+    sc_core::sc_event m_event;
+
+    void emit()
+    {
+        signal->write(m_pending);
+    }
+
+public:
+    SC_HAS_PROCESS(FaultSource);
+
+    InitiatorSignalSocket<bool> signal;
+
+    explicit FaultSource(sc_core::sc_module_name name)
+        : sc_core::sc_module(name)
+        , signal("signal")
+    {
+        SC_METHOD(emit);
+        sensitive << m_event;
+        dont_initialize();
+    }
+
+    void write(bool value)
+    {
+        m_pending = value;
+        m_event.notify(sc_core::sc_time(1, sc_core::SC_PS));
+    }
+};
 
 class SignalSink : public sc_core::sc_module
 {
@@ -102,6 +146,41 @@ void write32_keyed(zena_fmu& dut, uint64_t offset, uint32_t value)
     write32(dut, offset, value);
 }
 
+uint32_t ssu_access32(zena_ssu& dut, uint64_t offset,
+                      tlm::tlm_command command, uint32_t value = 0)
+{
+    tlm::tlm_generic_payload trans;
+    auto data = value;
+
+    trans.set_address(offset);
+    trans.set_command(command);
+    trans.set_data_length(sizeof(data));
+    trans.set_streaming_width(sizeof(data));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&data));
+
+    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+    dut.b_transport(trans, delay);
+
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    return data;
+}
+
+uint32_t ssu_read32(zena_ssu& dut, uint64_t offset)
+{
+    return ssu_access32(dut, offset, tlm::TLM_READ_COMMAND);
+}
+
+void ssu_write32(zena_ssu& dut, uint64_t offset, uint32_t value)
+{
+    (void)ssu_access32(dut, offset, tlm::TLM_WRITE_COMMAND, value);
+}
+
+void ssu_write32_keyed(zena_ssu& dut, uint64_t offset, uint32_t value)
+{
+    ssu_write32(dut, SSU_SYS_KEY, SSU_SYS_KEY_VALUE);
+    ssu_write32(dut, offset, value);
+}
+
 uint64_t record_offset(unsigned int index, uint64_t field)
 {
     return index * RECORD_STRIDE + field;
@@ -159,15 +238,62 @@ TEST(ZenaFmuTest, StatusUsesWriteOneToClearBits)
 
 TEST(ZenaFmuTest, FaultSignalsFollowCriticalAndNonCriticalStatus)
 {
+    const char* configured_log = std::getenv("QBOX_I5_EVENT_LOG");
+    const std::string event_log = configured_log != nullptr
+        ? configured_log
+        : "/tmp/qbox-i5-fault-event-observer.json";
+    std::remove(event_log.c_str());
+
+    auto broker = cci::cci_get_global_broker(
+        cci::cci_originator("zena_fmu_test"));
+    broker.set_preset_cci_value(
+        "fmu_external.fault_input_enabled", cci::cci_value(true));
+    broker.set_preset_cci_value(
+        "fmu_external.fault_input_record", cci::cci_value(0u));
+    broker.set_preset_cci_value(
+        "fmu_external.fault_source",
+        cci::cci_value(std::string("ap_smmu_0.irq_eventq")));
+    broker.set_preset_cci_value(
+        "fmu_external.fault_id",
+        cci::cci_value(std::string("translation-fault")));
+    broker.set_preset_cci_value(
+        "fmu_external.fault_sink",
+        cci::cci_value(std::string("critical_irq")));
+    broker.set_preset_cci_value(
+        "fmu_external.event_log", cci::cci_value(event_log));
+
     zena_fmu dut("fmu_signals");
+    zena_fmu external_fmu("fmu_external");
+    zena_fmu disabled_fmu("fmu_disabled");
+    zena_ssu ssu("ssu_external");
     TlmBinder tlm_binder("tlm_binder");
+    TlmBinder external_tlm_binder("external_tlm_binder");
+    TlmBinder disabled_tlm_binder("disabled_tlm_binder");
+    TlmBinder ssu_tlm_binder("ssu_tlm_binder");
+    FaultSource external_source("external_source");
+    FaultSource disabled_source("disabled_source");
     SignalSink critical("critical_sink");
     SignalSink non_critical("non_critical_sink");
+    SignalSink external_critical("external_critical_sink");
+    SignalSink disabled_critical("disabled_critical_sink");
+    SignalSink safety("safety_sink");
 
     tlm_binder.socket.bind(dut.target_socket);
+    external_tlm_binder.socket.bind(external_fmu.target_socket);
+    disabled_tlm_binder.socket.bind(disabled_fmu.target_socket);
+    ssu_tlm_binder.socket.bind(ssu.target_socket);
     dut.critical_irq.bind(critical.signal);
     dut.non_critical_irq.bind(non_critical.signal);
+    external_source.signal.bind(external_fmu.fault_in);
+    external_fmu.critical_irq.bind(external_critical.signal);
+    external_fmu.critical_ssu.bind(ssu.critical_in);
+    disabled_source.signal.bind(disabled_fmu.fault_in);
+    disabled_fmu.critical_irq.bind(disabled_critical.signal);
+    ssu.safety_status.bind(safety.signal);
     dut.before_end_of_elaboration();
+    external_fmu.before_end_of_elaboration();
+    disabled_fmu.before_end_of_elaboration();
+    ssu.before_end_of_elaboration();
     sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
 
     write32_keyed(dut, impdef_offset(0), IMPDEF_IE);
@@ -187,6 +313,59 @@ TEST(ZenaFmuTest, FaultSignalsFollowCriticalAndNonCriticalStatus)
     ASSERT_FALSE(non_critical.observed.empty());
     EXPECT_TRUE(non_critical.observed.back());
     EXPECT_NE(read32(dut, record_offset(1, ERR_STATUS)) & STATUS_UE, 0u);
+
+    external_source.write(true);
+    disabled_source.write(true);
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_PS));
+
+    EXPECT_NE(read32(external_fmu, record_offset(0, ERR_STATUS)) & STATUS_V,
+              0u);
+    EXPECT_NE(read32(external_fmu, record_offset(0, ERR_STATUS)) & STATUS_CI,
+              0u);
+    ASSERT_FALSE(external_critical.observed.empty());
+    EXPECT_TRUE(external_critical.observed.back());
+    EXPECT_EQ(ssu_read32(ssu, SSU_SYS_STATUS), SSU_STATUS_ERRC);
+    ASSERT_FALSE(safety.observed.empty());
+    EXPECT_TRUE(safety.observed.back());
+
+    EXPECT_EQ(read32(disabled_fmu, record_offset(0, ERR_STATUS)), 0u);
+    EXPECT_TRUE(disabled_critical.observed.empty());
+
+    write32_keyed(external_fmu, record_offset(0, ERR_STATUS),
+                  STATUS_V | STATUS_CI);
+    EXPECT_EQ(read32(external_fmu, record_offset(0, ERR_STATUS)) & STATUS_V,
+              0u);
+    ASSERT_FALSE(external_critical.observed.empty());
+    EXPECT_FALSE(external_critical.observed.back());
+
+    ssu_write32_keyed(ssu, SSU_ERR_STATUS, STATUS_V);
+    EXPECT_EQ(ssu_read32(ssu, SSU_SYS_STATUS), SSU_STATUS_SAFE);
+    ASSERT_FALSE(safety.observed.empty());
+    EXPECT_FALSE(safety.observed.back());
+
+    std::ifstream input(event_log);
+    ASSERT_TRUE(input.is_open());
+    const std::string json((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+    const std::size_t source_pos = json.find("\"phase\": \"source\"");
+    const std::size_t record_pos = json.find("\"phase\": \"record\"");
+    const std::size_t sink_assert_pos =
+        json.find("\"phase\": \"sink_assert\"");
+    const std::size_t clear_pos = json.find("\"phase\": \"clear\"");
+    const std::size_t sink_deassert_pos =
+        json.find("\"phase\": \"sink_deassert\"");
+    const std::size_t recovery_pos = json.find("\"phase\": \"recovery\"");
+
+    ASSERT_NE(source_pos, std::string::npos);
+    ASSERT_LT(source_pos, record_pos);
+    ASSERT_LT(record_pos, sink_assert_pos);
+    ASSERT_LT(sink_assert_pos, clear_pos);
+    ASSERT_LT(clear_pos, sink_deassert_pos);
+    ASSERT_LT(sink_deassert_pos, recovery_pos);
+    EXPECT_NE(json.find("\"source\": \"ap_smmu_0.irq_eventq\""),
+              std::string::npos);
+    EXPECT_NE(json.find("\"fault_id\": \"translation-fault\""),
+              std::string::npos);
 }
 
 int sc_main(int argc, char* argv[])

@@ -8,12 +8,16 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include <cci_configuration>
 #include <module_factory_registery.h>
 #include <ports/initiator-signal-socket.h>
+#include <ports/target-signal-socket.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
@@ -80,10 +84,77 @@ class zena_fmu : public sc_core::sc_module
         bool unlocked = false;
     };
 
+    struct ObservedEvent {
+        unsigned int sequence;
+        std::string phase;
+        bool asserted;
+    };
+
     std::array<Bank, MAX_BANKS> m_banks {};
+    std::vector<ObservedEvent> m_observed_events;
     unsigned int m_trace_count = 0;
+    unsigned int m_event_sequence = 0;
     bool m_critical_irq = false;
     bool m_non_critical_irq = false;
+    bool m_fault_input_level = false;
+    bool m_external_fault_pending = false;
+
+    static std::string json_escape(const std::string& value)
+    {
+        std::string escaped;
+        escaped.reserve(value.size());
+        for (char character : value) {
+            if (character == '\\' || character == '"') {
+                escaped.push_back('\\');
+            }
+            escaped.push_back(character);
+        }
+        return escaped;
+    }
+
+    void write_event_log()
+    {
+        const std::string path = p_event_log.get_value();
+        if (path.empty()) {
+            return;
+        }
+
+        std::ofstream output(path, std::ios::out | std::ios::trunc);
+        if (!output.is_open()) {
+            return;
+        }
+
+        output << "{\n  \"schema_version\": 1,\n  \"events\": [\n";
+        for (std::size_t index = 0; index < m_observed_events.size(); ++index) {
+            const ObservedEvent& event = m_observed_events[index];
+            output << "    {\"sequence\": " << event.sequence
+                   << ", \"phase\": \"" << json_escape(event.phase)
+                   << "\", \"source\": \""
+                   << json_escape(p_fault_source.get_value())
+                   << "\", \"fault_id\": \""
+                   << json_escape(p_fault_id.get_value())
+                   << "\", \"record\": " << p_fault_input_record.get_value()
+                   << ", \"sink\": \""
+                   << json_escape(p_fault_sink.get_value())
+                   << "\", \"asserted\": "
+                   << (event.asserted ? "true" : "false") << "}";
+            if (index + 1 != m_observed_events.size()) {
+                output << ',';
+            }
+            output << '\n';
+        }
+        output << "  ]\n}\n";
+    }
+
+    void append_event(const std::string& phase, bool asserted)
+    {
+        if (p_event_log.get_value().empty()) {
+            return;
+        }
+        m_observed_events.push_back(
+            {++m_event_sequence, phase, asserted});
+        write_event_log();
+    }
 
     unsigned int bank_count() const
     {
@@ -201,8 +272,45 @@ class zena_fmu : public sc_core::sc_module
         update_irqs();
     }
 
+    void set_external_fault()
+    {
+        const unsigned int index = p_fault_input_record.get_value();
+        if (!p_fault_input_enabled.get_value() || bank_count() == 0 ||
+            index >= record_count()) {
+            return;
+        }
+
+        append_event("source", true);
+        m_external_fault_pending = true;
+        const bool critical = is_critical_record(index);
+        set_software_error(m_banks[0], index, critical);
+        append_event("record", true);
+        append_event("sink_assert", critical ? m_critical_irq
+                                               : m_non_critical_irq);
+    }
+
+    void fault_input_changed(bool value)
+    {
+        if (value == m_fault_input_level) {
+            return;
+        }
+        m_fault_input_level = value;
+        if (value) {
+            set_external_fault();
+        }
+    }
+
     void clear_record_status(Bank& bank, unsigned int index, uint32_t value)
     {
+        const bool observed_clear =
+            m_external_fault_pending && &bank == &m_banks[0] &&
+            index == p_fault_input_record.get_value() &&
+            (bank.status[index] & STATUS_V) != 0 &&
+            (value & STATUS_V) != 0;
+        if (observed_clear) {
+            append_event("clear", false);
+        }
+
         uint32_t status = bank.status[index];
         status &= ~(value & STATUS_W1C_MASK);
 
@@ -213,6 +321,14 @@ class zena_fmu : public sc_core::sc_module
 
         bank.status[index] = status;
         update_irqs();
+
+        if (observed_clear && (status & STATUS_V) == 0) {
+            const bool critical = is_critical_record(index);
+            append_event("sink_deassert",
+                         critical ? m_critical_irq : m_non_critical_irq);
+            append_event("recovery", true);
+            m_external_fault_pending = false;
+        }
     }
 
     void write_ctlr(Bank& bank, unsigned int index, uint32_t value)
@@ -467,6 +583,10 @@ class zena_fmu : public sc_core::sc_module
 
         m_critical_irq = false;
         m_non_critical_irq = false;
+        m_fault_input_level = false;
+        m_external_fault_pending = false;
+        m_observed_events.clear();
+        m_event_sequence = 0;
     }
 
     void update_irqs()
@@ -519,6 +639,12 @@ public:
     cci::cci_param<bool> p_trace;
     cci::cci_param<unsigned int> p_trace_limit;
     cci::cci_param<bool> p_enforce_sys_key;
+    cci::cci_param<bool> p_fault_input_enabled;
+    cci::cci_param<unsigned int> p_fault_input_record;
+    cci::cci_param<std::string> p_fault_source;
+    cci::cci_param<std::string> p_fault_id;
+    cci::cci_param<std::string> p_fault_sink;
+    cci::cci_param<std::string> p_event_log;
     cci::cci_param<unsigned int> p_bank_count;
     cci::cci_param<unsigned int> p_record_count;
     cci::cci_param<uint64_t> p_critical_mask;
@@ -534,17 +660,25 @@ public:
     cci::cci_param<uint32_t> p_cidr2;
     cci::cci_param<uint32_t> p_cidr3;
 
-    tlm_utils::simple_target_socket<zena_fmu, DEFAULT_TLM_BUSWIDTH> target_socket;
+    tlm_utils::simple_target_socket_optional<zena_fmu, DEFAULT_TLM_BUSWIDTH>
+        target_socket;
     InitiatorSignalSocket<bool> critical_irq;
     InitiatorSignalSocket<bool> non_critical_irq;
     InitiatorSignalSocket<bool> critical_ssu;
     InitiatorSignalSocket<bool> non_critical_ssu;
+    TargetSignalSocket<bool> fault_in;
 
     explicit zena_fmu(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 64)
         , p_enforce_sys_key("enforce_sys_key", true)
+        , p_fault_input_enabled("fault_input_enabled", false)
+        , p_fault_input_record("fault_input_record", 0)
+        , p_fault_source("fault_source", "")
+        , p_fault_id("fault_id", "")
+        , p_fault_sink("fault_sink", "")
+        , p_event_log("event_log", "")
         , p_bank_count("bank_count", 5)
         , p_record_count("record_count", MAX_RECORDS)
         , p_critical_mask("critical_mask", 0x1ull)
@@ -564,10 +698,13 @@ public:
         , non_critical_irq("non_critical_irq")
         , critical_ssu("critical_ssu")
         , non_critical_ssu("non_critical_ssu")
+        , fault_in("fault_in")
     {
         reset_registers();
         target_socket.register_b_transport(this, &zena_fmu::b_transport);
         target_socket.register_transport_dbg(this, &zena_fmu::transport_dbg);
+        fault_in.register_value_changed_cb(
+            [this](bool value) { fault_input_changed(value); });
     }
 
     void before_end_of_elaboration() override
