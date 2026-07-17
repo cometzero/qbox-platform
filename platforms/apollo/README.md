@@ -347,9 +347,22 @@ python3 scripts/run/run_qbox_apollo_fvp_full.py \
 The RSE child `result.json` should report
 `rse_fast_boot_sram_dmi.enabled: true`,
 `rse_fast_boot_sram_dmi.env.QBOX_RDASPEN_HOST_SRAM_SHARED_MEMORY: "true"`, and
-`rse_direct_file_aliases_summary.enabled: false`. The `host_sram_backing`
-entries for the host SRAM regions should use `mode: "shared_memory"` and
+`rse_direct_file_aliases_summary.enabled: false`. It should also report
+`ap_fip_logical_aperture.mode: "atu_systemc_route"`; the default path must not
+install the former logical AP-FIP file alias. The `host_sram_backing` entries
+for the host SRAM regions should use `mode: "shared_memory"` and
 `file_created: false`.
+
+The 2026-07-17 FVP-aligned four-CPU profile additionally uses live AP/SI1 and
+AP/RSE MHU peers, preserves the HIPC SRAM across AP reset, and advertises the
+CFG2 CMN-CYPRUS r3p0 graph, a 52-bit MMU-720AE SMMUv3 profile, sixteen GICR
+frames, two-byte ITS collection entries, supported Cortex-A720AE TCG
+features, PL011 revision 3, and zero-capacity unused block placeholders. A
+passing run must include all live SI1 readiness markers, especially
+`PFDI service ready` and `RPMSG Endpoint: ATTACHED`, as well as FWU ABI 1.0,
+four online AP CPUs, and the Linux login prompt. The top-level Korean
+comparison and verification report is
+`doc/apollo-qvp-fvp-qbox-yocto-system-log-comparison-2026-07-17-ko.md`.
 
 The default SRAM DMI path should not create file-backed host SRAM images:
 
