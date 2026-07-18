@@ -316,6 +316,14 @@ ap_power_domain_reset_delay_ns = tonumber(
     getenv_or("QBOX_RDASPEN_AP_POWER_DOMAIN_RESET_DELAY_NS", "1"))
 rse_local_crypto = getenv_or("QBOX_RDASPEN_RSE_LOCAL_CRYPTO", "true") == "true"
 rse_local_boot_flash = getenv_or("QBOX_RDASPEN_RSE_LOCAL_BOOT_FLASH", "true") == "true"
+rse_flash_backend = getenv_or(
+    "QBOX_RDASPEN_RSE_FLASH_BACKEND",
+    "qemu-cfi-local")
+assert(rse_flash_backend == "systemc-strata" or
+       rse_flash_backend == "qemu-cfi-local",
+       "QBOX_RDASPEN_RSE_FLASH_BACKEND must be systemc-strata or qemu-cfi-local")
+assert(rse_flash_backend ~= "qemu-cfi-local" or rse_local_boot_flash,
+       "qemu-cfi-local requires QBOX_RDASPEN_RSE_LOCAL_BOOT_FLASH=true")
 rse_local_peripherals = rse_local_crypto or rse_local_boot_flash
 rse_split_cpu0_dtcm_alias = getenv_or(
     "QBOX_RDASPEN_RSE_SPLIT_CPU0_DTCM_ALIAS",

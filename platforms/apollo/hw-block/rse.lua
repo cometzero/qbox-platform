@@ -647,7 +647,8 @@ function rse.define(ctx, platform)
             qemu_args = qemu_args;
         },
 
-        rse_boot_flash = rse_local_boot_flash and {
+        rse_boot_flash = rse_local_boot_flash and
+            rse_flash_backend == "systemc-strata" and {
             moduletype = "strata_flash_j3";
             trace = boot_flash_trace;
             trace_limit = boot_flash_trace_limit;
@@ -668,6 +669,37 @@ function rse.define(ctx, platform)
                 bind = "&cpu_0.router.initiator_socket";
             };
             load = {bin_file = rse_flash, offset = 0};
+            log_level = 0;
+        } or nil,
+
+        rse_boot_flash_qemu = rse_local_boot_flash and
+            rse_flash_backend == "qemu-cfi-local" and {
+            moduletype = "pflash_cfi";
+            args = {"&qemu_inst", 1};
+            blkdev_str = "file="..rse_flash..
+                ",format=raw,if=none,cache=writeback"..
+                (flash_writeback and "" or ",snapshot=on");
+            num_blocks = RSE_BOOT_FLASH_SIZE / 0x1000;
+            sector_length = 0x1000;
+            width = 1;
+            device_width = 1;
+            max_device_width = 4;
+            id0 = 0x89;
+            id1 = 0x18;
+            name = "apollo-rse-boot-flash";
+            local_address = RSE_BOOT_FLASH_BASE_S;
+            local_priority = 10;
+            local_cpu = "platform.rse_cpu_pass.cpu_0.cpu";
+            program_ff_erases_sector = true;
+            io_mode_only = true;
+            defer_backing_write = true;
+            defer_backing_flush_interval = 65536;
+            defer_backing_flush_delay_ms = 25;
+            target_socket = {
+                address = RSE_BOOT_FLASH_BASE_S;
+                size = RSE_BOOT_FLASH_SIZE;
+                bind = "&cpu_0.router.initiator_socket";
+            };
             log_level = 0;
         } or nil,
 
@@ -773,6 +805,7 @@ function rse.define(ctx, platform)
 
 print("rse rom:      "..rse_rom)
 print("rse flash:    "..rse_flash)
+print("rse flash backend: "..rse_flash_backend)
 print("rse otp:      "..rse_otp)
 print("ap flash:     "..ap_flash)
 print("ap bl2 elf:   "..AP_BL2_ELF)

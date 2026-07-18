@@ -214,6 +214,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     rse_protection_ctrl
     rse_sam
     strata_flash_j3
+    pflash_cfi
     host_smcf_mgi
     host_system_pll
     signal_fanout

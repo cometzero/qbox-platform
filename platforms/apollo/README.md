@@ -320,6 +320,26 @@ It forwards `--rse-fast-boot-sram-dmi` to the RSE runner and sets
 `QBOX_RDASPEN_HOST_SRAM_SHARED_MEMORY=true` so host SI/AP SRAM regions use
 transferable shared-memory DMI instead of direct-file aliases.
 
+The default RSE boot-flash backend is `qemu-cfi-local`. One QEMU CFI01
+MemoryRegion is mapped into the Cortex-M55 CPU-private address space and
+exported through the existing TLM target socket, so local CPU and external
+initiators observe one CFI state and backing image. Apollo enables callback
+I/O mode and deferred dirty-sector writeback; periodic, reset, migration, and
+shutdown boundaries flush the backing image. Use the SystemC Strata backend
+only for explicit comparison or rollback:
+
+```bash
+python3 scripts/run/run_qbox_apollo_fvp_full.py \
+  --rse-flash-backend systemc-strata
+```
+
+Use the persistent-state reset option for a fresh PS/ITS state and bounded
+U-Boot FWU Regular-State check:
+
+```bash
+./run_qbox_local.sh --uboot-only --reset-rse-state
+```
+
 ```bash
 ./run_qbox_local.sh
 ```
