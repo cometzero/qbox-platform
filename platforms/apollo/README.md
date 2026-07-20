@@ -243,16 +243,18 @@ top-level helpers:
 
 ```bash
 python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py
-QBOX_APOLLO_PCIE_IRQ_TEST=true \
+QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
 python3 scripts/run/run_qbox_apollo_fvp_linux.py \
   --skip-build --timeout 600 \
+  --bootargs "console=ttyAMA0,115200 earlycon=pl011,0x1A400000 root=/dev/ram0 rw rdinit=/init loglevel=7 cpuidle.governor=menu maxcpus=4 mem=4064M" \
   --base-dtb build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq.dtb \
   --initramfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq-initramfs.cpio.gz \
   --disk build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-msix-disk.img \
   --out-dir <msix-output>
-QBOX_APOLLO_PCIE_IRQ_TEST=true \
+QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
 python3 scripts/run/run_qbox_apollo_fvp_linux.py \
   --skip-build --timeout 600 \
+  --bootargs "console=ttyAMA0,115200 earlycon=pl011,0x1A400000 root=/dev/ram0 rw rdinit=/init loglevel=7 cpuidle.governor=menu maxcpus=4 mem=4064M pci=nomsi" \
   --base-dtb build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq.dtb \
   --initramfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq-initramfs.cpio.gz \
   --disk build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-intx-disk.img \
@@ -263,12 +265,13 @@ python3 scripts/test/validate_qbox_apollo_pcie_irq_runtime.py \
   --output build/qbox-apollo-fvp/i4-pcie-irq-runtime-validation.json
 ```
 
-The generated MSI-X disk is used for the first run and the generated INTx disk
-adds `pci=nomsi` for the second run. Linux reports the legacy GIC SPI input 301
-as architectural INTID 333. Both tests pin the selected interrupt affinity to
-CPU0 before generating network traffic. These direct-boot runs qualify the AP
-PCIe data and interrupt path; they do not qualify the full RSE-first firmware
-chain.
+The generated MSI-X disk is used for the first run. The INTx disk also carries
+`pci=nomsi` in its U-Boot script, but the direct kernel path must pass the same
+argument explicitly with `--bootargs`. Linux reports the legacy GIC SPI input
+301 as architectural INTID 333. Both tests use four CPUs and pin the selected
+interrupt affinity to CPU0 before generating network traffic. These direct-boot
+runs qualify the AP PCIe data and interrupt path; they do not qualify the full
+RSE-first firmware chain.
 
 ## Fault Event Test Profile
 
