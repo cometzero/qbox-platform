@@ -958,21 +958,21 @@ function si_cl0.enable(ctx, platform)
         }
 
         for core=0,(SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
+            local cpu_index = ap_cpu_index(cluster, core)
+            local cpu_active = enable_ap_cpus and cpu_index < AP_NUM_CPUS
             platform["si_cl0_ap_cluster"..cluster.."_core"..core.."_ppu"] = {
                 moduletype = "host_ppu";
                 initial_power_status = 0x0;
                 trace = host_ppu_trace;
                 trace_limit = host_ppu_trace_limit;
-                assert_power_on_reset = enable_ap_cpus and cluster == 0;
-                assert_power_on_load = enable_ap_cpus and
-                    cluster == 0 and core == 0;
+                assert_power_on_reset = cpu_active;
+                assert_power_on_load = cpu_active and cpu_index == 0;
                 power_on_load_pulse_width_ns = 0;
                 power_on_load_to_reset_delay_ns = 0;
-                power_on_load = enable_ap_cpus and cluster == 0 and
-                    core == 0 and
+                power_on_load = cpu_active and cpu_index == 0 and
                     {bind = "&host_reset_ctrl.ap_power_reset"} or nil;
-                power_on_reset = enable_ap_cpus and cluster == 0 and {
-                    bind = "&ap_cpu_"..core..".reset";
+                power_on_reset = cpu_active and {
+                    bind = "&ap_cpu_"..cpu_index..".reset";
                 } or nil;
                 target_socket = {
                     address = cluster_base + SI_CL0_AP_CORE_PPU0_OFFSET +

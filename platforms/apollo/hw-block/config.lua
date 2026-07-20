@@ -1,5 +1,9 @@
 -- Apollo QVP shared setup for QBox.
 
+AP_CORES_PER_CLUSTER = 4
+AP_MAX_CLUSTERS = 4
+AP_MAX_CPUS = AP_CORES_PER_CLUSTER * AP_MAX_CLUSTERS
+
 function top()
     local str = debug.getinfo(2, "S").source:sub(2)
     if str:match("(.*/)")
@@ -38,9 +42,13 @@ function repeat_value(value, count)
 end
 
 function mp_affinity(cpu_index)
-    local cluster = math.floor(cpu_index / 4)
-    local core = cpu_index % 4
+    local cluster = math.floor(cpu_index / AP_CORES_PER_CLUSTER)
+    local core = cpu_index % AP_CORES_PER_CLUSTER
     return (cluster * 0x10000) + (core * 0x100)
+end
+
+function ap_cpu_index(cluster, core)
+    return cluster * AP_CORES_PER_CLUSTER + core
 end
 
 function ap_cpu_reset_bind_targets(count)
@@ -76,13 +84,14 @@ function ap_cold_reset_bind_targets()
 end
 
 function ap_system_reset_bind_targets()
-    local targets = {
-        "&si_cl0_ap_cluster0_core0_ppu.reset";
-        "&si_cl0_ap_cluster0_core1_ppu.reset";
-        "&si_cl0_ap_cluster0_core2_ppu.reset";
-        "&si_cl0_ap_cluster0_core3_ppu.reset";
-        ap_cold_reset_bind_targets();
-    }
+    local targets = {}
+    for cpu=0,(AP_NUM_CPUS-1) do
+        local cluster = math.floor(cpu / AP_CORES_PER_CLUSTER)
+        local core = cpu % AP_CORES_PER_CLUSTER
+        targets[#targets + 1] =
+            "&si_cl0_ap_cluster"..cluster.."_core"..core.."_ppu.reset"
+    end
+    targets[#targets + 1] = ap_cold_reset_bind_targets()
 
     return table.concat(targets, ";")
 end
@@ -569,7 +578,7 @@ HOST_AP_DRAM2_SIZE = 0x80000000
 HOST_AP_ATU_LOGICAL_BASE = 0x40000000
 HOST_AP_ATU_LOGICAL_SIZE = 0x00800000
 AP_NUM_CPUS = enable_ap_cpus and getenv_number_or("QBOX_APOLLO_NUM_CPUS", "4") or 0
-assert(not enable_ap_cpus or (AP_NUM_CPUS >= 1 and AP_NUM_CPUS <= 16), "QBOX_APOLLO_NUM_CPUS must be 1..16 when AP CPUs are enabled")
+assert(not enable_ap_cpus or (AP_NUM_CPUS >= 1 and AP_NUM_CPUS <= AP_MAX_CPUS), "QBOX_APOLLO_NUM_CPUS must be 1..16 when AP CPUs are enabled")
 AP_GIC_NUM_CPUS = enable_ap_cpus and AP_NUM_CPUS or 1
 ARCH_TIMER_VIRT_IRQ = 16 + 11
 ARCH_TIMER_S_EL1_IRQ = 16 + 13
@@ -611,13 +620,13 @@ AP_SI_PFDI_MHU_MBX_IRQ = 119
 AP_GIC_DIST_BASE = 0x20800000
 AP_GIC_REDIST_BASE = 0x20880000
 AP_GIC_REDIST_SIZE = 0x00040000
-AP_GIC_REDIST_REGIONS = 16
+AP_GIC_REDIST_REGIONS = AP_MAX_CPUS
 AP_GIC_ACTIVE_REDIST_REGIONS = AP_GIC_NUM_CPUS
 AP_GIC_VIEW0_DIST_BASE = 0x20000000
 AP_GIC_VIEW0_DIST_SIZE = 0x00080000
 AP_GIC_VIEW0_REDIST_BASE = 0x20080000
 AP_GIC_VIEW0_REDIST_SIZE = 0x00040000
-AP_GIC_VIEW0_REDIST_REGIONS = 16
+AP_GIC_VIEW0_REDIST_REGIONS = AP_MAX_CPUS
 
 -- Host-visible Safety Island windows
 HOST_SI_CL0_CL_UTIL_BASE = 0x4000028000000

@@ -524,12 +524,29 @@ qbox-apollo-fvp.log
 ```
 
 The direct-boot AP path keeps its 16-CPU experiment default and direct local
-bootargs keep `maxcpus=16`. The full-system path defaults to 4 modeled AP CPUs,
-matching active `apollo-qvp` Yocto configuration. Use
-`QBOX_APOLLO_NUM_CPUS=1..16` to override either path deliberately. The
-full-system rootfs patching profile defaults to `quiet-console`, which replaces
-stale `maxcpus=` tokens with the resolved full-system AP CPU count. A profile
-of `none`, used for the Yocto WIC, leaves the image boot entry unchanged.
+bootargs keep `maxcpus=16`. The full-system and Yocto defaults remain 4 modeled
+AP CPUs. Build a coherent optional 16-CPU Yocto image with:
+
+```bash
+export BB_ENV_PASSTHROUGH_ADDITIONS="${BB_ENV_PASSTHROUGH_ADDITIONS:-} PC_CPUS_COUNT_DEFAULT"
+export PC_CPUS_COUNT_DEFAULT=16
+./yocto_build.sh
+```
+
+The image recipe writes the effective count to
+`nexios-image-apollo-qvp.qboxconf` as `QBOX_APOLLO_NUM_CPUS`. Therefore
+`run_qbox_yocto.sh` selects 16 CPUs automatically for that image. Resolution
+order is an explicit `QBOX_APOLLO_NUM_CPUS`, the selected qboxconf, active
+`build/conf/local.conf`, then fallback 4. Explicit runtime values from 1 to 16
+remain available for focused work, but a full-system boot must use firmware,
+DT and `maxcpus` built for the same count.
+
+The full-system rootfs patching profile defaults to `quiet-console`, which
+replaces stale `maxcpus=` tokens with the resolved full-system AP CPU count. A
+profile of `none`, used for the Yocto WIC, leaves the image boot entry
+unchanged. The 16-CPU validation covered four clusters, sixteen functional
+GIC redistributors, SI0 core-PPU reset release, PFDI monitoring and
+representative CPU1/4/8/12 hotplug on both FVP and QBox.
 
 For direct-boot CPU wake debugging, keep tracing disabled for normal runs and
 enable it only on focused reproductions:
