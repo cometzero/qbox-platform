@@ -4,6 +4,7 @@ system_mgmt.ownership = {
     reset = {
         "reset_gpio";
         "reset_fanout";
+        "zena_reset_ctrl";
         "host_ppu";
         "mhu320ae";
     };
@@ -387,14 +388,19 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
-    platform.host_systop_pik = {
-        moduletype = "gs_memory";
-        target_socket = {
-            address = HOST_SYSTOP_PIK_PHYS_BASE;
-            size = HOST_SI_CONTROL_WINDOW_SIZE;
+    platform.host_reset_ctrl = {
+        moduletype = "zena_reset_ctrl";
+        rgm = {
+            address = HOST_CSS_RGM_PHYS_BASE;
+            size = 0x00001000;
             bind = "&smd_router.initiator_socket";
         };
-        init_mem = true;
+        pik = {
+            address = HOST_SYSTOP_PIK_PHYS_BASE;
+            size = 0x00001000;
+            bind = "&smd_router.initiator_socket";
+        };
+        ap_reset = {bind = "&ap_cold_reset_fanout.reset_in"};
         log_level = 0;
     }
 

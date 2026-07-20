@@ -5,6 +5,7 @@
 
 #include <cci_configuration>
 #include <libgsutils.h>
+#include <ports/target-signal-socket.h>
 #include <systemc>
 
 #include <cpu_arm/cpu_arm_cortex_m55/include/cortex-m55.h>
@@ -19,6 +20,8 @@ class ApolloRseCPU : public sc_core::sc_module
     SCP_LOGGER();
 
 public:
+    TargetSignalSocket<bool> accel_reset;
+
     ApolloRseCPU(const sc_core::sc_module_name& n, sc_core::sc_object* obj)
         : ApolloRseCPU(n, *(dynamic_cast<QemuInstance*>(obj)))
     {
@@ -26,6 +29,7 @@ public:
 
     ApolloRseCPU(const sc_core::sc_module_name& n, QemuInstance& qemu_inst)
         : sc_core::sc_module(n)
+        , accel_reset("accel_reset")
         , m_broker(cci::cci_get_broker())
         , m_gdb_port("gdb_port", 0, "GDB port")
         , m_qemu_inst(qemu_inst)
@@ -43,6 +47,11 @@ public:
         SCP_INFO(()) << "number of irqs  = " << irq_num;
 
         m_cpu.register_pc_entry_observer(m_rse_accel);
+        accel_reset.register_value_changed_cb([this](const bool& asserted) {
+            if (asserted) {
+                m_rse_accel.reset_runtime_state();
+            }
+        });
         m_router.initiator_socket.bind(m_cpu.m_nvic.socket);
         m_cpu.socket.bind(m_router.target_socket);
     }

@@ -51,14 +51,108 @@ function ap_cpu_reset_bind_targets(count)
     return table.concat(targets, ";")
 end
 
-function ap_system_reset_bind_targets()
+function ap_cold_reset_bind_targets()
     local targets = {
         "&ap_bl2_reset_loader.reset";
+        "&host_ap_bl2_header_sram.reset";
         "&ap_reset_gpio.reset_in";
+        "&host_ap_si_ns_scmi_mhu_pbx.reset";
+        "&host_ap_si_ns_scmi_mhu_mbx.reset";
+        "&host_ap_si_scmi_mhu_pbx.reset";
+        "&host_ap_si_scmi_mhu_mbx.reset";
+        "&host_ap_si_cl1_mhu_pbx.reset";
+        "&host_ap_si_cl1_mhu_mbx.reset";
+        "&host_ap_si_pfdi_monitor_mhu_pbx.reset";
+        "&host_ap_si_pfdi_monitor_mhu_mbx.reset";
+        "&host_ap_rse_mhu_pbx.reset";
+        "&host_ap_rse_mhu_mbx.reset";
     }
 
     if smmu_backend == "systemc-mmu720ae" then
         targets[#targets + 1] = "&ap_smmu_0.reset"
+    end
+
+    return table.concat(targets, ";")
+end
+
+function ap_system_reset_bind_targets()
+    local targets = {
+        "&si_cl0_ap_cluster0_core0_ppu.reset";
+        "&si_cl0_ap_cluster0_core1_ppu.reset";
+        "&si_cl0_ap_cluster0_core2_ppu.reset";
+        "&si_cl0_ap_cluster0_core3_ppu.reset";
+        ap_cold_reset_bind_targets();
+    }
+
+    return table.concat(targets, ";")
+end
+
+function apollo_system_reset_bind_targets()
+    local targets = {
+        ap_system_reset_bind_targets();
+        "&rse_sysctrl.reset";
+        "&rse_watchdog_ns.reset";
+        "&rse_watchdog_s.reset";
+        "&rse_mhu0_sender_s.reset";
+        "&rse_mhu0_receiver_s.reset";
+        "&rse_mhu2_sender_s.reset";
+        "&rse_mhu2_receiver_s.reset";
+        "&host_rse_si_mhu_pbx.reset";
+        "&host_rse_si_mhu_mbx.reset";
+    }
+
+    if rse_local_crypto then
+        targets[#targets + 1] = "&rse_cpu_pass.rse_kmu_regs.reset"
+        targets[#targets + 1] = "&rse_cpu_pass.rse_cc3xx.reset"
+    else
+        targets[#targets + 1] = "&rse_kmu_regs.reset"
+        targets[#targets + 1] = "&rse_cc3xx.reset"
+    end
+
+    targets[#targets + 1] = "&rse_cpu_pass.cpu_0.accel_reset"
+    targets[#targets + 1] = "&rse_cpu_pass.qemu_inst.reset"
+
+    if apollo_live_cl0 then
+        targets[#targets + 1] = "&host_si_cl0_clus_ppu.reset"
+        targets[#targets + 1] = "&host_si_cl0_core0_ppu.reset"
+        targets[#targets + 1] = "&si_cl0_ni710ae_primary_nci.reset"
+        targets[#targets + 1] = "&si_cl0_ni710ae_secondary_nci.reset"
+        targets[#targets + 1] = "&si_cl0_ni710ae_mhu_nci.reset"
+        targets[#targets + 1] = "&si_cl0_qemu_inst.reset"
+        for _, frame in ipairs({
+            "si_cl0_ap_ns_mhu_pbx";
+            "si_cl0_ap_ns_mhu_mbx";
+            "si_cl0_ap_scmi_mhu_pbx";
+            "si_cl0_ap_scmi_mhu_mbx";
+            "si_cl0_ap_pfdi_monitor_mhu_pbx";
+            "si_cl0_ap_pfdi_monitor_mhu_mbx";
+            "si_cl0_rse_mhu_pbx";
+            "si_cl0_rse_mhu_mbx";
+        }) do
+            targets[#targets + 1] = "&"..frame..".reset"
+        end
+    end
+
+    if apollo_live_cl1 then
+        targets[#targets + 1] = "&host_si_cl1_clus_ppu.reset"
+        targets[#targets + 1] = "&si_cl1_cluster_ppu.reset"
+        for cpu=0,3 do
+            targets[#targets + 1] = "&si_cl1_core"..cpu.."_ppu.reset"
+        end
+        targets[#targets + 1] = "&si_cl1_qemu_inst.reset"
+        for _, frame in ipairs({
+            "si_cl1_hipc_mhu_pbx";
+            "si_cl1_hipc_mhu_mbx";
+            "si_cl1_pfdi_mhu_pbx";
+            "si_cl1_pfdi_reply_mhu_mbx";
+        }) do
+            targets[#targets + 1] = "&"..frame..".reset"
+        end
+    end
+
+    if apollo_live_cl0 and apollo_live_cl1 then
+        targets[#targets + 1] = "&si_cl0_pfdi_mhu_pbx.reset"
+        targets[#targets + 1] = "&si_cl0_pfdi_mhu_mbx.reset"
     end
 
     return table.concat(targets, ";")
@@ -376,6 +470,8 @@ RSE_HOST_ACCESS_SIZE = 0x10000000
 RSE_HOST_UART0_BASE_NS = RSE_HOST_ACCESS_BASE_NS + 0x0FF00000
 RSE_HOST_UART0_BASE_S = RSE_HOST_ACCESS_BASE_S + 0x0FF00000
 RSE_NSACFG_BASE_NS = 0x40080000
+RSE_WDOG_NS_CONTROL_BASE = 0x48040000
+RSE_WDOG_NS_REFRESH_BASE = 0x48041000
 RSE_DMA350_BASE_S = 0x50002000
 RSE_SACFG_BASE_S = 0x50080000
 RSE_KMU_BASE_S = 0x5009E000
@@ -421,6 +517,8 @@ RSE_LOCAL_MHU_FRAME_SIZE = 0x00010000
 RSE_LCM_BASE_S = 0x500A0000
 RSE_LCM_SIZE = 0x00011000
 RSE_SYSCTRL_BASE_S = 0x58021000
+RSE_WDOG_S_CONTROL_BASE = 0x58040000
+RSE_WDOG_S_REFRESH_BASE = 0x58041000
 RSE_INTEG_LAYER_BASE_S = 0x58100000
 RSE_MPC_VM0_BASE_S = 0x50083000
 RSE_MPC_VM1_BASE_S = 0x50084000
@@ -499,6 +597,9 @@ AP_CL2_NI710AE_FMU_BASE = AP_FMU_REGION_BASE + 2 * AP_FMU_SUBWINDOW_SIZE
 AP_CL3_NI710AE_FMU_BASE = AP_FMU_REGION_BASE + 3 * AP_FMU_SUBWINDOW_SIZE
 AP_SYS_TIMER_IRQ_S = 48
 AP_SYS_TIMER_IRQ_NS = 49
+AP_SECURE_WDOG_IRQ_WS0 = 47
+AP_NS_WDOG_IRQ_WS0 = 50
+AP_NS_WDOG_IRQ_WS1 = 51
 AP_PRIMARY_UART_IRQ = 52
 AP_SECURE_UART_IRQ = 53
 AP_SI_NS_MHU_PBX_IRQ = 112
@@ -548,6 +649,7 @@ HOST_AP_ATU_PHYS_BASE = 0x20000D0080000
 HOST_SMDEXP2SMD_ATU_PHYS_BASE = 0x20000D0070000
 HOST_CSS_COUNTERS_TIMERS_PHYS_BASE = 0x20000D0100000
 HOST_CSS_COUNTERS_TIMERS_SIZE = 0x00030000
+HOST_CSS_RGM_PHYS_BASE = 0x20000D0010000
 HOST_SYSTOP_PIK_PHYS_BASE = 0x20000D0200000
 HOST_SMD_SHARED_SRAM_PHYS_BASE = 0x2000060000000
 HOST_SMD_SHARED_SRAM_SIZE = 0x00100000

@@ -25,6 +25,7 @@
 #include <module_factory_registery.h>
 #include <ports/initiator-signal-socket.h>
 #include <ports/multiinitiator-signal-socket.h>
+#include <ports/target-signal-socket.h>
 #include <scp/report.h>
 #include <systemc>
 #include <tlm>
@@ -193,7 +194,11 @@ public:
         {
             m_is_mbx = is_mbx;
             m_channel_count = std::max(1u, std::min(channel_count, DBCH_CHANNELS));
+            m_regs.fill(0);
+            m_db_status.fill(0);
             m_db_mask.fill(0);
+            m_db_int_status.fill(0);
+            m_db_int_enable.fill(0);
             m_db_ctrl.fill(1);
 
             store<uint32_t>(CTRL_BLK_ID, is_mbx ? 1 : 0);
@@ -545,6 +550,7 @@ private:
     std::mutex m_trace_lock;
     std::unordered_map<uint64_t, ps_entry> m_ps_store;
     std::array<measurement_entry, TFM_MEASUREMENT_SLOT_COUNT> m_measurements {};
+    bool m_reset_asserted = false;
 
     bool is_mbx() const { return p_frame.get_value() == "mbx"; }
 
@@ -887,28 +893,84 @@ private:
     {
         const auto it = s_mbx_by_pair.find(p_pair.get_value());
         if (it != s_mbx_by_pair.end()) {
-            return it->second;
+            return it->second->m_reset_asserted ? nullptr : it->second;
         }
 
         if (!p_pair.get_value().empty()) {
             return nullptr;
         }
 
-        return s_mbx;
+        return s_mbx != nullptr && !s_mbx->m_reset_asserted ? s_mbx : nullptr;
     }
 
     mhu320ae* paired_pbx() const
     {
         const auto it = s_pbx_by_pair.find(p_pair.get_value());
         if (it != s_pbx_by_pair.end()) {
-            return it->second;
+            return it->second->m_reset_asserted ? nullptr : it->second;
         }
 
         if (!p_pair.get_value().empty()) {
             return nullptr;
         }
 
-        return s_pbx;
+        return s_pbx != nullptr && !s_pbx->m_reset_asserted ? s_pbx : nullptr;
+    }
+
+    void initialize_scmi_shared_memory()
+    {
+        if (is_mbx() || !p_init_shmem.get_value()) {
+            return;
+        }
+
+        for (unsigned int channel = 0;
+             channel < p_scmi_channel_count.get_value(); ++channel) {
+            mem_write32(p_tx_shmem.get_value() +
+                            (p_scmi_channel_stride.get_value() * channel) +
+                            SCMI_CHAN_STATUS,
+                        SCMI_CHAN_FREE);
+        }
+        mem_write32(p_rx_shmem.get_value() + SCMI_CHAN_STATUS,
+                    SCMI_CHAN_FREE);
+    }
+
+    void apply_reset(bool asserted)
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        m_reset_asserted = asserted;
+        if (!asserted) {
+            initialize_scmi_shared_memory();
+            trace_event("reset-deasserted");
+            return;
+        }
+
+        m_frame.configure(is_mbx(), channel_count(), p_feat_spt0.get_value(),
+                          p_feat_spt1.get_value(), p_iidr.get_value(),
+                          p_aidr.get_value());
+        m_pending_power_on_resets.clear();
+        m_pending_power_domain_resets.clear();
+        m_power_domain_reset_events.cancel_all();
+        m_pending_system_power_reset_valid = false;
+        m_system_power_reset_event.cancel();
+        m_rpmsg_ns_pending = false;
+        m_rpmsg_ns_sent = false;
+        m_rpmsg_ns_last_avail_idx = 0;
+        m_rpmsg_ns_poll_count = 0;
+        m_synthetic_postbox_completions.clear();
+        m_synthetic_postbox_completion_event.cancel();
+        for (unsigned int channel = 0; channel < DBCH_CHANNELS; ++channel) {
+            if (m_requester_hold_pending[channel]) {
+                const unsigned int requester = m_requester_hold_requester[channel];
+                if (requester < requester_hold.size() &&
+                    requester_hold[requester].size() != 0) {
+                    requester_hold[requester]->write(false);
+                }
+            }
+            m_requester_hold_pending[channel] = false;
+            m_requester_hold_requester[channel] = 0;
+        }
+        update_combined_irq();
+        trace_event("reset-asserted");
     }
 
     bool decode_dbch_offset(uint64_t offset, unsigned int& channel,
@@ -2822,6 +2884,11 @@ private:
                 m_frame.copy_read(offset, data, len);
             }
         } else if (trans.get_command() == tlm::TLM_WRITE_COMMAND) {
+            if (m_reset_asserted) {
+                trace_event("write-ignored-during-reset");
+                trans.set_response_status(tlm::TLM_OK_RESPONSE);
+                return;
+            }
             if (len == 4) {
                 uint32_t value;
                 std::memcpy(&value, data, sizeof(value));
@@ -2857,16 +2924,7 @@ protected:
 
     void start_of_simulation() override
     {
-        if (!is_mbx() && p_init_shmem.get_value()) {
-            for (unsigned int channel = 0; channel < p_scmi_channel_count.get_value();
-                 ++channel) {
-                mem_write32(p_tx_shmem.get_value() +
-                                (p_scmi_channel_stride.get_value() * channel) +
-                                SCMI_CHAN_STATUS,
-                            SCMI_CHAN_FREE);
-            }
-            mem_write32(p_rx_shmem.get_value() + SCMI_CHAN_STATUS, SCMI_CHAN_FREE);
-        }
+        initialize_scmi_shared_memory();
         if (!is_mbx() && p_assert_power_on_reset.get_value()) {
             schedule_power_on_reset(true);
         }
@@ -2880,6 +2938,7 @@ public:
     InitiatorSignalSocket<bool> irq;
     InitiatorSignalSocket<bool> power_on_reset;
     MultiInitiatorSignalSocket<> system_reset;
+    TargetSignalSocket<bool> reset;
     sc_core::sc_vector<InitiatorSignalSocket<bool>> requester_hold;
     sc_core::sc_vector<InitiatorSignalSocket<bool>> power_domain_reset;
 
@@ -2944,12 +3003,15 @@ public:
         , irq("irq")
         , power_on_reset("power_on_reset")
         , system_reset("system_reset")
+        , reset("reset")
         , requester_hold("requester_hold", p_scmi_channel_count.get_value(),
                          [](const char* n, size_t) { return new InitiatorSignalSocket<bool>(n); })
         , power_domain_reset("power_domain_reset", p_power_domain_reset_count.get_value(),
                              [](const char* n, size_t) { return new InitiatorSignalSocket<bool>(n); })
     {
         m_doorbell_ack_seed_words = load_doorbell_ack_seed_words();
+        reset.register_value_changed_cb(
+            [this](const bool& asserted) { apply_reset(asserted); });
 
         SC_METHOD(emit_combined_irq);
         sensitive << m_irq_update_event;

@@ -15,6 +15,7 @@
 #include <cci_configuration>
 #include <module_factory_registery.h>
 #include <ports/initiator-signal-socket.h>
+#include <ports/target-signal-socket.h>
 #include <runonsysc.h>
 #include <systemc>
 #include <tlm>
@@ -317,6 +318,7 @@ public:
     tlm_utils::simple_target_socket<host_ppu, DEFAULT_TLM_BUSWIDTH> target_socket;
     InitiatorSignalSocket<bool> power_on_reset;
     InitiatorSignalSocket<bool> power_on_load;
+    TargetSignalSocket<bool> reset;
 
     explicit host_ppu(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
@@ -335,11 +337,23 @@ public:
         , target_socket("target_socket")
         , power_on_reset("power_on_reset")
         , power_on_load("power_on_load")
+        , reset("reset")
     {
         reset_registers();
         SC_THREAD(emit_power_on_sequence);
         target_socket.register_b_transport(this, &host_ppu::b_transport);
         target_socket.register_transport_dbg(this, &host_ppu::transport_dbg);
+        reset.register_value_changed_cb([this](const bool& asserted) {
+            if (!asserted) {
+                return;
+            }
+            m_pending_power_transitions.clear();
+            m_power_on_sequence_event.cancel();
+            reset_registers();
+            if (p_assert_power_on_reset.get_value()) {
+                write_power_on_reset(true);
+            }
+        });
     }
 
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)

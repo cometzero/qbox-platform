@@ -236,6 +236,40 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
+    platform.rse_watchdog_ns = {
+        moduletype = "zena_watchdog";
+        clock_frequency = 32000000;
+        control = {
+            address = RSE_WDOG_NS_CONTROL_BASE;
+            size = 0x00001000;
+            bind = "&rse_router.initiator_socket";
+        };
+        refresh = {
+            address = RSE_WDOG_NS_REFRESH_BASE;
+            size = 0x00001000;
+            bind = "&rse_router.initiator_socket";
+        };
+        ws0 = {bind = "&rse_cpu_pass.target_signal_socket_1"};
+        ws1 = {bind = "&rse_cpu_pass.target_signal_socket_0"};
+        log_level = 0;
+    }
+
+    platform.rse_watchdog_s = {
+        moduletype = "zena_watchdog";
+        clock_frequency = 32000000;
+        control = {
+            address = RSE_WDOG_S_CONTROL_BASE;
+            size = 0x00001000;
+            bind = "&rse_router.initiator_socket";
+        };
+        refresh = {
+            address = RSE_WDOG_S_REFRESH_BASE;
+            size = 0x00001000;
+            bind = "&rse_router.initiator_socket";
+        };
+        log_level = 0;
+    }
+
     platform.rse_dma350 = {
         moduletype = "dma350";
         trace = dma350_trace;
@@ -532,6 +566,7 @@ function rse.define(ctx, platform)
             size = 0x00001000;
             bind = "&rse_router.initiator_socket";
         };
+        system_reset = {bind = "&apollo_system_reset_fanout.reset_in"};
         log_level = 0;
     }
 

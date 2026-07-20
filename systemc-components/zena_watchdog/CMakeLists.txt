@@ -1,0 +1,2 @@
+gs_create_dymod(zena_watchdog)
+target_compile_definitions(zena_watchdog PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)

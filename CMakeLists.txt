@@ -134,6 +134,9 @@ if(BUILD_TESTING)
         strata_flash_j3
         zena_fmu
         zena_ssu
+        zena_watchdog
+        zena_reset_ctrl
+        zena_safety_vertical
     )
     set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS "")
     foreach(component_test IN LISTS QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS)
@@ -201,6 +204,8 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     gic720ae_messreg
     zena_fmu
     zena_ssu
+    zena_watchdog
+    zena_reset_ctrl
     host_cmn_cyprus
     host_gtimer
     host_ni710ae_nci

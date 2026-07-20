@@ -2218,6 +2218,17 @@ public:
             }
         }
         load_config();
+        reset_runtime_state();
+    }
+
+    void reset_runtime_state()
+    {
+        m_lms_accel_done.store(false, std::memory_order_relaxed);
+        for (auto& decrypted : m_bl2_load_accel_image_decrypted) {
+            decrypted.store(false, std::memory_order_relaxed);
+        }
+        std::lock_guard<std::mutex> lock(m_bl2_boot_enc_lock);
+        m_bl2_boot_enc_keys.clear();
     }
 
     bool enabled() const override

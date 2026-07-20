@@ -12,6 +12,8 @@
 
 #include <cci_configuration>
 #include <module_factory_registery.h>
+#include <ports/multiinitiator-signal-socket.h>
+#include <ports/target-signal-socket.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
@@ -36,9 +38,12 @@ class rse_sysctrl : public sc_core::sc_module
     static constexpr uint32_t DMA_BOOT_EN = 0x254;
     static constexpr uint32_t DMA_BOOT_ADDR = 0x258;
     static constexpr uint32_t LCM_DCU_FORCE_DIS = 0x25c;
+    static constexpr uint32_t SWRESETREQ = 1u << 5;
+    static constexpr uint32_t SWSYN_MASK = 0xff000000u;
 
     std::array<uint8_t, REG_BYTES> m_regs{};
     unsigned int m_trace_count = 0;
+    uint32_t m_pending_reset_syndrome = 0;
 
     static bool is_supported_length(unsigned int len)
     {
@@ -80,6 +85,10 @@ class rse_sysctrl : public sc_core::sc_module
             break;
         case SWRESET:
             store32(SWRESET, 0x00000000);
+            if ((value & SWRESETREQ) != 0) {
+                m_pending_reset_syndrome = SWRESETREQ | (value & SWSYN_MASK);
+                system_reset.async_write_vector({ true, false });
+            }
             break;
         case RESET_SYNDROME:
         case RESET_MASK:
@@ -161,6 +170,8 @@ public:
     cci::cci_param<uint32_t> p_dma_boot_en;
     cci::cci_param<uint32_t> p_dma_boot_addr;
     tlm_utils::simple_target_socket<rse_sysctrl, DEFAULT_TLM_BUSWIDTH> target_socket;
+    MultiInitiatorSignalSocket<> system_reset;
+    TargetSignalSocket<bool> reset;
 
     explicit rse_sysctrl(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
@@ -171,10 +182,23 @@ public:
         , p_dma_boot_en("dma_boot_en", 0x00000001)
         , p_dma_boot_addr("dma_boot_addr", 0x00000000)
         , target_socket("target_socket")
+        , system_reset("system_reset")
+        , reset("reset")
     {
         reset_registers();
         target_socket.register_b_transport(this, &rse_sysctrl::b_transport);
         target_socket.register_transport_dbg(this, &rse_sysctrl::transport_dbg);
+        reset.register_value_changed_cb([this](bool asserted) {
+            if (!asserted) {
+                return;
+            }
+            const uint32_t syndrome = m_pending_reset_syndrome;
+            reset_registers();
+            if (syndrome != 0) {
+                store32(RESET_SYNDROME, syndrome);
+                m_pending_reset_syndrome = 0;
+            }
+        });
     }
 
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)

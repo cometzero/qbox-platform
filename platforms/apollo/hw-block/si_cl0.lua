@@ -14,6 +14,7 @@ local SI_CL0_RSE_MHU_INTID = 105
 local SI_CL0_CL1_MHU_INTID = 107
 local SI_CL0_FMU_CRITICAL_INTID = 128
 local SI_CL0_FMU_NON_CRITICAL_INTID = 129
+local SI_CL0_WDOG_WS0_INTID = 37
 
 function si_cl0.define(ctx, platform)
     platform.host_si_cl0_sram = {
@@ -417,6 +418,8 @@ function si_cl0.enable(ctx, platform)
     local SI_CL0_TIMER_CNTCTL_SIZE = 0x00010000
     local SI_CL0_TIMER_CNT_BASE = 0x2a720000
     local SI_CL0_TIMER_CNT_SIZE = 0x00010000
+    local SI_CL0_WDOG_CONTROL_BASE = 0x2a700000
+    local SI_CL0_WDOG_REFRESH_BASE = 0x2a710000
     local SI_CL0_SSU_BASE = 0x2a500000
     local SI_CL0_SSU_SIZE = 0x00001000
     local SI_CL0_FMU_BASE = 0x2a510000
@@ -642,6 +645,27 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
+    platform.si_cl0_watchdog = {
+        moduletype = "zena_watchdog";
+        clock_frequency = 125000000;
+        control = {
+            address = SI_CL0_WDOG_CONTROL_BASE;
+            size = 0x00010000;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        };
+        refresh = {
+            address = SI_CL0_WDOG_REFRESH_BASE;
+            size = 0x00010000;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        };
+        ws0 = {bind = "&si_cl0_gic.spi_in_"..
+            (SI_CL0_WDOG_WS0_INTID - GIC_SPI_BASE_INTID)};
+        ws1 = {bind = "&host_reset_ctrl.si_watchdog_reset"};
+        log_level = 0;
+    }
+
     platform.si_cl0_ssu = {
         moduletype = "zena_ssu";
         target_socket = {
@@ -650,6 +674,7 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
         };
+        safety_status = {bind = "&host_reset_ctrl.safety_fault_reset"};
         log_level = 0;
     }
 
@@ -657,6 +682,11 @@ function si_cl0.enable(ctx, platform)
         moduletype = "zena_fmu";
         bank_count = 5;
         record_count = 384;
+        fault_input_enabled = true;
+        fault_input_record = 0;
+        fault_source = "si_cl0_ni710ae_primary_nci.apu_fault";
+        fault_id = "ni710ae-apu-permission-denied";
+        fault_sink = "si_cl0_fmu.record0";
         target_socket = {
             address = SI_CL0_FMU_BASE;
             size = SI_CL0_FMU_SIZE;
@@ -686,6 +716,7 @@ function si_cl0.enable(ctx, platform)
             priority = 0;
         };
         initiator_socket = {bind = "&si_cl0_router.target_socket"};
+        apu_fault = {bind = "&si_cl0_fmu.fault_in"};
         log_level = 0;
     }
 
@@ -939,7 +970,7 @@ function si_cl0.enable(ctx, platform)
                 power_on_load_to_reset_delay_ns = 0;
                 power_on_load = enable_ap_cpus and cluster == 0 and
                     core == 0 and
-                    {bind = "&ap_cold_reset_fanout.reset_in"} or nil;
+                    {bind = "&host_reset_ctrl.ap_power_reset"} or nil;
                 power_on_reset = enable_ap_cpus and cluster == 0 and {
                     bind = "&ap_cpu_"..core..".reset";
                 } or nil;

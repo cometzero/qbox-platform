@@ -260,8 +260,8 @@ platform = {
 
     smmu_0 = {
         moduletype = "smmuv3";
-        pamax = 48;
-        sidsize = 8;
+        pamax = 52;
+        sidsize = 32;
         ato = false;
         num_tbu = 1;
         iidr = 0x720AE000;

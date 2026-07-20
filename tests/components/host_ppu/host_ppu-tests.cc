@@ -45,6 +45,20 @@ public:
     }
 };
 
+class SignalSource : public sc_core::sc_module
+{
+public:
+    InitiatorSignalSocket<bool> signal;
+
+    explicit SignalSource(sc_core::sc_module_name name)
+        : sc_core::sc_module(name)
+        , signal("signal")
+    {
+    }
+
+    void write(bool value) { signal->write(value); }
+};
+
 class TlmInitiator : public sc_core::sc_module
 {
 public:
@@ -174,6 +188,7 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     SignalSink load_sink("host_ppu_load_sink");
     SignalSink zero_reset_sink("host_ppu_zero_reset_sink");
     SignalSink zero_load_sink("host_ppu_zero_load_sink");
+    SignalSource external_reset("host_ppu_external_reset");
 
     initiator.socket.bind(dut.target_socket);
     zero_initiator.socket.bind(zero_delay_dut.target_socket);
@@ -181,6 +196,7 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     dut.power_on_load.bind(load_sink.signal);
     zero_delay_dut.power_on_reset.bind(zero_reset_sink.signal);
     zero_delay_dut.power_on_load.bind(zero_load_sink.signal);
+    external_reset.signal.bind(dut.reset);
 
     sc_core::sc_start(sc_core::SC_ZERO_TIME);
     ASSERT_EQ(reset_sink.values.size(), 1u);
@@ -237,6 +253,17 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     EXPECT_FALSE(zero_reset_sink.values.back());
     EXPECT_LT(zero_load_sink.deltas[0], zero_load_sink.deltas[1]);
     EXPECT_LT(zero_load_sink.deltas[1], zero_reset_sink.deltas.back());
+
+    write32(dut, PPU_PWPR, 0x8u);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 0xfu, 0x8u);
+    EXPECT_FALSE(reset_sink.values.back());
+
+    external_reset.write(true);
+    sc_core::sc_start(sc_core::SC_ZERO_TIME);
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 0xfu, 0x0u);
+    EXPECT_TRUE(reset_sink.values.back());
+    external_reset.write(false);
 }
 
 int sc_main(int argc, char* argv[])

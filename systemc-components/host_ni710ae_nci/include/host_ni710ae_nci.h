@@ -14,6 +14,9 @@
 
 #include <cci_configuration>
 #include <module_factory_registery.h>
+#include <ports/initiator-signal-socket.h>
+#include <ports/target-signal-socket.h>
+#include <runonsysc.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
@@ -85,6 +88,7 @@ class host_ni710ae_nci : public sc_core::sc_module
     uint32_t m_last_denied_requester = 0;
     bool m_dmi_invalidation_pending = false;
     sc_core::sc_event m_dmi_invalidation_event;
+    gs::runonsysc m_fault_run_on_sysc;
 
     static bool is_supported_length(unsigned int len)
     {
@@ -478,6 +482,12 @@ class host_ni710ae_nci : public sc_core::sc_module
     {
         record_denied(trans);
         trace_denied(trans);
+        m_fault_run_on_sysc.run_on_sysc([this] {
+            if (apu_fault.size() != 0) {
+                apu_fault->write(true);
+                apu_fault->write(false);
+            }
+        });
         trans.set_dmi_allowed(false);
         const uint32_t control = load32(protected_apu_base() + APU_CTLR);
         trans.set_response_status((control & APU_CTLR_SYNC_ERROR) != 0 ?
@@ -558,9 +568,19 @@ public:
     tlm_utils::simple_initiator_socket_b<
         host_ni710ae_nci, DEFAULT_TLM_BUSWIDTH, tlm::tlm_base_protocol_types,
         sc_core::SC_ZERO_OR_MORE_BOUND> initiator_socket;
+    InitiatorSignalSocket<bool> apu_fault;
+    TargetSignalSocket<bool> reset;
+
+    void reset_model()
+    {
+        reset_registers();
+        if (sc_core::sc_is_running())
+            schedule_protected_dmi_invalidation();
+    }
 
     explicit host_ni710ae_nci(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
+        , m_fault_run_on_sysc("fault_run_on_sysc")
         , p_topology("topology", TOPOLOGY_PRIMARY_MID)
         , p_apu_iidr("apu_iidr", 0)
         , p_protected_apu_index("protected_apu_index", 0)
@@ -571,6 +591,8 @@ public:
         , target_socket("target_socket")
         , protected_target_socket("protected_target_socket")
         , initiator_socket("initiator_socket")
+        , apu_fault("apu_fault")
+        , reset("reset")
     {
         reset_registers();
         target_socket.register_b_transport(this,
@@ -588,6 +610,10 @@ public:
         SC_METHOD(invalidate_protected_dmi);
         sensitive << m_dmi_invalidation_event;
         dont_initialize();
+        reset.register_value_changed_cb([this](const bool& asserted) {
+            if (asserted)
+                reset_model();
+        });
     }
 
     void before_end_of_elaboration() override

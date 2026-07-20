@@ -213,6 +213,20 @@ public:
     }
 };
 
+class SignalSource : public sc_core::sc_module
+{
+public:
+    InitiatorSignalSocket<bool> signal;
+
+    explicit SignalSource(sc_core::sc_module_name name)
+        : sc_core::sc_module(name)
+        , signal("signal")
+    {
+    }
+
+    void write(bool value) { signal->write(value); }
+};
+
 class TestableMhu320ae : public mhu320ae
 {
 public:
@@ -696,6 +710,22 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
                                 cci::cci_value(uint64_t(0)));
     broker.set_preset_cci_value("ordered_reset_pbx.power_domain_reset_pulse_on_power_on",
                                 cci::cci_value(true));
+    broker.set_preset_cci_value("reset_test_pbx.pair",
+                                cci::cci_value(std::string("reset_test")));
+    broker.set_preset_cci_value("reset_test_pbx.frame",
+                                cci::cci_value(std::string("pbx")));
+    broker.set_preset_cci_value("reset_test_pbx.protocol",
+                                cci::cci_value(std::string("doorbell-bridge")));
+    broker.set_preset_cci_value("reset_test_pbx.requester_hold_enable",
+                                cci::cci_value(true));
+    broker.set_preset_cci_value("reset_test_pbx.tx_shmem",
+                                cci::cci_value(SHMEM_BASE));
+    broker.set_preset_cci_value("reset_test_mbx.pair",
+                                cci::cci_value(std::string("reset_test")));
+    broker.set_preset_cci_value("reset_test_mbx.frame",
+                                cci::cci_value(std::string("mbx")));
+    broker.set_preset_cci_value("reset_test_mbx.protocol",
+                                cci::cci_value(std::string("doorbell-bridge")));
 
     TestMemory shmem("si_scmi_shmem");
     TestMemory unused("unused_shmem");
@@ -716,6 +746,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     TestMemory ps_shmem("ps_shmem");
     TestMemory ps_mbx_unused("ps_mbx_unused_shmem");
     TestMemory ordered_reset_unused("ordered_reset_unused_shmem");
+    TestMemory reset_test_pbx_memory("reset_test_pbx_memory");
+    TestMemory reset_test_mbx_memory("reset_test_mbx_memory");
     TestInitiator pbx_bus("pbx_bus");
     TestInitiator mbx_bus("mbx_bus");
     TestInitiator ap_pbx_bus("ap_pbx_bus");
@@ -735,6 +767,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     TestInitiator ps_pbx_bus("ps_pbx_bus");
     TestInitiator ps_mbx_bus("ps_mbx_bus");
     TestInitiator ordered_reset_bus("ordered_reset_bus");
+    TestInitiator reset_test_pbx_bus("reset_test_pbx_bus");
+    TestInitiator reset_test_mbx_bus("reset_test_mbx_bus");
     TestableMhu320ae pbx("rse_si_pbx");
     mhu320ae mbx("rse_si_mbx");
     mhu320ae ap_pbx("ap_rse_pbx");
@@ -754,6 +788,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     mhu320ae ps_pbx("ps_pbx");
     mhu320ae ps_mbx("ps_mbx");
     TestableMhu320ae ordered_reset_pbx("ordered_reset_pbx");
+    mhu320ae reset_test_pbx("reset_test_pbx");
+    mhu320ae reset_test_mbx("reset_test_mbx");
     ResetSink ap_reset("ap_reset");
     ResetSink system_reset("system_reset");
     ResetSink ap_domain1_reset("ap_domain1_reset");
@@ -761,6 +797,9 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     ResetSink ap_domain3_reset("ap_domain3_reset");
     ResetSink deferred_domain1_reset("deferred_domain1_reset");
     ResetSink bridge_rse_mbx_irq("bridge_rse_mbx_irq");
+    SignalSource reset_test_pbx_reset("reset_test_pbx_reset");
+    SignalSource reset_test_mbx_reset("reset_test_mbx_reset");
+    ResetSink reset_test_requester_hold("reset_test_requester_hold");
     ResetSink bridge_ap_requester0_hold("bridge_ap_requester0_hold");
     ResetSink bridge_ap_requester1_hold("bridge_ap_requester1_hold");
     ResetSink bridge_ap_requester2_hold("bridge_ap_requester2_hold");
@@ -803,6 +842,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     ps_pbx_bus.initiator_socket.bind(ps_pbx.target_socket);
     ps_mbx_bus.initiator_socket.bind(ps_mbx.target_socket);
     ordered_reset_bus.initiator_socket.bind(ordered_reset_pbx.target_socket);
+    reset_test_pbx_bus.initiator_socket.bind(reset_test_pbx.target_socket);
+    reset_test_mbx_bus.initiator_socket.bind(reset_test_mbx.target_socket);
     pbx.initiator_socket.bind(shmem.target_socket);
     mbx.initiator_socket.bind(unused.target_socket);
     ap_pbx.initiator_socket.bind(ap_pbx_unused.target_socket);
@@ -822,6 +863,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     ps_pbx.initiator_socket.bind(ps_shmem.target_socket);
     ps_mbx.initiator_socket.bind(ps_mbx_unused.target_socket);
     ordered_reset_pbx.initiator_socket.bind(ordered_reset_unused.target_socket);
+    reset_test_pbx.initiator_socket.bind(reset_test_pbx_memory.target_socket);
+    reset_test_mbx.initiator_socket.bind(reset_test_mbx_memory.target_socket);
     pbx.power_on_reset.bind(ap_reset.reset);
     pbx.system_reset.bind(system_reset.reset);
     pbx.power_domain_reset[1].bind(ap_domain1_reset.reset);
@@ -829,6 +872,9 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     pbx.power_domain_reset[3].bind(ap_domain3_reset.reset);
     deferred_pbx.power_domain_reset[1].bind(deferred_domain1_reset.reset);
     bridge_rse_mbx.irq.bind(bridge_rse_mbx_irq.reset);
+    reset_test_pbx_reset.signal.bind(reset_test_pbx.reset);
+    reset_test_mbx_reset.signal.bind(reset_test_mbx.reset);
+    reset_test_pbx.requester_hold[0].bind(reset_test_requester_hold.reset);
     bridge_ap_pbx.requester_hold[0].bind(bridge_ap_requester0_hold.reset);
     bridge_ap_pbx.requester_hold[1].bind(bridge_ap_requester1_hold.reset);
     bridge_ap_pbx.requester_hold[2].bind(bridge_ap_requester2_hold.reset);
@@ -1559,6 +1605,30 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(si_cl1_pbx_unused.read32(0x138), 56u);
     write32(si_cl1_mbx_bus, DBCW_CLR, 0x5);
     EXPECT_EQ(read32(si_cl1_mbx_bus, DBCW_ST), 0u);
+
+    reset_test_mbx_reset.write(true);
+    reset_test_pbx_memory.write32(SCMI_STATUS, 0u);
+    write32_as_requester(reset_test_pbx_bus, DBCW_SET, 0x1u, 0);
+    EXPECT_EQ(read32(reset_test_pbx_bus, DBCW_ST), 0x1u);
+    EXPECT_EQ(read32(reset_test_mbx_bus, DBCW_ST), 0u);
+    EXPECT_TRUE(reset_test_requester_hold.reset.read());
+
+    reset_test_mbx_reset.write(false);
+    write32_as_requester(reset_test_pbx_bus, DBCW_SET, 0x1u, 0);
+    EXPECT_EQ(read32(reset_test_mbx_bus, DBCW_ST), 0x1u);
+    write32(reset_test_mbx_bus, DBCW_CLR, 0x1u);
+    reset_test_pbx_memory.write32(SCMI_STATUS, 1u);
+    sc_core::sc_start(sc_core::sc_time(20, sc_core::SC_US));
+    EXPECT_EQ(read32(reset_test_pbx_bus, DBCW_ST), 0u);
+    EXPECT_FALSE(reset_test_requester_hold.reset.read());
+
+    reset_test_pbx_memory.write32(SCMI_STATUS, 0u);
+    write32_as_requester(reset_test_pbx_bus, DBCW_SET, 0x2u, 0);
+    EXPECT_EQ(read32(reset_test_pbx_bus, DBCW_ST), 0x2u);
+    reset_test_pbx_reset.write(true);
+    EXPECT_EQ(read32(reset_test_pbx_bus, DBCW_ST), 0u);
+    EXPECT_FALSE(reset_test_requester_hold.reset.read());
+    reset_test_pbx_reset.write(false);
     std::remove(bridge_trace_path.c_str());
 }
 

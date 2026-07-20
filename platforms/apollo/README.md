@@ -86,6 +86,29 @@ path similarly bounds an invalid descriptor poll and permits a corrected
 descriptor on the next doorbell. PSCI and FF-A error semantics remain owned by
 TF-A and OP-TEE rather than being synthesized by the platform model.
 
+AP cold reset now resets every AP-owned MHU PBX/MBX frame while preserving the
+SMD-owned shared SRAM. Frame reset clears doorbell, interrupt, pending
+name-service, and requester-hold state. A reset peer is treated as offline, so
+the sender retains the pending doorbell without receiving a synthetic
+completion; after reset deassertion, a normal retry reaches the peer and frees
+the requester. This models reset cancellation and recovery without inventing
+SCMI, PFDI, or RPMsg replies while the real firmware peer is unavailable.
+
+AP cold reset and Apollo full-system reset have distinct target lists. The
+core0 PPU power-on load pulse drives the AP cold-reset path and must not reset
+the PPU that generated it. A full-system reset additionally resets the four
+active AP core PPUs, RSE/SI QEMU instances, RSE accelerator and local crypto,
+SI0 NI-710AE policy, and the live-domain MHU frames. SI0 can then sequence the
+AP PPUs back on only after its second initialization, preventing AP measured
+boot traffic from being posted before the RSE receiver is ready.
+
+The current Yocto FWU reset qualification reaches a second RSE/SI/TF-A/U-Boot
+and Linux Regular State. Capsule A/B acceptance is still open: a copied
+`EFI/UpdateCapsule/fw.cap` is present in the per-run ESP, but U-Boot does not
+yet emit `FWU: Updating`, `FIP_B`, or Trial State after that reset. Do not use
+the second Regular State result as evidence of capsule application or rollback
+persistence.
+
 The full-system AP, RSE, and both Safety Islands use multi-thread TCG so each
 vCPU has an independent wake condition. QBox completes managed start-in-reset
 release on the target vCPU and does not start a reset-held CPU's quantum

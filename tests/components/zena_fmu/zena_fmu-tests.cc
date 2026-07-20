@@ -19,6 +19,7 @@
 #include <tlm_sockets_buswidth.h>
 #include <tlm_utils/simple_initiator_socket.h>
 #include <zena_fmu.h>
+#include <zena_reset_ctrl.h>
 #include <zena_ssu.h>
 
 namespace {
@@ -165,6 +166,22 @@ uint32_t ssu_access32(zena_ssu& dut, uint64_t offset,
     return data;
 }
 
+uint32_t reset_access32(zena_reset_ctrl& dut, uint64_t offset,
+                        tlm::tlm_command command, uint32_t value = 0)
+{
+    tlm::tlm_generic_payload trans;
+    auto data = value;
+    trans.set_address(offset);
+    trans.set_command(command);
+    trans.set_data_length(sizeof(data));
+    trans.set_streaming_width(sizeof(data));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&data));
+    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+    dut.rgm_b_transport(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    return data;
+}
+
 uint32_t ssu_read32(zena_ssu& dut, uint64_t offset)
 {
     return ssu_access32(dut, offset, tlm::TLM_READ_COMMAND);
@@ -266,10 +283,13 @@ TEST(ZenaFmuTest, FaultSignalsFollowCriticalAndNonCriticalStatus)
     zena_fmu external_fmu("fmu_external");
     zena_fmu disabled_fmu("fmu_disabled");
     zena_ssu ssu("ssu_external");
+    zena_reset_ctrl reset_ctrl("reset_ctrl_external");
     TlmBinder tlm_binder("tlm_binder");
     TlmBinder external_tlm_binder("external_tlm_binder");
     TlmBinder disabled_tlm_binder("disabled_tlm_binder");
     TlmBinder ssu_tlm_binder("ssu_tlm_binder");
+    TlmBinder reset_rgm_tlm_binder("reset_rgm_tlm_binder");
+    TlmBinder reset_pik_tlm_binder("reset_pik_tlm_binder");
     FaultSource external_source("external_source");
     FaultSource disabled_source("disabled_source");
     SignalSink critical("critical_sink");
@@ -282,6 +302,8 @@ TEST(ZenaFmuTest, FaultSignalsFollowCriticalAndNonCriticalStatus)
     external_tlm_binder.socket.bind(external_fmu.target_socket);
     disabled_tlm_binder.socket.bind(disabled_fmu.target_socket);
     ssu_tlm_binder.socket.bind(ssu.target_socket);
+    reset_rgm_tlm_binder.socket.bind(reset_ctrl.rgm);
+    reset_pik_tlm_binder.socket.bind(reset_ctrl.pik);
     dut.critical_irq.bind(critical.signal);
     dut.non_critical_irq.bind(non_critical.signal);
     external_source.signal.bind(external_fmu.fault_in);
@@ -289,11 +311,14 @@ TEST(ZenaFmuTest, FaultSignalsFollowCriticalAndNonCriticalStatus)
     external_fmu.critical_ssu.bind(ssu.critical_in);
     disabled_source.signal.bind(disabled_fmu.fault_in);
     disabled_fmu.critical_irq.bind(disabled_critical.signal);
-    ssu.safety_status.bind(safety.signal);
+    ssu.safety_status.bind(reset_ctrl.safety_fault_reset);
+    reset_ctrl.ap_reset.bind(safety.signal);
     dut.before_end_of_elaboration();
     external_fmu.before_end_of_elaboration();
     disabled_fmu.before_end_of_elaboration();
     ssu.before_end_of_elaboration();
+    (void)reset_access32(reset_ctrl, 0x030, tlm::TLM_WRITE_COMMAND,
+                         1u << 24);
     sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
 
     write32_keyed(dut, impdef_offset(0), IMPDEF_IE);
@@ -327,6 +352,9 @@ TEST(ZenaFmuTest, FaultSignalsFollowCriticalAndNonCriticalStatus)
     EXPECT_EQ(ssu_read32(ssu, SSU_SYS_STATUS), SSU_STATUS_ERRC);
     ASSERT_FALSE(safety.observed.empty());
     EXPECT_TRUE(safety.observed.back());
+    EXPECT_NE(reset_access32(reset_ctrl, 0x020, tlm::TLM_READ_COMMAND) &
+                  (1u << 24),
+              0u);
 
     EXPECT_EQ(read32(disabled_fmu, record_offset(0, ERR_STATUS)), 0u);
     EXPECT_TRUE(disabled_critical.observed.empty());

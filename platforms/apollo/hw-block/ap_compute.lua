@@ -54,8 +54,22 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_cold_reset_fanout = enable_ap_cpus and {
         moduletype = "reset_fanout";
-        reset_out = {bind = ap_system_reset_bind_targets()};
+        reset_out = {bind = ap_cold_reset_bind_targets()};
         log_level = 0;
+    } or nil
+
+    platform.apollo_system_reset_fanout = enable_ap_cpus and {
+        moduletype = "reset_fanout";
+        reset_out = {bind = apollo_system_reset_bind_targets()};
+        log_level = 0;
+    } or nil
+
+    platform.ap_ns_watchdog_ws1_fanout = enable_ap_cpus and {
+        moduletype = "signal_fanout";
+        signal_out = {
+            bind = "&ap_gic.spi_in_"..AP_NS_WDOG_IRQ_WS1..
+                ";&host_reset_ctrl.ap_ns_watchdog_reset";
+        };
     } or nil
 
     -- AP CPU backend and PCIe root complex
@@ -374,21 +388,20 @@ function ap_compute.define(ctx, platform)
         } or nil
 
     platform.ap_watchdog_0 = enable_ap_cpus and {
-        moduletype = "sbsa_gwdt";
-        args = {"&platform.ap_qemu_inst"};
-        refresh_mem = {
+        moduletype = "zena_watchdog";
+        clock_frequency = 125000000;
+        control = {
             address = 0x1A420000;
             size = 0x00010000;
             bind = "&system_router.initiator_socket";
-            mirror_4k_aperture = true;
         };
-        control_mem = {
+        refresh = {
             address = 0x1A430000;
             size = 0x00010000;
             bind = "&system_router.initiator_socket";
-            mirror_4k_aperture = true;
         };
-        irq_out = {bind = "&ap_gic.spi_in_50"};
+        ws0 = {bind = "&ap_gic.spi_in_"..AP_NS_WDOG_IRQ_WS0};
+        ws1 = {bind = "&ap_ns_watchdog_ws1_fanout.signal_in"};
     } or nil
 
     platform.ap_secure_console_file = enable_ap_cpus and {
@@ -460,29 +473,21 @@ function ap_compute.define(ctx, platform)
         };
     } or nil
 
-    -- RD-Aspen AP BL2 refreshes the secure SBSA watchdog in panic/error paths.
-    -- Keep the window mapped so watchdog access does not hide the original
-    -- secure-world failure while a fuller watchdog model is still pending.
-
     platform.ap_secure_wdog = enable_ap_cpus and {
-        moduletype = "gs_memory";
-        target_socket = {
+        moduletype = "zena_watchdog";
+        clock_frequency = 125000000;
+        control = {
             address = AP_SECURE_WDOG_BASE;
             size = AP_SECURE_WDOG_SIZE;
             bind = "&system_router.initiator_socket";
         };
-        init_mem = true;
-        log_level = 0;
-    } or nil
-
-    platform.ap_secure_wdog_refresh = enable_ap_cpus and {
-        moduletype = "gs_memory";
-        target_socket = {
+        refresh = {
             address = AP_SECURE_WDOG_REFRESH_BASE;
             size = AP_SECURE_WDOG_SIZE;
             bind = "&system_router.initiator_socket";
         };
-        init_mem = true;
+        ws0 = {bind = "&ap_gic.spi_in_"..AP_SECURE_WDOG_IRQ_WS0};
+        ws1 = {bind = "&host_reset_ctrl.ap_s_watchdog_reset"};
         log_level = 0;
     } or nil
 
@@ -785,13 +790,13 @@ function ap_compute.enable_ap_router(ctx, platform)
 
     -- RoS and AP peripherals
     ctx.ros.bind_ap_view_targets(platform, bind_ap_target)
-    bind_ap_socket(platform.ap_watchdog_0, "refresh_mem")
-    bind_ap_socket(platform.ap_watchdog_0, "control_mem")
+    bind_ap_socket(platform.ap_watchdog_0, "control")
+    bind_ap_socket(platform.ap_watchdog_0, "refresh")
     bind_ap_socket(platform.ap_secure_uart, "target_socket")
     bind_ap_socket(platform.ap_primary_uart, "target_socket")
     bind_ap_socket(platform.ap_timer_mem, "mem")
-    bind_ap_socket(platform.ap_secure_wdog, "target_socket")
-    bind_ap_socket(platform.ap_secure_wdog_refresh, "target_socket")
+    bind_ap_socket(platform.ap_secure_wdog, "control")
+    bind_ap_socket(platform.ap_secure_wdog, "refresh")
     bind_ap_socket(platform.ap_sid, "target_socket")
     bind_ap_socket(platform.ap_rgic2lgic_messreg, "target_socket")
     bind_ap_socket(platform.ap_cl0_ni710ae_fmu, "target_socket")

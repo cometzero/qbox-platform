@@ -5,7 +5,12 @@ return {
         { name = "ap_timer_virt"; source = "ap_cpu.generic_timer_virt"; sink = "ap_gic.ppi"; controller = "ap_gic"; kind = "PPI"; id = 27; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_refclk_secure"; source = "ap_timer_mem.frame1"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 48; owner = "smd"; scope = "zena_css_architecture" };
         { name = "ap_refclk_non_secure"; source = "ap_timer_mem.frame0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 49; owner = "smd"; scope = "zena_css_architecture" };
-        { name = "ap_watchdog"; source = "ap_watchdog_0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 50; owner = "ap"; scope = "rd_aspen_cfg2" };
+        { name = "ap_watchdog_ws0"; source = "ap_watchdog_0.ws0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 50; owner = "ap"; scope = "zena_css_architecture" };
+        { name = "ap_watchdog_ws1"; source = "ap_watchdog_0.ws1"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 51; owner = "smd"; scope = "zena_css_architecture" };
+        { name = "ap_secure_watchdog_ws0"; source = "ap_secure_wdog.ws0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 47; owner = "smd"; scope = "zena_css_architecture" };
+        { name = "si_cl0_watchdog_ws0"; source = "si_cl0_watchdog.ws0"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 37; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "rse_watchdog_ns_ws0"; source = "rse_watchdog_ns.ws0"; sink = "rse_nvic"; controller = "rse_nvic"; kind = "IRQ"; id = 1; owner = "rse"; scope = "zena_css_architecture" };
+        { name = "rse_watchdog_ns_ws1"; source = "rse_watchdog_ns.ws1"; sink = "rse_nvic"; controller = "rse_nvic"; kind = "IRQ"; id = 0; owner = "rse"; scope = "zena_css_architecture" };
         { name = "ap_primary_uart"; source = "ap_primary_uart"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 52; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_secure_uart"; source = "ap_secure_uart"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 53; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_smmu_event"; source = "ap_smmu_0.irq_eventq"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 65; owner = "ap"; scope = "zena_css_architecture" };
@@ -53,6 +58,11 @@ return {
         affinity_cpu = 0;
     };
     reset_routes = {
+        { name = "ap_watchdog_to_css_rgm"; source = "ap_watchdog_0.ws1"; sink = "host_reset_ctrl.ap_ns_watchdog_reset"; owner = "smd"; order = 20; scope = "zena_css_architecture" };
+        { name = "ap_secure_watchdog_to_css_rgm"; source = "ap_secure_wdog.ws1"; sink = "host_reset_ctrl.ap_s_watchdog_reset"; owner = "smd"; order = 20; scope = "zena_css_architecture" };
+        { name = "css_rgm_to_ap_cold_reset"; source = "host_reset_ctrl.ap_reset"; sink = "ap_cold_reset_fanout.reset_in"; owner = "smd"; order = 30; scope = "zena_css_architecture" };
+        { name = "rse_swreset_to_apollo_system_reset"; source = "rse_sysctrl.system_reset"; sink = "apollo_system_reset_fanout.reset_in"; owner = "rse"; order = 30; scope = "zena_css_architecture" };
+        { name = "si_cl0_watchdog_to_css_rgm"; source = "si_cl0_watchdog.ws1"; sink = "host_reset_ctrl.si_watchdog_reset"; owner = "smd"; order = 20; scope = "zena_css_architecture" };
         { name = "rse_to_ap_primary_reset"; source = "rse_ap_power_request"; sink = "ap_reset_gpio"; owner = "rse"; order = 40; scope = "zena_css_architecture" };
         { name = "si_cl0_to_ap_secondary_reset"; source = "si_cl0_ap_core_ppu.power_on_reset"; sink = "ap_cpu.reset"; owner = "si_cl0"; order = 50; scope = "zena_css_architecture" };
         { name = "qbox_service_model_to_ap_secondary_reset"; source = "host_ap_si_scmi_mhu_pbx.power_domain_reset"; sink = "ap_cpu.reset"; owner = "qbox_service_model"; order = 50; scope = "qbox_compatibility" };
@@ -60,9 +70,10 @@ return {
         { name = "si_cl1_cluster_reset"; source = "host_si_cl1_clus_ppu"; sink = "si_cl1_cpu.reset"; owner = "si_cl1"; order = 30; scope = "fvp_cfg2_extension" };
     };
     fault_routes = {
+        { name = "si_ni710_apu_to_root_fmu"; source = "si_cl0_ni710ae_primary_nci.apu_fault"; sink = "si_cl0_fmu.record0"; result = "critical_record_and_irq"; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "ap_smmu_event_to_test_fmu_observer"; source = "ap_smmu_0.irq_eventq"; sink = "ap_smmu_fault_observer.record1"; result = "record_and_json_event"; owner = "qbox_test_profile"; enabled_by = "QBOX_APOLLO_FAULT_EVENT_TEST"; scope = "qbox_test_profile" };
         { name = "si_fmu_critical_to_ssu"; source = "si_cl0_fmu.critical"; sink = "si_cl0_ssu"; result = "escalate"; owner = "si_cl0"; scope = "zena_css_architecture" };
-        { name = "si_ssu_to_esm"; source = "si_cl0_ssu"; sink = "external_esm"; result = "status_and_reset_policy"; owner = "si_cl0"; scope = "zena_css_architecture" };
+        { name = "si_ssu_to_rgm"; source = "si_cl0_ssu.safety_status"; sink = "host_reset_ctrl.safety_fault_reset"; result = "syndrome_and_masked_ap_reset"; owner = "smd"; scope = "zena_css_architecture" };
         { name = "ap_ras_to_ffh"; source = "ap_ras"; sink = "tfa_ffh"; result = "spi_89_and_notification"; owner = "ap"; scope = "zena_css_architecture" };
     };
 }

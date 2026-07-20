@@ -118,11 +118,11 @@ TEST(RseSysctrlTest, SecureDebugSetAndClearUpdateStatus)
     EXPECT_EQ(read32(dut, SECDBGSTAT), 0x4u);
 }
 
-TEST(RseSysctrlTest, SoftwareResetWriteDoesNotStopSimulation)
+TEST(RseSysctrlTest, SoftwareResetIgnoresWriteWithoutRequestBit)
 {
     rse_sysctrl dut("rse_sysctrl");
 
-    write32(dut, SWRESET, 0xffffffffu);
+    write32(dut, SWRESET, 0xff000000u);
     EXPECT_EQ(read32(dut, SWRESET), 0x00000000u);
 }
 

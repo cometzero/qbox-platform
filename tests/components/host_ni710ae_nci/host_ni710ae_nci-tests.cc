@@ -360,8 +360,9 @@ TEST(HostNi710AeNciTest, LockedRegionIgnoresReprogrammingUntilReset)
 
     EXPECT_EQ(read32(dut, APU_BASE + APU_PRBAR_LOW), original_base);
     EXPECT_EQ(read32(dut, APU_BASE + APU_PRLAR_LOW), original_end);
-    dut.before_end_of_elaboration();
+    dut.reset_model();
     EXPECT_EQ(read32(dut, APU_BASE + APU_PRBAR_LOW), 0u);
+    EXPECT_EQ(read32(dut, ROOT_CHILD_INFO), 1u);
 }
 
 int sc_main(int argc, char* argv[])
