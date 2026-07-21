@@ -349,7 +349,7 @@ rse_bl2_delay_cycles_addr =
 rse_bl2_delay_max_cycles =
     tonumber(getenv_or("QBOX_RDASPEN_RSE_BL2_DELAY_MAX_CYCLES", "50000000"))
 rse_bl2_delay_expected_hits =
-    tonumber(getenv_or("QBOX_RDASPEN_RSE_BL2_DELAY_EXPECTED_HITS", "3"))
+    tonumber(getenv_or("QBOX_RDASPEN_RSE_BL2_DELAY_EXPECTED_HITS", "2"))
 rse_bl2_boot_status_enckey_offset =
     tonumber(getenv_or("QBOX_RDASPEN_RSE_BL2_BOOT_STATUS_ENCKEY_OFFSET", "0x0c"))
 rse_bl2_boot_enc_key_bytes =

@@ -348,7 +348,7 @@ private:
         p_bl2_delay_accel = param("bl2_delay_accel", false);
         p_bl2_delay_cycles_addr = param<uint64_t>("bl2_delay_cycles_addr", 0);
         p_bl2_delay_max_cycles = param<uint64_t>("bl2_delay_max_cycles", 50 * 1000 * 1000);
-        p_bl2_delay_expected_hits = param<uint64_t>("bl2_delay_expected_hits", 3);
+        p_bl2_delay_expected_hits = param<uint64_t>("bl2_delay_expected_hits", 2);
     }
 
     bool hotpath_dmi_ptr(uint64_t address, uint64_t size, bool need_read,
@@ -1069,6 +1069,14 @@ private:
             return false;
         }
 
+        const uint64_t expected_hits = p_bl2_delay_expected_hits.get_value();
+        if (expected_hits != 0 &&
+            m_bl2_delay_hits.load(std::memory_order_relaxed) >= expected_hits) {
+            m_bl2_delay_watch_active.store(false, std::memory_order_relaxed);
+            m_pc_entry_registered = false;
+            return false;
+        }
+
         using Field = qemu::CpuArm::V7MStateField;
         const uint32_t cycles = static_cast<uint32_t>(m_context.get_v7m_state(Field::R0));
         const uint32_t return_pc = static_cast<uint32_t>(m_context.get_v7m_state(Field::LR));
@@ -1100,7 +1108,6 @@ private:
         const uint64_t hits =
             m_bl2_delay_hits.fetch_add(1, std::memory_order_relaxed) + 1;
         m_bl2_delay_cycles.fetch_add(cycles, std::memory_order_relaxed);
-        const uint64_t expected_hits = p_bl2_delay_expected_hits.get_value();
         if (expected_hits != 0 && hits >= expected_hits &&
             m_bl2_delay_watch_active.exchange(false, std::memory_order_relaxed)) {
             m_pc_entry_registered = false;
