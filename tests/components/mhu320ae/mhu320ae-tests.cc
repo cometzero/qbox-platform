@@ -5,11 +5,14 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -197,6 +200,14 @@ public:
 
 class ResetSink : public sc_core::sc_module
 {
+    std::mutex m_race_mutex;
+    std::condition_variable m_race_cv;
+    bool m_race_armed = false;
+    bool m_assert_callback_entered = false;
+    bool m_clear_started = false;
+    bool m_clear_returned = false;
+    bool m_clear_returned_during_assert = false;
+
 public:
     TargetSignalSocket<bool> reset;
     unsigned int write_count = 0;
@@ -209,7 +220,57 @@ public:
         reset.register_value_changed_cb([this](const bool& value) {
             ++write_count;
             saw_asserted = saw_asserted || value;
+            std::unique_lock<std::mutex> lock(m_race_mutex);
+            if (!value || !m_race_armed) {
+                return;
+            }
+            m_assert_callback_entered = true;
+            m_race_cv.notify_all();
+            if (m_race_cv.wait_for(lock, std::chrono::seconds(1),
+                                   [this] { return m_clear_started; })) {
+                m_clear_returned_during_assert = m_race_cv.wait_for(
+                    lock, std::chrono::milliseconds(50),
+                    [this] { return m_clear_returned; });
+            }
+            m_race_armed = false;
         });
+    }
+
+    void arm_assert_clear_race()
+    {
+        std::lock_guard<std::mutex> lock(m_race_mutex);
+        m_race_armed = true;
+        m_assert_callback_entered = false;
+        m_clear_started = false;
+        m_clear_returned = false;
+        m_clear_returned_during_assert = false;
+    }
+
+    bool wait_for_assert_callback()
+    {
+        std::unique_lock<std::mutex> lock(m_race_mutex);
+        return m_race_cv.wait_for(lock, std::chrono::seconds(1),
+                                  [this] { return m_assert_callback_entered; });
+    }
+
+    void mark_clear_started()
+    {
+        std::lock_guard<std::mutex> lock(m_race_mutex);
+        m_clear_started = true;
+        m_race_cv.notify_all();
+    }
+
+    void mark_clear_returned()
+    {
+        std::lock_guard<std::mutex> lock(m_race_mutex);
+        m_clear_returned = true;
+        m_race_cv.notify_all();
+    }
+
+    bool clear_returned_during_assert()
+    {
+        std::lock_guard<std::mutex> lock(m_race_mutex);
+        return m_clear_returned_during_assert;
     }
 };
 
@@ -1444,7 +1505,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_ST), 0u);
     EXPECT_EQ(read32(bridge_ap_pbx_bus, DBCW_ST), 0u);
     EXPECT_EQ(read32(bridge_ap_pbx_bus, bridge_notify_base), 0u);
-    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read())
+        << "mailbox clear must deassert IRQ before its MMIO write returns";
 
     EXPECT_FALSE(bridge_ap_requester1_hold.saw_asserted);
     EXPECT_TRUE(bridge_ap_requester3_hold.saw_asserted);
@@ -1490,6 +1552,31 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
     EXPECT_FALSE(bridge_rse_mbx_irq.saw_asserted);
     EXPECT_LE(bridge_rse_mbx_irq.write_count, 1u);
+
+    bridge_rse_mbx_irq.arm_assert_clear_race();
+    std::atomic<bool> assert_callback_seen(false);
+    std::thread irq_clearer([&] {
+        assert_callback_seen.store(
+            bridge_rse_mbx_irq.wait_for_assert_callback(),
+            std::memory_order_release);
+        if (!assert_callback_seen.load(std::memory_order_acquire)) {
+            return;
+        }
+        bridge_rse_mbx_irq.mark_clear_started();
+        write32(bridge_rse_mbx_bus,
+                bridge_notify_base + (DBCW_CLR - 0x1000),
+                MHU_NOTIFY_VALUE);
+        bridge_rse_mbx_irq.mark_clear_returned();
+    });
+    write32(bridge_ap_pbx_bus,
+            bridge_notify_base + (DBCW_SET - 0x1000), MHU_NOTIFY_VALUE);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    irq_clearer.join();
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(assert_callback_seen.load(std::memory_order_acquire));
+    EXPECT_FALSE(bridge_rse_mbx_irq.clear_returned_during_assert())
+        << "mailbox clear returned while an older IRQ assertion was in flight";
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
 
     std::atomic<bool> start_concurrent_access(false);
     std::thread postbox_writer([&] {

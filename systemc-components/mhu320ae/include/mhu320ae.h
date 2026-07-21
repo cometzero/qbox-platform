@@ -998,43 +998,40 @@ private:
     {
         m_frame.refresh_combined_irq_regs();
         const bool level = m_frame.any_combined_irq();
-        bool deassert_now = false;
         {
             std::lock_guard<std::mutex> lock(m_irq_update_lock);
             m_pending_irq_level = level;
             m_pending_irq_update = true;
+            /*
+             * Serialize the socket write with an in-flight asynchronous
+             * assertion. A mailbox clear can run inside a guest ISR, so the
+             * deassertion must be visible before its MMIO write returns.
+             */
             if (!level && m_emitted_irq_valid && m_emitted_irq_level) {
                 m_pending_irq_update = false;
+                if (p_trace.get_value()) {
+                    trace_event("combined-irq", "level=false bound=" +
+                        std::string(irq.size() != 0 ? "true" : "false") +
+                        " synchronous=true");
+                }
+                if (irq.size() != 0) {
+                    irq->write(false);
+                }
                 m_emitted_irq_level = false;
-                deassert_now = true;
+                return;
             }
-        }
-
-        if (deassert_now) {
-            if (p_trace.get_value()) {
-                trace_event("combined-irq", "level=false bound=" +
-                    std::string(irq.size() != 0 ? "true" : "false") +
-                    " synchronous=true");
-            }
-            if (irq.size() != 0) {
-                irq->write(false);
-            }
-            return;
         }
         m_irq_update_event.notify(sc_core::SC_ZERO_TIME);
     }
 
     void emit_combined_irq()
     {
-        bool level = false;
-        {
-            std::lock_guard<std::mutex> lock(m_irq_update_lock);
-            if (!m_pending_irq_update) {
-                return;
-            }
-            level = m_pending_irq_level;
-            m_pending_irq_update = false;
+        std::lock_guard<std::mutex> lock(m_irq_update_lock);
+        if (!m_pending_irq_update) {
+            return;
         }
+        const bool level = m_pending_irq_level;
+        m_pending_irq_update = false;
 
         if (p_trace.get_value()) {
             std::ostringstream detail;
