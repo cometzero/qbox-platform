@@ -223,11 +223,67 @@ paths.
   SPI 49.
 - AP REFCLK frame 1 maps the secure `AP_SYS_CNT_BASE_S` view and drives
   SPI 48.
+- AP REFCLK resets with `CNTNSAR=1`, `CNTACR0=0x3f`, and `CNTACR1=0`,
+  matching the measured FVP non-secure/secure frame visibility.
 - AP REFCLK does not use `qemu_hexagon_qtimer`, `qct-qtimer`, or a
   `qct-qtimer` compatibility alias. Those paths remain outside the Apollo
   Arm generic timer contract.
-- SI0, CSS, and RSE counter windows use the `host_gtimer` control/read/sync
-  frame model for REFCLK counter behavior.
+- One `css_system_counter` owns the CSS REFCLK count used by SMD, AP, SI0,
+  and SI1. Its production contract is a 125 MHz input, integer increment 1,
+  and reported frequency 125 MHz. Per-domain `CNTFRQ_EL0` metadata remains
+  independent: AP reports 125 MHz, SI0 keeps the architectural default, and
+  SI1 reports 100 MHz.
+- SMD control/read/sync and SI0 control/base windows use `host_gtimer`
+  frontends over that shared count. The deployed SI0 firmware issues a
+  64-bit store to the 32-bit implementation-defined `CNTINCR` register. FVP
+  accepts that access without changing state, so QBox treats 64-bit writes in
+  the implementation-defined `0xC0` through `0xFC` control range as WI/OK;
+  malformed accesses to architected registers still fault. Visible
+  `CNTINCR` remains 0 and the effective increment remains 1.
+- Counter input frequency, integer increment, and 8.24 scale are structural
+  once simulation starts. Architected enable, halt, debug, reset, and count
+  writes remain observable and notify every QEMU bridge. A general
+  cross-instance rendezvous for future-dated reanchor operations is not yet
+  implemented, so those operations remain temporal-decoupling fidelity debt.
+  The CSS physical reset source is also unresolved; AP, SI, and individual
+  QEMU resets intentionally do not reset the shared provider.
+- AP CPU timer outputs use PPIs 30, 27, 26, 29, 28, 20, and 19 for physical,
+  virtual, hypervisor, secure, hypervisor-virtual, secure-EL2 physical, and
+  secure-EL2 virtual timers. SI0 exposes secure PPI 29, virtual PPI 27, and
+  secure-EL2 physical PPI 20. Measured SI1 wiring exposes only physical PPI
+  29, virtual PPI 27, and secure-EL2 physical PPI 20.
+- RSE uses an independent local `sse-counter` and four `sse-timer` devices;
+  it is not coupled to the CSS count. `QBOX_APOLLO_RSE_LSC_INPUT_HZ`
+  overrides the input rate. Its 125 MHz default is provisional FVP-compatible
+  behavior, not hardware frequency sign-off. Guest writes such as TF-M's
+  32 MHz `CNTFRQ` remain reported metadata rather than changing that input.
+- RSE TIMER0 through TIMER3 use secure bases `0x58000000` through
+  `0x58003000`, non-secure aliases `0x48000000` through `0x48003000`, and
+  IRQs 3, 4, 5, and 27. The aliases share one backing timer and enforce live
+  SACFG/NSACFG PPC0 security and privilege policy using bits 0, 1, 2, and 5;
+  transactions without valid security and privilege attributes fail closed.
+  TIMER0 through TIMER2 belong to the SYS_RSS warm-reset path; TIMER3 and the
+  local counter belong to the AON reset path. The exact `nWARMRESETAON`
+  platform source is not yet connected, and the physical RSE LSC input
+  frequency remains hardware-signoff debt. Only the confirmed secure LSC
+  control/read windows at `0x5015A000` and `0x5015B000` are mapped.
+
+Set `QBOX_APOLLO_TIMER_SNAPSHOT=1` to enable the differential timer probe.
+`QBOX_APOLLO_TIMER_SNAPSHOT_PATH` and
+`QBOX_APOLLO_TIMER_SNAPSHOT_RUN_ID` identify the atomic JSON output and run.
+`QBOX_APOLLO_TIMER_SNAPSHOT_TIME_NS` selects the absolute SystemC start time,
+and `QBOX_APOLLO_TIMER_SNAPSHOT_INTERVAL_NS` selects the positive interval to
+the end sample. The probe publishes one file only after capturing exactly the
+`start` and `end` samples. Each QEMU consumer is observed on its owning
+IOThread. Its raw count is checked against the shared provider at the SystemC
+time obtained from the bridge epoch, then normalized to the common sample
+time. The JSON retains `observed_counter` and `observation_time_ns` so this
+mapping remains auditable. The probe verifies that all normalized CSS views
+observe one count, verifies that the four RSE timers share one independent LSC
+state, and restores the AP frame access controls after each secure privileged
+observation. If simulation ends before a requested sample, the result is
+`unavailable` with `snapshot_start_time_not_reached` or
+`snapshot_end_time_not_reached` rather than a substituted host-side value.
 
 ## PCIe MSI-X/LPI And INTx Test Profile
 
