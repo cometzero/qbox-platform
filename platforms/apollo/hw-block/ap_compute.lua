@@ -601,12 +601,8 @@ if enable_ap_cpus then
 
     for i=0,(AP_NUM_CPUS-1) do
         local cpu = {
-            moduletype = "cpu_arm_cortexA720AE_external_counter";
-            dylib_path = "cpu_arm_cortexA720AE";
-            args = {
-                "&platform.ap_qemu_inst";
-                "&platform.ap_timer_counter_bridge";
-            };
+            moduletype = "cpu_arm_cortexA720AE";
+            args = {"&platform.ap_qemu_inst"};
             mem = {bind = "&system_router.target_socket"};
             has_el3 = true;
             has_el2 = true;

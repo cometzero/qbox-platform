@@ -217,6 +217,9 @@ paths.
 - CPU internal Arm generic timers remain per-core QEMU `ARMCPU` timers. Their
   outputs are GIC PPIs, so they are not represented by the AP REFCLK MMIO
   device.
+- `ap_timer_counter_bridge` supplies the AP REFCLK MMIO frames only. The AP
+  CPU wrappers must use the native `cpu_arm_cortexA720AE` counter path; routing
+  their clockevents through the external bridge causes late Linux wakeups.
 - AP REFCLK is a 125MHz Arm memory-mapped generic timer exposed through the
   reusable Arm MMIO QEMU/QBox path.
 - AP REFCLK frame 0 maps the non-secure `AP_SYS_CNT_BASE_NS` view and drives
