@@ -119,7 +119,7 @@ function apollo_system_reset_bind_targets()
     end
 
     targets[#targets + 1] = "&rse_cpu_pass.cpu_0.accel_reset"
-    targets[#targets + 1] = "&rse_cpu_pass.qemu_inst.reset"
+    targets[#targets + 1] = "&rse_sys_rss_reset_fanout.reset_in"
 
     if apollo_live_cl0 then
         targets[#targets + 1] = "&host_si_cl0_clus_ppu.reset"
@@ -445,6 +445,11 @@ assert(rse_vmaddrwidth >= 18 and rse_vmaddrwidth <= 31,
 rse_reset_syndrome = getenv_number_or(
     "QBOX_RDASPEN_RSE_RESET_SYNDROME",
     "0x80000000")
+rse_lsc_input_hz = getenv_number_or(
+    "QBOX_APOLLO_RSE_LSC_INPUT_HZ",
+    "125000000")
+assert(rse_lsc_input_hz > 0,
+       "QBOX_APOLLO_RSE_LSC_INPUT_HZ must be greater than zero")
 rse_cpuwait = getenv_number_or(
     "QBOX_RDASPEN_RSE_CPUWAIT",
     "0x0000000F")
@@ -489,6 +494,18 @@ RSE_ATU_BASE_S = 0x50150000
 RSE_CC3XX_BASE_S = 0x50154000
 RSE_SYSCNTR_CNTRL_BASE_S = 0x5015A000
 RSE_SYSCNTR_READ_BASE_S = 0x5015B000
+RSE_TIMER0_BASE_NS = 0x48000000
+RSE_TIMER1_BASE_NS = 0x48001000
+RSE_TIMER2_BASE_NS = 0x48002000
+RSE_TIMER3_BASE_NS = 0x48003000
+RSE_TIMER0_BASE_S = 0x58000000
+RSE_TIMER1_BASE_S = 0x58001000
+RSE_TIMER2_BASE_S = 0x58002000
+RSE_TIMER3_BASE_S = 0x58003000
+RSE_TIMER0_IRQ = 3
+RSE_TIMER1_IRQ = 4
+RSE_TIMER2_IRQ = 5
+RSE_TIMER3_IRQ = 27
 RSE_INTEGRITY_CHECKER_BASE_S = 0x5015C000
 RSE_TRAM_BASE_S = 0x5015D000
 RSE_MHU0_SENDER_BASE_S = 0x50160000
@@ -584,6 +601,9 @@ ARCH_TIMER_VIRT_IRQ = 16 + 11
 ARCH_TIMER_S_EL1_IRQ = 16 + 13
 ARCH_TIMER_NS_EL1_IRQ = 16 + 14
 ARCH_TIMER_NS_EL2_IRQ = 16 + 10
+ARCH_TIMER_EL2_VIRT_IRQ = 16 + 12
+ARCH_TIMER_S_EL2_PHYS_IRQ = 16 + 4
+ARCH_TIMER_S_EL2_VIRT_IRQ = 16 + 3
 AP_SECURE_UART_BASE = 0x1A410000
 AP_PRIMARY_UART_BASE = 0x1A400000
 AP_SECURE_WDOG_BASE = 0x1A460000

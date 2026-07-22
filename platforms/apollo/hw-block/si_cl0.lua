@@ -487,9 +487,8 @@ function si_cl0.enable(ctx, platform)
     local SI_CL0_ATW18_SMCF_SMDEXP_SRAM_BASE = 0xe0340000
     local SI_CL0_ATW18_SMCF_SMDEXP_SRAM_SIZE = 0x00002000
     local ARCH_TIMER_SEC_PPI = 16 + 13
-    local ARCH_TIMER_PHYS_PPI = 16 + 4
+    local ARCH_TIMER_SEC_EL2_PHYS_PPI = 16 + 4
     local ARCH_TIMER_VIRT_PPI = 16 + 11
-    local ARCH_TIMER_HYP_PPI = 16 + 3
 
     local si_cl0_image = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL0_IMAGE",
@@ -589,6 +588,14 @@ function si_cl0.enable(ctx, platform)
         qemu_args = si_cl0_qemu_args;
     }
 
+    platform.si_cl0_timer_counter_bridge = {
+        moduletype = "qemu_arm_generic_timer_counter_bridge";
+        args = {
+            "&platform.si_cl0_qemu_inst";
+            "&platform.css_system_counter";
+        };
+    }
+
     platform.si_cl0_sram = {
         moduletype = "gs_memory";
         dmi = true;
@@ -622,6 +629,8 @@ function si_cl0.enable(ctx, platform)
 
     platform.si_cl0_timer_cntctl = {
         moduletype = "host_gtimer";
+        args = {"&platform.css_system_counter"};
+        counter_control = true;
         target_socket = {
             address = SI_CL0_TIMER_CNTCTL_BASE;
             size = SI_CL0_TIMER_CNTCTL_SIZE;
@@ -633,9 +642,8 @@ function si_cl0.enable(ctx, platform)
 
     platform.si_cl0_timer_cntbase = {
         moduletype = "host_gtimer";
+        args = {"&platform.css_system_counter"};
         counter_base = true;
-        frequency = 125000000;
-        counter_increment = 4096;
         target_socket = {
             address = SI_CL0_TIMER_CNT_BASE;
             size = SI_CL0_TIMER_CNT_SIZE;
@@ -1054,8 +1062,12 @@ function si_cl0.enable(ctx, platform)
     }
 
     platform.si_cl0_cpu_0 = {
-        moduletype = "cpu_arm_cortexR82";
-        args = {"&platform.si_cl0_qemu_inst"};
+        moduletype = "cpu_arm_cortexR82_external_counter";
+        dylib_path = "cpu_arm_cortexR82";
+        args = {
+            "&platform.si_cl0_qemu_inst";
+            "&platform.si_cl0_timer_counter_bridge";
+        };
         mem = {bind = "&si_cl0_ni710ae_primary_nci.protected_target_socket"};
         has_el2 = true;
         psci_conduit = "smc";
@@ -1085,14 +1097,11 @@ function si_cl0.enable(ctx, platform)
         irq_timer_sec_out = {
             bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_SEC_PPI;
         };
-        irq_timer_phys_out = {
-            bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_PHYS_PPI;
-        };
         irq_timer_virt_out = {
             bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_VIRT_PPI;
         };
-        irq_timer_hyp_out = {
-            bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_HYP_PPI;
+        irq_timer_sec_el2_phys_out = {
+            bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_SEC_EL2_PHYS_PPI;
         };
     }
 

@@ -88,10 +88,9 @@ function si_cl1.enable(ctx, platform)
     local SI_CL1_MHU_CHANNELS = 32
     local SI_CL1_SCMI_MSG_SIZE_PER_CORE = 40
     local SI_CL1_PFDI_MHU_CHANNEL_BASE = 2
-    local ARCH_TIMER_SEC_PPI = 16 + 13
-    local ARCH_TIMER_PHYS_PPI = 16 + 4
-    local ARCH_TIMER_VIRT_PPI = 16 + 11
-    local ARCH_TIMER_HYP_PPI = 16 + 3
+    local ARCH_TIMER_PHYS_PPI = 29
+    local ARCH_TIMER_VIRT_PPI = 27
+    local ARCH_TIMER_S_EL2_PHYS_PPI = 20
     local ARCH_TIMER_FREQUENCY_HZ = 100000000
 
     local si_cl1_image = ctx.getenv_or(
@@ -126,6 +125,14 @@ function si_cl1.enable(ctx, platform)
             "QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY", "multithread-quantum");
         managed_start_in_reset_release = true;
         qemu_args = si_cl1_qemu_args;
+    }
+
+    platform.si_cl1_timer_counter_bridge = {
+        moduletype = "qemu_arm_generic_timer_counter_bridge";
+        args = {
+            "&platform.si_cl1_qemu_inst";
+            "&platform.css_system_counter";
+        };
     }
 
     -- CL1 memory
@@ -299,8 +306,12 @@ function si_cl1.enable(ctx, platform)
     -- CL1 Cortex-R82 cluster
     for i=0,(SI_CL1_CPU_COUNT-1) do
         local cpu = {
-            moduletype = "cpu_arm_cortexR82";
-            args = {"&platform.si_cl1_qemu_inst"};
+            moduletype = "cpu_arm_cortexR82_external_counter";
+            dylib_path = "cpu_arm_cortexR82";
+            args = {
+                "&platform.si_cl1_qemu_inst";
+                "&platform.si_cl1_timer_counter_bridge";
+            };
             mem = {bind = "&si_cl1_router.target_socket"};
             has_el2 = true;
             psci_conduit = "smc";
@@ -313,17 +324,15 @@ function si_cl1.enable(ctx, platform)
             request_origin_id = ctx.request_context.origin.si_cl1_cpu_base + i;
             request_domain_id = ctx.request_context.domain.si_cl1;
             requester_id = i;
-            irq_timer_sec_out = {
-                bind = "&si_cl1_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_SEC_PPI;
-            };
             irq_timer_phys_out = {
                 bind = "&si_cl1_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_PHYS_PPI;
             };
             irq_timer_virt_out = {
                 bind = "&si_cl1_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_VIRT_PPI;
             };
-            irq_timer_hyp_out = {
-                bind = "&si_cl1_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_HYP_PPI;
+            irq_timer_sec_el2_phys_out = {
+                bind = "&si_cl1_gic.ppi_in_cpu_"..i.."_"..
+                    ARCH_TIMER_S_EL2_PHYS_PPI;
             };
         }
         platform["si_cl1_cpu_"..tostring(i)] = cpu

@@ -1,1 +1,3 @@
 gs_create_dymod(cpu_arm_cortexA720AE)
+target_link_libraries(cpu_arm_cortexA720AE PUBLIC
+    qemu_arm_generic_timer_counter_bridge)

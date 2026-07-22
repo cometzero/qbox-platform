@@ -8,4 +8,9 @@
 
 #include <cortex-r82.h>
 
-void module_register() { GSC_MODULE_REGISTER_C(cpu_arm_cortexR82, sc_core::sc_object*); }
+void module_register()
+{
+    GSC_MODULE_REGISTER_C(cpu_arm_cortexR82, sc_core::sc_object*);
+    GSC_MODULE_REGISTER_C(cpu_arm_cortexR82_external_counter,
+                          sc_core::sc_object*, sc_core::sc_object*);
+}

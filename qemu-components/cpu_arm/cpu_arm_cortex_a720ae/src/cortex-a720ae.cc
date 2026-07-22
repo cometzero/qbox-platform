@@ -8,4 +8,9 @@
 
 #include <cortex-a720ae.h>
 
-void module_register() { GSC_MODULE_REGISTER_C(cpu_arm_cortexA720AE, sc_core::sc_object*); }
+void module_register()
+{
+    GSC_MODULE_REGISTER_C(cpu_arm_cortexA720AE, sc_core::sc_object*);
+    GSC_MODULE_REGISTER_C(cpu_arm_cortexA720AE_external_counter,
+                          sc_core::sc_object*, sc_core::sc_object*);
+}

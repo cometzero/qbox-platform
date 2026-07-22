@@ -57,3 +57,25 @@ end
 if ctx.apollo_live_cl1 then
     si_cl1.enable(ctx, platform)
 end
+
+local timer_snapshot_enabled = ctx.getenv_bool_or(
+    "QBOX_APOLLO_TIMER_SNAPSHOT", false)
+if timer_snapshot_enabled then
+    assert(enable_ap_cpus and ctx.apollo_live_cl0 and ctx.apollo_live_cl1,
+           "timer snapshot requires AP, live SI0, and live SI1")
+    platform.apollo_timer_snapshot = {
+        moduletype = "apollo_timer_snapshot";
+        args = {
+            "&platform.host_css_counters_timers";
+            "&platform.ap_cpu_0";
+            "&platform.ap_timer_mem";
+            "&platform.si_cl0_cpu_0";
+            "&platform.si_cl0_timer_cntbase";
+            "&platform.si_cl1_cpu_0";
+            "&platform.rse_cpu_pass.rse_timer_0";
+            "&platform.rse_cpu_pass.rse_timer_1";
+            "&platform.rse_cpu_pass.rse_timer_2";
+            "&platform.rse_cpu_pass.rse_timer_3";
+        };
+    }
+end

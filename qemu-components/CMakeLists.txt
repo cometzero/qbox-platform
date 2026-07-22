@@ -3,6 +3,8 @@ add_subdirectory(rse_cpu_accel)
 add_subdirectory(arm_smmuv3)
 add_subdirectory(cpu_arm/cpu_arm_cortex_a720ae)
 add_subdirectory(cpu_arm/cpu_arm_cortex_r82)
+add_subdirectory(qemu_device_cold_reset)
+add_subdirectory(apollo_timer_snapshot)
 add_subdirectory(sbsa_gwdt)
 add_subdirectory(virtio_mmio_rng)
 
@@ -11,6 +13,8 @@ foreach(qbox_platform_qemu_target
     rse_cpu_accel
     cpu_arm_cortexA720AE
     cpu_arm_cortexR82
+    qemu_device_cold_reset
+    apollo_timer_snapshot
     sbsa_gwdt
     virtio_mmio_rng)
     if(TARGET "${qbox_platform_qemu_target}")

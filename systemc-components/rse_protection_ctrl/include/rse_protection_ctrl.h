@@ -189,6 +189,14 @@ class rse_protection_ctrl : public sc_core::sc_module
     }
 
 public:
+    uint32_t policy_value(uint32_t offset) const
+    {
+        if (offset > REG_BYTES - sizeof(uint32_t) || !is_aligned32(offset)) {
+            return 0;
+        }
+        return load32(offset);
+    }
+
     cci::cci_param<bool> p_trace;
     cci::cci_param<unsigned int> p_trace_limit;
     cci::cci_param<uint32_t> p_profile;

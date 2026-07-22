@@ -3,6 +3,18 @@ local rse = {}
 function rse.define(ctx, platform)
     print("Apollo RSE QBox skeleton config running...")
 
+    local rse_sys_rss_reset_targets = {
+        "&rse_cpu_pass.cpu_0.cpu.reset";
+        "&rse_cpu_pass.rse_nvic_cold_reset.reset";
+        "&rse_cpu_pass.rse_timer_0.reset";
+        "&rse_cpu_pass.rse_timer_1.reset";
+        "&rse_cpu_pass.rse_timer_2.reset";
+    }
+    if rse_local_boot_flash and rse_flash_backend == "qemu-cfi-local" then
+        rse_sys_rss_reset_targets[#rse_sys_rss_reset_targets + 1] =
+            "&rse_cpu_pass.rse_pflash_cold_reset.reset"
+    end
+
     platform.rse_router = {
         moduletype = "router";
         broadcast_invalidation = true;
@@ -19,6 +31,23 @@ function rse.define(ctx, platform)
         tcg_mode = rse_tcg_mode;
         sync_policy = rse_sync_policy;
         qemu_args = qemu_args;
+    }
+
+    platform.rse_sys_rss_reset_fanout = {
+        moduletype = "reset_fanout";
+        reset_out = {bind = table.concat(rse_sys_rss_reset_targets, ";")};
+        log_level = 0;
+    }
+
+    platform.rse_aon_reset_fanout = {
+        moduletype = "reset_fanout";
+        -- reset_in is intentionally left without a producer until the
+        -- Apollo nWARMRESETAON source and mask behavior are modeled.
+        reset_out = {
+            bind = "&rse_cpu_pass.rse_lsc_counter.reset"..
+                ";&rse_cpu_pass.rse_timer_3.reset";
+        };
+        log_level = 0;
     }
 
     platform.rse_rom = {
@@ -295,6 +324,45 @@ function rse.define(ctx, platform)
         log_level = 0;
     }
 
+    local rse_timer_policy_masks = {1, 2, 4, 32}
+    local rse_timer_secure_bases = {
+        RSE_TIMER0_BASE_S;
+        RSE_TIMER1_BASE_S;
+        RSE_TIMER2_BASE_S;
+        RSE_TIMER3_BASE_S;
+    }
+    local rse_timer_non_secure_bases = {
+        RSE_TIMER0_BASE_NS;
+        RSE_TIMER1_BASE_NS;
+        RSE_TIMER2_BASE_NS;
+        RSE_TIMER3_BASE_NS;
+    }
+    for timer=0,3 do
+        platform["rse_timer_"..timer.."_ppc"] = {
+            moduletype = "rse_ppc_filter";
+            args = {
+                "&platform.rse_sacfg_regs";
+                "&platform.rse_nsacfg_regs";
+            };
+            policy_mask = rse_timer_policy_masks[timer + 1];
+            target_socket = {
+                address = rse_timer_secure_bases[timer + 1];
+                size = 0x00001000;
+                bind = "&rse_router.initiator_socket";
+                aliases = {
+                    ns = {
+                        address = rse_timer_non_secure_bases[timer + 1];
+                        size = 0x00001000;
+                    };
+                };
+            };
+            initiator_socket = {
+                bind = "&rse_cpu_pass.target_socket_"..(timer + 2);
+            };
+            log_level = 0;
+        }
+    end
+
     platform.rse_kmu_regs = (not rse_local_crypto) and {
         moduletype = "rse_kmu";
         trace = kmu_trace;
@@ -429,28 +497,6 @@ function rse.define(ctx, platform)
     platform.rse_cc3xx = (not rse_local_crypto) and
         rse_cc3xx_component("&rse_router.initiator_socket",
                             "&rse_router.target_socket") or nil
-
-    platform.rse_syscntr_cntrl_regs = {
-        moduletype = "host_gtimer";
-        counter_control = true;
-        target_socket = {
-            address = RSE_SYSCNTR_CNTRL_BASE_S;
-            size = 0x00001000;
-            bind = "&rse_router.initiator_socket";
-        };
-        log_level = 0;
-    }
-
-    platform.rse_syscntr_read_regs = {
-        moduletype = "host_gtimer";
-        counter_read = true;
-        target_socket = {
-            address = RSE_SYSCNTR_READ_BASE_S;
-            size = 0x00001000;
-            bind = "&rse_router.initiator_socket";
-        };
-        log_level = 0;
-    }
 
     platform.rse_integrity_checker_regs = {
         moduletype = "rse_integrity_checker";
@@ -611,11 +657,21 @@ function rse.define(ctx, platform)
     platform.rse_cpu_pass = {
         moduletype = "Container";
         tlm_initiator_ports_num = 2;
-        tlm_target_ports_num = 0;
+        tlm_target_ports_num = 6;
         target_signals_num = RSE_REMOTE_SIGNAL_COUNT;
         initiator_signals_num = 0;
         initiator_socket_0 = {bind = "&rse_router.target_socket"};
         initiator_socket_1 = {bind = "&rse_router.target_socket"};
+        target_socket_0 = {
+            address = RSE_SYSCNTR_CNTRL_BASE_S;
+            size = 0x00001000;
+            bind = "&rse_router.initiator_socket";
+        };
+        target_socket_1 = {
+            address = RSE_SYSCNTR_READ_BASE_S;
+            size = 0x00001000;
+            bind = "&rse_router.initiator_socket";
+        };
 
         remote_main_router = rse_local_peripherals and {
             moduletype = "router";
@@ -650,10 +706,16 @@ function rse.define(ctx, platform)
 
         plugin_pass = {
             moduletype = "LocalPass";
-            tlm_initiator_ports_num = 0;
+            tlm_initiator_ports_num = 6;
             tlm_target_ports_num = 2;
             target_signals_num = 0;
             initiator_signals_num = RSE_REMOTE_SIGNAL_COUNT;
+            initiator_socket_0 = {bind = "&rse_lsc_counter.control"};
+            initiator_socket_1 = {bind = "&rse_lsc_counter.status"};
+            initiator_socket_2 = {bind = "&rse_timer_0.socket"};
+            initiator_socket_3 = {bind = "&rse_timer_1.socket"};
+            initiator_socket_4 = {bind = "&rse_timer_2.socket"};
+            initiator_socket_5 = {bind = "&rse_timer_3.socket"};
             target_socket_0 = {
                 address = 0x00000000;
                 size = RSE_NVIC_BASE;
@@ -681,6 +743,52 @@ function rse.define(ctx, platform)
             sync_policy = rse_sync_policy;
             qemu_args = qemu_args;
         },
+
+        rse_lsc_clock = {
+            moduletype = "qemu_clock_source";
+            args = {"&qemu_inst"};
+            frequency_hz = rse_lsc_input_hz;
+        },
+
+        rse_lsc_counter = {
+            moduletype = "qemu_sse_counter";
+            args = {"&qemu_inst", "&rse_lsc_clock"};
+        },
+
+        rse_timer_0 = {
+            moduletype = "qemu_sse_timer";
+            args = {"&qemu_inst", "&rse_lsc_counter"};
+            irq = {bind = "&cpu_0.cpu.nvic.irq_in_"..RSE_TIMER0_IRQ};
+        },
+
+        rse_timer_1 = {
+            moduletype = "qemu_sse_timer";
+            args = {"&qemu_inst", "&rse_lsc_counter"};
+            irq = {bind = "&cpu_0.cpu.nvic.irq_in_"..RSE_TIMER1_IRQ};
+        },
+
+        rse_timer_2 = {
+            moduletype = "qemu_sse_timer";
+            args = {"&qemu_inst", "&rse_lsc_counter"};
+            irq = {bind = "&cpu_0.cpu.nvic.irq_in_"..RSE_TIMER2_IRQ};
+        },
+
+        rse_timer_3 = {
+            moduletype = "qemu_sse_timer";
+            args = {"&qemu_inst", "&rse_lsc_counter"};
+            irq = {bind = "&cpu_0.cpu.nvic.irq_in_"..RSE_TIMER3_IRQ};
+        },
+
+        rse_nvic_cold_reset = {
+            moduletype = "qemu_device_cold_reset";
+            args = {"&cpu_0.cpu.nvic"};
+        },
+
+        rse_pflash_cold_reset = rse_local_boot_flash and
+            rse_flash_backend == "qemu-cfi-local" and {
+            moduletype = "qemu_device_cold_reset";
+            args = {"&rse_boot_flash_qemu"};
+        } or nil,
 
         rse_boot_flash = rse_local_boot_flash and
             rse_flash_backend == "systemc-strata" and {

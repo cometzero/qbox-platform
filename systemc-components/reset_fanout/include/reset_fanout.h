@@ -60,15 +60,23 @@ public:
             m_reset_event.notify(sc_core::sc_time(1, sc_core::SC_PS));
         });
 
-        SC_METHOD(emit_reset);
-        sensitive << m_reset_event;
-        dont_initialize();
+        SC_THREAD(emit_reset);
     }
 
     void emit_reset()
     {
-        const std::vector<bool> pending = std::move(m_pending_resets);
-        m_pending_resets.clear();
-        reset_out.async_write_vector(pending);
+        while (true) {
+            while (m_pending_resets.empty())
+                wait(m_reset_event);
+
+            std::vector<bool> pending;
+            pending.swap(m_pending_resets);
+            for (bool value : pending) {
+                for (int i = 0; i < reset_out.size(); ++i)
+                    reset_out[i]->write(value);
+
+                wait(sc_core::SC_ZERO_TIME);
+            }
+        }
     }
 };

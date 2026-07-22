@@ -45,6 +45,15 @@ function ap_compute.define(ctx, platform)
         construction_priority = -299;
     } or nil
 
+    platform.ap_timer_counter_bridge = enable_ap_cpus and {
+        moduletype = "qemu_arm_generic_timer_counter_bridge";
+        args = {
+            "&platform.ap_qemu_inst";
+            "&platform.css_system_counter";
+        };
+        construction_priority = -297;
+    } or nil
+
     platform.ap_reset_gpio = enable_ap_cpus and {
         moduletype = "reset_gpio";
         args = {"&platform.ap_qemu_inst"};
@@ -451,8 +460,12 @@ function ap_compute.define(ctx, platform)
     } or nil
 
     platform.ap_timer_mem = enable_ap_cpus and {
-        moduletype = "qemu_arm_arch_timer_mmio";
-        args = {"&platform.ap_qemu_inst"};
+        moduletype = "qemu_arm_arch_timer_mmio_external_counter";
+        dylib_path = "qemu_arm_arch_timer_mmio";
+        args = {
+            "&platform.ap_qemu_inst";
+            "&platform.ap_timer_counter_bridge";
+        };
         cntfrq = 125000000;
         nr_frames = 2;
         view_size = AP_SYS_TIMER_SIZE;
@@ -460,6 +473,8 @@ function ap_compute.define(ctx, platform)
         frame_id_0 = 0;
         frame_offset_1 = AP_SYS_CNT_BASE_S - AP_SYS_TIMCTL_BASE;
         frame_id_1 = 1;
+        cntnsar_reset = 1;
+        cntacr_reset_0 = 0x3f;
         mem = {
             address = AP_SYS_TIMCTL_BASE;
             size = (AP_SYS_CNT_BASE_NS - AP_SYS_TIMCTL_BASE) + AP_SYS_TIMER_SIZE;
@@ -586,8 +601,12 @@ if enable_ap_cpus then
 
     for i=0,(AP_NUM_CPUS-1) do
         local cpu = {
-            moduletype = "cpu_arm_cortexA720AE";
-            args = {"&platform.ap_qemu_inst"};
+            moduletype = "cpu_arm_cortexA720AE_external_counter";
+            dylib_path = "cpu_arm_cortexA720AE";
+            args = {
+                "&platform.ap_qemu_inst";
+                "&platform.ap_timer_counter_bridge";
+            };
             mem = {bind = "&system_router.target_socket"};
             has_el3 = true;
             has_el2 = true;
@@ -603,11 +622,21 @@ if enable_ap_cpus then
             irq_timer_sec_out = {
                 bind = "&ap_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_S_EL1_IRQ;
             };
+            irq_timer_hyp_virt_out = {
+                bind = "&ap_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_EL2_VIRT_IRQ;
+            };
+            irq_timer_sec_el2_phys_out = {
+                bind = "&ap_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_S_EL2_PHYS_IRQ;
+            };
+            irq_timer_sec_el2_virt_out = {
+                bind = "&ap_gic.ppi_in_cpu_"..i.."_"..ARCH_TIMER_S_EL2_VIRT_IRQ;
+            };
             gicv3_maintenance_interrupt = {
                 bind = "&ap_gic.ppi_in_cpu_"..i.."_25";
             };
             pmu_interrupt = {bind = "&ap_gic.ppi_in_cpu_"..i.."_23"};
             psci_conduit = getenv_or("QBOX_RDASPEN_AP_PSCI_CONDUIT", "disabled");
+            cntfrq_hz = 125000000;
             mp_affinity = mp_affinity(i);
             start_powered_off = i ~= 0;
             start_in_reset = true;

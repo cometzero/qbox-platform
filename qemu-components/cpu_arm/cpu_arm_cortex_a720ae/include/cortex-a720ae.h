@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <stdexcept>
 #include <string>
 
 #include <cci_configuration>
@@ -21,10 +22,13 @@
 #include <ports/qemu-initiator-signal-socket.h>
 #include <ports/qemu-target-signal-socket.h>
 #include <qemu-instance.h>
+#include <qemu_arm_generic_timer_counter_bridge.h>
 
 class cpu_arm_cortexA720AE : public QemuCpuArm
 {
 protected:
+    qemu_arm_generic_timer_counter_bridge* m_counter_bridge;
+
     int get_psci_conduit_val() const
     {
         if (p_psci_conduit.get_value() == "disabled") {
@@ -62,6 +66,14 @@ protected:
     }
 
 public:
+    qemu_arm_generic_timer_counter_bridge& timer_counter_bridge()
+    {
+        if (m_counter_bridge == nullptr) {
+            throw std::logic_error("CPU has no external timer counter bridge");
+        }
+        return *m_counter_bridge;
+    }
+
     cci::cci_param<unsigned int> p_mp_affinity;
     cci::cci_param<bool> p_has_el2;
     cci::cci_param<bool> p_has_el3;
@@ -81,6 +93,9 @@ public:
     QemuInitiatorSignalSocket irq_timer_virt_out;
     QemuInitiatorSignalSocket irq_timer_hyp_out;
     QemuInitiatorSignalSocket irq_timer_sec_out;
+    QemuInitiatorSignalSocket irq_timer_hyp_virt_out;
+    QemuInitiatorSignalSocket irq_timer_sec_el2_phys_out;
+    QemuInitiatorSignalSocket irq_timer_sec_el2_virt_out;
     QemuInitiatorSignalSocket irq_maintenance_out;
     QemuInitiatorSignalSocket irq_pmu_out;
     cpu_arm_cortexA720AE(const sc_core::sc_module_name& name, sc_core::sc_object* o)
@@ -88,7 +103,22 @@ public:
     {
     }
     cpu_arm_cortexA720AE(const sc_core::sc_module_name& name, QemuInstance& inst)
+        : cpu_arm_cortexA720AE(name, inst, nullptr)
+    {
+    }
+    cpu_arm_cortexA720AE(
+        const sc_core::sc_module_name& name, QemuInstance& inst,
+        qemu_arm_generic_timer_counter_bridge& counter_bridge)
+        : cpu_arm_cortexA720AE(name, inst, &counter_bridge)
+    {
+    }
+
+protected:
+    cpu_arm_cortexA720AE(
+        const sc_core::sc_module_name& name, QemuInstance& inst,
+        qemu_arm_generic_timer_counter_bridge* counter_bridge)
         : QemuCpuArm(name, inst, "cortex-a720ae-arm")
+        , m_counter_bridge(counter_bridge)
         , p_mp_affinity("mp_affinity", 0, "Multi-processor affinity value")
         , p_has_el2("has_el2", true, "ARM virtualization extensions")
         , p_has_el3("has_el3", true, "ARM secure-mode extensions")
@@ -114,6 +144,9 @@ public:
         , irq_timer_virt_out("irq_timer_virt_out")
         , irq_timer_hyp_out("irq_timer_hyp_out")
         , irq_timer_sec_out("irq_timer_sec_out")
+        , irq_timer_hyp_virt_out("irq_timer_hyp_virt_out")
+        , irq_timer_sec_el2_phys_out("irq_timer_sec_el2_phys_out")
+        , irq_timer_sec_el2_virt_out("irq_timer_sec_el2_virt_out")
         , irq_maintenance_out("gicv3_maintenance_interrupt")
         , irq_pmu_out("pmu_interrupt")
     {
@@ -126,6 +159,11 @@ public:
     void before_end_of_elaboration() override
     {
         QemuCpuArm::before_end_of_elaboration();
+
+        if (m_counter_bridge != nullptr) {
+            m_dev.set_prop_link("counter-provider",
+                                m_counter_bridge->counter_provider());
+        }
 
         qemu::CpuAarch64 cpu(m_cpu);
         cpu.set_aarch64_mode(true);
@@ -158,12 +196,29 @@ public:
         virq_in.init(m_dev, 2);
         vfiq_in.init(m_dev, 3);
 
-        irq_timer_phys_out.init(m_dev, 0);
-        irq_timer_virt_out.init(m_dev, 1);
-        irq_timer_hyp_out.init(m_dev, 2);
-        irq_timer_sec_out.init(m_dev, 3);
+        irq_timer_phys_out.init_arm_generic_timer(
+            m_dev, qemu::ArmGenericTimerOutput::PHYS);
+        irq_timer_virt_out.init_arm_generic_timer(
+            m_dev, qemu::ArmGenericTimerOutput::VIRT);
+        irq_timer_hyp_out.init_arm_generic_timer(
+            m_dev, qemu::ArmGenericTimerOutput::HYP);
+        irq_timer_sec_out.init_arm_generic_timer(
+            m_dev, qemu::ArmGenericTimerOutput::SEC);
+        irq_timer_hyp_virt_out.init_arm_generic_timer(
+            m_dev, qemu::ArmGenericTimerOutput::HYPVIRT);
+        irq_timer_sec_el2_phys_out.init_arm_generic_timer(
+            m_dev, qemu::ArmGenericTimerOutput::S_EL2_PHYS);
+        irq_timer_sec_el2_virt_out.init_arm_generic_timer(
+            m_dev, qemu::ArmGenericTimerOutput::S_EL2_VIRT);
         irq_maintenance_out.init_named(m_dev, "gicv3-maintenance-interrupt", 0);
         irq_pmu_out.init_named(m_dev, "pmu-interrupt", 0);
+    }
+
+public:
+    qemu::ArmCpuGenericTimerSnapshot timer_snapshot(
+        qemu::ArmGenericTimerOutput output)
+    {
+        return qemu::CpuAarch64(m_cpu).generic_timer_snapshot(output);
     }
 
     void initiator_customize_tlm_payload(TlmPayload& payload) override
@@ -258,6 +313,39 @@ public:
              */
             m_cpu.exit_loop_from_io();
         }
+    }
+};
+
+class cpu_arm_cortexA720AE_external_counter : public cpu_arm_cortexA720AE
+{
+    static QemuInstance& require_instance(sc_core::sc_object* object)
+    {
+        QemuInstance* instance = dynamic_cast<QemuInstance*>(object);
+        if (instance == nullptr) {
+            throw std::invalid_argument("expected QemuInstance");
+        }
+        return *instance;
+    }
+
+    static qemu_arm_generic_timer_counter_bridge& require_bridge(
+        sc_core::sc_object* object)
+    {
+        auto* bridge =
+            dynamic_cast<qemu_arm_generic_timer_counter_bridge*>(object);
+        if (bridge == nullptr) {
+            throw std::invalid_argument(
+                "expected qemu_arm_generic_timer_counter_bridge");
+        }
+        return *bridge;
+    }
+
+public:
+    cpu_arm_cortexA720AE_external_counter(
+        const sc_core::sc_module_name& name, sc_core::sc_object* instance,
+        sc_core::sc_object* counter_bridge)
+        : cpu_arm_cortexA720AE(name, require_instance(instance),
+                               require_bridge(counter_bridge))
+    {
     }
 };
 
