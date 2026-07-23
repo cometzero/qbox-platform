@@ -20,12 +20,10 @@ Apollo platform source should live in this overlay, not in the QBox core tree.
 
 ## Owned Surface
 
-Primary platform entrypoints:
+The supported Apollo runtime entrypoint is:
 
 ```text
 platforms/apollo/apollo-qvp.lua
-platforms/apollo/apollo-pc.lua
-platforms/apollo/apollo-si-cl1.lua
 ```
 
 Apollo hardware block helpers live under:
@@ -49,8 +47,8 @@ qemu-components/virtio_mmio_rng/
 tests/components/
 ```
 
-The Apollo direct-boot configurations also share the retained
-platform-neutral helper:
+The retained platform-neutral boot helper remains available to non-Apollo
+platforms and custom configurations:
 
 ```text
 fw/arm64_bootloader.lua
@@ -137,13 +135,6 @@ python3 scripts/run/run_qbox_apollo_fvp_full.py \
   --si-mode live-cl0-cl1 \
   --skip-build \
   --timeout 900
-```
-
-Primary-compute direct boot and SI CL1 isolated smoke paths remain available:
-
-```bash
-python3 scripts/run/run_qbox_apollo_fvp_linux.py --timeout 600
-python3 scripts/run/run_qbox_apollo_fvp_si_cl1.py --timeout 300
 ```
 
 The explicit FVP runner writes `build/qbox-apollo-fvp/`. Yocto-built Apollo QVP
