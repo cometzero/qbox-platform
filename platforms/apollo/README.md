@@ -1,30 +1,15 @@
 # QBox Apollo Platform
 
-This platform contains Apollo QBox entrypoints for primary-compute direct boot,
-SI CL1 isolated boot, and the full RSE-first Apollo QVP.
-
-The primary-compute direct-boot entrypoint is not the full Apollo firmware
-chain: RSE, TF-A, OP-TEE, and U-Boot are bypassed by the QBox AArch64
-direct-boot stub. Use `apollo-qvp.lua` when firmware-chain fidelity is
-required.
-
-The primary-compute direct-boot entrypoint is:
-
-```text
-hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-pc.lua
-```
-
-The SI CL1 isolated Zephyr entrypoint is:
-
-```text
-hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-si-cl1.lua
-```
-
-The full-system QBox virtual platform entrypoint is:
+This platform supports the full RSE-first Apollo QVP. Its sole runtime
+entrypoint is:
 
 ```text
 hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-qvp.lua
 ```
+
+The full-system runner supports both `--si-mode live-cl1` and
+`--si-mode live-cl0-cl1`; the examples below use the complete live CL0/CL1
+configuration.
 
 The full-system entrypoint composes subsystem-owned Apollo hardware blocks:
 
@@ -141,9 +126,7 @@ Override the TCG defaults with `QBOX_APOLLO_FULL_AP_TCG_MODE`,
 `QBOX_RDASPEN_RSE_TCG_MODE`, `QBOX_RDASPEN_RSE_SYNC_POLICY`,
 `QBOX_APOLLO_FULL_SI_CL0_TCG_MODE`, `QBOX_APOLLO_FULL_SI_CL0_SYNC_POLICY`,
 `QBOX_APOLLO_FULL_SI_CL1_TCG_MODE`, and
-`QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY` for experiments. The isolated CL1
-entrypoint keeps its single-thread default and can be overridden with
-`QBOX_APOLLO_SI_CL1_TCG_MODE`.
+`QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY` for experiments.
 
 Hardware-block helpers used by the full-system entrypoint live under:
 
@@ -157,11 +140,9 @@ The current full-system block helpers are:
 hw-block/rse.lua
 hw-block/config.lua
 hw-block/fabric.lua
-hw-block/primary_compute.lua
 hw-block/ap_compute.lua
 hw-block/si_cl0.lua
 hw-block/si_cl1.lua
-hw-block/si_cl1_isolated.lua
 hw-block/ros.lua
 hw-block/system_mgmt.lua
 ```
@@ -303,34 +284,29 @@ top-level helpers:
 ```bash
 python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
-python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+python3 scripts/run/run_qbox_apollo_fvp_full.py \
+  --si-mode live-cl0-cl1 \
   --skip-build --timeout 600 \
-  --bootargs "console=ttyAMA0,115200 earlycon=pl011,0x1A400000 root=/dev/ram0 rw rdinit=/init loglevel=7 cpuidle.governor=menu maxcpus=4 mem=4064M" \
-  --base-dtb build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq.dtb \
-  --initramfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq-initramfs.cpio.gz \
-  --disk build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-msix-disk.img \
+  --rootfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-msix-disk.img \
+  --rootfs-bootargs-profile none \
   --out-dir <msix-output>
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
-python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+python3 scripts/run/run_qbox_apollo_fvp_full.py \
+  --si-mode live-cl0-cl1 \
   --skip-build --timeout 600 \
-  --bootargs "console=ttyAMA0,115200 earlycon=pl011,0x1A400000 root=/dev/ram0 rw rdinit=/init loglevel=7 cpuidle.governor=menu maxcpus=4 mem=4064M pci=nomsi" \
-  --base-dtb build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq.dtb \
-  --initramfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-irq-initramfs.cpio.gz \
-  --disk build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-intx-disk.img \
+  --rootfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-intx-disk.img \
+  --rootfs-bootargs-profile none \
   --out-dir <intx-output>
 python3 scripts/test/validate_qbox_apollo_pcie_irq_runtime.py \
-  --msix-log <msix-output>/qbox-apollo-fvp.log \
-  --intx-log <intx-output>/qbox-apollo-fvp.log \
+  --msix-log <msix-output>/qbox-primary-console.log \
+  --intx-log <intx-output>/qbox-primary-console.log \
   --output build/qbox-apollo-fvp/i4-pcie-irq-runtime-validation.json
 ```
 
-The generated MSI-X disk is used for the first run. The INTx disk also carries
-`pci=nomsi` in its U-Boot script, but the direct kernel path must pass the same
-argument explicitly with `--bootargs`. Linux reports the legacy GIC SPI input
-301 as architectural INTID 333. Both tests use four CPUs and pin the selected
-interrupt affinity to CPU0 before generating network traffic. These direct-boot
-runs qualify the AP PCIe data and interrupt path; they do not qualify the full
-RSE-first firmware chain.
+The generated MSI-X disk is used for the first run. The INTx disk carries
+`pci=nomsi` in its U-Boot script. Linux reports the legacy GIC SPI input 301
+as architectural INTID 333. Both full-system tests use four CPUs and pin the
+selected interrupt affinity to CPU0 before generating network traffic.
 
 ## Fault Event Test Profile
 
@@ -343,11 +319,12 @@ observer. Set `QBOX_APOLLO_FAULT_EVENT_LOG` to write the ordered event JSON.
 QBOX_APOLLO_NUM_CPUS=4 \
 QBOX_APOLLO_FAULT_EVENT_TEST=true \
 QBOX_APOLLO_FAULT_EVENT_LOG="$PWD/build/qbox-apollo-qvp/fault-events.json" \
-python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+python3 scripts/run/run_qbox_apollo_fvp_full.py \
+  --si-mode live-cl0-cl1 \
   --skip-build \
   --local-build-dir build/local-apollo-qvp \
-  --base-dtb build/local-apollo-qvp/deploy/boot/apollo-qvp.dtb \
-  --timeout 60 \
+  --timeout 600 \
+  --rootfs-bootargs-profile none \
   --out-dir build/qbox-apollo-qvp/fault-event-construction
 ```
 
@@ -367,30 +344,9 @@ SMMU-to-NI-710AE-FMU route in Zena CSS.
 Local source-build artifacts follow `build/local-${MACHINE}`. The helper reads
 the active Yocto machine and currently resolves to `apollo-qvp`; an explicit
 `MACHINE` overrides it. `apollo-fvp` is the built-in fallback only when no
-active machine is available or Yocto-variable loading is disabled.
-
-The direct-boot runner consumes:
-
-```text
-build/local-${MACHINE}/deploy/boot/Image
-build/local-${MACHINE}/deploy/boot/initramfs.cpio.gz
-```
-
-The full-system runner also consumes the local firmware deploy artifacts under
-`build/local-${MACHINE}/deploy/firmware/`, including RSE ROM/flash/OTP, AP
-flash, SI CL0 firmware, and SI CL1 Zephyr images.
-
-The direct-boot runner uses the local-build Linux DTB as its base and applies a
-small `/chosen` overlay for direct bootargs and initrd addresses. Generated
-artifacts are written to the following legacy compatibility root. Full-system
-QVP evidence uses `build/qbox-apollo-qvp/`; do not mix these direct-boot files
-with full-system or FVP-reference evidence.
-
-```text
-build/qbox-apollo-fvp/apollo-fvp-direct.dtb
-build/qbox-apollo-fvp/apollo-fvp-direct.overlay.dts
-build/qbox-apollo-fvp/apollo-fvp-direct.overlay.dtbo
-```
+active machine is available or Yocto-variable loading is disabled. The
+full-system runner consumes the local deploy artifacts, including the rootfs,
+RSE ROM/flash/OTP, AP flash, SI CL0 firmware, and SI CL1 Zephyr images.
 
 ## Build QBox Targets
 
@@ -560,18 +516,20 @@ analysis is
 `doc/apollo-qvp-fvp-qbox-non-ap-pfdi-analysis-2026-07-17-ko.md` in the
 top-level project.
 
-## Headless Boot
+## CPU Count And Headless Boot
 
 ```bash
 export MACHINE="${MACHINE:-apollo-qvp}"
-python3 scripts/run/run_qbox_apollo_fvp_linux.py \
-  --timeout 600
+python3 scripts/run/run_qbox_apollo_fvp_full.py \
+  --si-mode live-cl0-cl1 \
+  --timeout 600 \
+  --out-dir build/qbox-apollo-qvp/<run-id>
 ```
 
-The direct-boot result files are currently written under the legacy root:
+The full-system result files are written under:
 
 ```text
-build/qbox-apollo-fvp/<timestamp>/
+build/qbox-apollo-qvp/<run-id>/
 ```
 
 Inspect:
@@ -579,12 +537,16 @@ Inspect:
 ```text
 result.json
 summary.txt
-qbox-apollo-fvp.log
+qbox-platform.log
+qbox-rse.log
+qbox-safety-island-cl0.log
+qbox-safety-island-cl1.log
+qbox-secure-console.log
+qbox-primary-console.log
 ```
 
-The direct-boot AP path keeps its 16-CPU experiment default and direct local
-bootargs keep `maxcpus=16`. The full-system and Yocto defaults remain 4 modeled
-AP CPUs. Build a coherent optional 16-CPU Yocto image with:
+The full-system and Yocto defaults remain 4 modeled AP CPUs. Build a coherent
+optional 16-CPU Yocto image with:
 
 ```bash
 export BB_ENV_PASSTHROUGH_ADDITIONS="${BB_ENV_PASSTHROUGH_ADDITIONS:-} PC_CPUS_COUNT_DEFAULT"
@@ -607,39 +569,18 @@ unchanged. The 16-CPU validation covered four clusters, sixteen functional
 GIC redistributors, SI0 core-PPU reset release, PFDI monitoring and
 representative CPU1/4/8/12 hotplug on both FVP and QBox.
 
-For direct-boot CPU wake debugging, keep tracing disabled for normal runs and
-enable it only on focused reproductions:
-
-```bash
-QBOX_APOLLO_PC_TRACE=true \
-QBOX_APOLLO_PC_TRACE_FILE=build/qbox-apollo-fvp/trace-16/cpu-pc-trace.log \
-python3 scripts/run/run_qbox_apollo_fvp_linux.py \
-  --skip-build \
-  --timeout 180 \
-  --out-dir build/qbox-apollo-fvp/trace-16
-```
-
-`QBOX_APOLLO_PC_TRACE_INTERVAL` and `QBOX_APOLLO_PC_TRACE_LIMIT` tune direct
-PC trace volume. `QBOX_APOLLO_EXCEPTION_TRACE=true` enables exception-state
-trace for the same direct AP CPU models.
-
-For one selected direct-boot CPU GDB stub, set both
-`QBOX_APOLLO_GDB_CPU_INDEX` and `QBOX_APOLLO_GDB_PORT`. The selected port must
-not collide with any `--netdev hostfwd` TCP port. `QBOX_APOLLO_GDB_PORT_BASE`
-is intentionally unsupported on Apollo direct boot.
-
 Full-system AP PC tracing uses the RSE-runner controls
 `QBOX_RDASPEN_AP_PC_TRACE`, `QBOX_RDASPEN_AP_PC_TRACE_FILE`,
 `QBOX_RDASPEN_AP_PC_TRACE_INTERVAL`, and `QBOX_RDASPEN_AP_PC_TRACE_LIMIT`.
 
-## Interactive Boot
+## Long-Running Full-System Boot
 
 ```bash
-python3 scripts/run/run_qbox_apollo_fvp_linux.py \
+python3 scripts/run/run_qbox_apollo_fvp_full.py \
+  --si-mode live-cl0-cl1 \
   --skip-build \
-  --interactive \
-  --timeout "${QBOX_APOLLO_TIMEOUT:-0}" \
-  --local-build-dir build/local-${MACHINE}
+  --keep-running-after-pass \
+  --timeout "${QBOX_APOLLO_TIMEOUT:-2400}" \
+  --local-build-dir build/local-${MACHINE} \
+  --out-dir build/qbox-apollo-qvp/long-running
 ```
-
-Set `QBOX_APOLLO_TIMEOUT=0` for an unbounded interactive session.
