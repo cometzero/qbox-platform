@@ -109,6 +109,7 @@ if(BUILD_TESTING)
         endif()
     endmacro()
     set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS
+        arm_system_counter
         cc3xx
         dma350
         gic720ae_messreg
