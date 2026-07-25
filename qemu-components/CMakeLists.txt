@@ -6,6 +6,7 @@ add_subdirectory(qemu_clock_source)
 add_subdirectory(qemu_sse_counter)
 add_subdirectory(qemu_sse_timer)
 add_subdirectory(qemu_arm_counter_mirror)
+add_subdirectory(apollo_timer_snapshot)
 add_subdirectory(cpu_arm/cpu_arm_cortex_a720ae)
 add_subdirectory(cpu_arm/cpu_arm_cortex_r82)
 add_subdirectory(qemu_device_cold_reset)
@@ -19,6 +20,7 @@ foreach(qbox_platform_qemu_target
     qemu_sse_counter
     qemu_sse_timer
     qemu_arm_counter_mirror
+    apollo_timer_snapshot
     rse_cpu_accel
     cpu_arm_cortexA720AE
     cpu_arm_cortexR82

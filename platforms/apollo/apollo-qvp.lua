@@ -57,3 +57,22 @@ end
 if ctx.apollo_live_cl1 then
     si_cl1.enable(ctx, platform)
 end
+
+if enable_ap_cpus and ctx.apollo_live_cl0 and ctx.apollo_live_cl1 then
+    platform.apollo_timer_snapshot = {
+        moduletype = "apollo_timer_snapshot";
+        args = {
+            "&platform.host_css_counters_timers_read";
+            "&platform.ap_cpu_counter_mirror_0";
+            "&platform.ap_timer_counter_mirror";
+            "&platform.si_cl0_cpu_counter_mirror";
+            "&platform.si_cl0_timer_cntbase";
+            "&platform.si_cl1_cpu_counter_mirror_0";
+            "&platform.rse_cpu_pass.rse_lsc_counter";
+            "&platform.rse_cpu_pass.rse_timer_0";
+            "&platform.rse_cpu_pass.rse_timer_1";
+            "&platform.rse_cpu_pass.rse_timer_2";
+            "&platform.rse_cpu_pass.rse_timer_3";
+        };
+    }
+end

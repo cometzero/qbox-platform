@@ -203,6 +203,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     qemu_sse_counter
     qemu_sse_timer
     qemu_arm_counter_mirror
+    apollo_timer_snapshot
     qemu_device_cold_reset
     qemu_arm_arch_timer_mmio
     qemu_hexagon_qtimer
