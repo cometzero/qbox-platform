@@ -327,6 +327,13 @@ function si_cl1.enable(ctx, platform)
             };
         }
         platform["si_cl1_cpu_"..tostring(i)] = cpu
+        platform["si_cl1_cpu_counter_mirror_"..tostring(i)] = {
+            moduletype = "qemu_arm_counter_mirror";
+            args = {
+                "&platform.si_cl1_cpu_"..i;
+                "&platform.css_system_counter";
+            };
+        }
         platform["si_cl1_gic"]["redist_iface_"..i] = {
             address = SI_CL1_GICR0_BASE + (i * SI_CL1_GICR_STRIDE);
             size = SI_CL1_GICR_SIZE;

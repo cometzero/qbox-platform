@@ -404,8 +404,17 @@ function system_mgmt.define(ctx, platform)
         log_level = 0;
     }
 
+    platform.css_system_counter = {
+        moduletype = "arm_system_counter";
+        input_frequency_hz = 125000000;
+        integer_increment = 1;
+        reported_frequency_hz = 125000000;
+        construction_priority = -298;
+    }
+
     platform.host_css_counters_timers = {
         moduletype = "host_gtimer";
+        args = {"&platform.css_system_counter"};
         counter_control = true;
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE;
@@ -417,6 +426,7 @@ function system_mgmt.define(ctx, platform)
 
     platform.host_css_counters_timers_read = {
         moduletype = "host_gtimer";
+        args = {"&platform.css_system_counter"};
         counter_read = true;
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00010000;
@@ -428,6 +438,7 @@ function system_mgmt.define(ctx, platform)
 
     platform.host_css_counters_timers_sync = {
         moduletype = "host_gtimer";
+        args = {"&platform.css_system_counter"};
         sync_frame = true;
         target_socket = {
             address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00020000;

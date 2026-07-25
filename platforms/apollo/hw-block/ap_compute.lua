@@ -473,6 +473,15 @@ function ap_compute.define(ctx, platform)
         };
     } or nil
 
+    platform.ap_timer_counter_mirror = enable_ap_cpus and {
+        moduletype = "qemu_arm_mmio_counter_mirror";
+        dylib_path = "qemu_arm_counter_mirror";
+        args = {
+            "&platform.ap_timer_mem";
+            "&platform.css_system_counter";
+        };
+    } or nil
+
     platform.ap_secure_wdog = enable_ap_cpus and {
         moduletype = "zena_watchdog";
         clock_frequency = 125000000;
@@ -613,6 +622,7 @@ if enable_ap_cpus then
             start_in_reset = true;
             reset_power_on = true;
             rvbar = HOST_AP_BL2_PHYS_BASE;
+            cntfrq_hz = 125000000;
             trace_pc = ap_pc_trace;
             trace_pc_file = ap_pc_trace_file;
             trace_pc_interval = ap_pc_trace_interval;
@@ -624,6 +634,13 @@ if enable_ap_cpus then
             requester_id = i;
         }
         platform["ap_cpu_"..tostring(i)] = cpu
+        platform["ap_cpu_counter_mirror_"..tostring(i)] = {
+            moduletype = "qemu_arm_counter_mirror";
+            args = {
+                "&platform.ap_cpu_"..i;
+                "&platform.css_system_counter";
+            };
+        }
 
         platform["ap_gic"]["irq_out_"..i] = {bind = "&ap_cpu_"..i..".irq_in"}
         platform["ap_gic"]["fiq_out_"..i] = {bind = "&ap_cpu_"..i..".fiq_in"}

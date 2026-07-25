@@ -622,6 +622,7 @@ function si_cl0.enable(ctx, platform)
 
     platform.si_cl0_timer_cntctl = {
         moduletype = "host_gtimer";
+        args = {"&platform.css_system_counter"};
         target_socket = {
             address = SI_CL0_TIMER_CNTCTL_BASE;
             size = SI_CL0_TIMER_CNTCTL_SIZE;
@@ -633,9 +634,8 @@ function si_cl0.enable(ctx, platform)
 
     platform.si_cl0_timer_cntbase = {
         moduletype = "host_gtimer";
+        args = {"&platform.css_system_counter"};
         counter_base = true;
-        frequency = 125000000;
-        counter_increment = 4096;
         target_socket = {
             address = SI_CL0_TIMER_CNT_BASE;
             size = SI_CL0_TIMER_CNT_SIZE;
@@ -1063,6 +1063,7 @@ function si_cl0.enable(ctx, platform)
         start_in_reset = true;
         reset_power_on = true;
         rvbar = SI_CL0_ENTRY;
+        cntfrq_hz = 125000000;
         mp_affinity = 0x0;
         request_origin_id = ctx.request_context.origin.si_cl0_cpu_base;
         request_domain_id = ctx.request_context.domain.si_cl0;
@@ -1093,6 +1094,14 @@ function si_cl0.enable(ctx, platform)
         };
         irq_timer_hyp_out = {
             bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_HYP_PPI;
+        };
+    }
+
+    platform.si_cl0_cpu_counter_mirror = {
+        moduletype = "qemu_arm_counter_mirror";
+        args = {
+            "&platform.si_cl0_cpu_0";
+            "&platform.css_system_counter";
         };
     }
 
