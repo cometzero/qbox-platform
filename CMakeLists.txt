@@ -129,6 +129,7 @@ if(BUILD_TESTING)
         rse_integrity_checker
         rse_kmu
         rse_lcm
+        rse_ppc_filter
         rse_protection_ctrl
         rse_sam
         rse_sysctrl
@@ -222,6 +223,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     rse_integrity_checker
     rse_kmu
     rse_lcm
+    rse_ppc_filter
     rse_protection_ctrl
     rse_sam
     strata_flash_j3

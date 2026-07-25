@@ -1,0 +1,2 @@
+gs_create_dymod(rse_ppc_filter)
+target_link_libraries(rse_ppc_filter PUBLIC rse_protection_ctrl)

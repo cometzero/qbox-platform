@@ -210,6 +210,11 @@ public:
     target_socket_type target_socket;
     target_socket_type non_secure_socket;
 
+    bool policy_allows(uint32_t offset, uint32_t mask) const
+    {
+        return (load32(offset) & mask) == mask;
+    }
+
     explicit rse_protection_ctrl(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
         , p_trace("trace", false)
