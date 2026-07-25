@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <utility>
 
+#include <arm_system_counter.h>
 #include <cci/utils/broker.h>
 #include <gtest/gtest.h>
 #include <host_gtimer.h>
@@ -27,7 +28,8 @@ constexpr uint64_t SYNC_FIRST_UNDOCUMENTED = 0x044;
 constexpr uint64_t SYNC_PIDR4 = 0xfd0;
 
 uint32_t access32(host_gtimer& dut, uint64_t offset, tlm::tlm_command command,
-                  uint32_t value = 0)
+                  uint32_t value = 0,
+                  sc_core::sc_time delay = sc_core::SC_ZERO_TIME)
 {
     tlm::tlm_generic_payload trans;
     auto data = value;
@@ -38,7 +40,6 @@ uint32_t access32(host_gtimer& dut, uint64_t offset, tlm::tlm_command command,
     trans.set_streaming_width(sizeof(data));
     trans.set_data_ptr(reinterpret_cast<unsigned char*>(&data));
 
-    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
     dut.b_transport(trans, delay);
 
     EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
@@ -50,14 +51,17 @@ uint32_t read32(host_gtimer& dut, uint64_t offset)
     return access32(dut, offset, tlm::TLM_READ_COMMAND);
 }
 
-void write32(host_gtimer& dut, uint64_t offset, uint32_t value)
+void write32(host_gtimer& dut, uint64_t offset, uint32_t value,
+             sc_core::sc_time delay = sc_core::SC_ZERO_TIME)
 {
-    (void)access32(dut, offset, tlm::TLM_WRITE_COMMAND, value);
+    (void)access32(dut, offset, tlm::TLM_WRITE_COMMAND, value, delay);
 }
 
 tlm::tlm_response_status access_status(host_gtimer& dut, uint64_t offset,
                                         tlm::tlm_command command,
-                                        unsigned int len, uint64_t value = 0)
+                                        unsigned int len, uint64_t value = 0,
+                                        unsigned int streaming_width = 0,
+                                        unsigned char* byte_enable = nullptr)
 {
     tlm::tlm_generic_payload trans;
     auto data = value;
@@ -65,8 +69,11 @@ tlm::tlm_response_status access_status(host_gtimer& dut, uint64_t offset,
     trans.set_address(offset);
     trans.set_command(command);
     trans.set_data_length(len);
-    trans.set_streaming_width(len);
+    trans.set_streaming_width(
+        streaming_width == 0 ? len : streaming_width);
     trans.set_data_ptr(reinterpret_cast<unsigned char*>(&data));
+    trans.set_byte_enable_ptr(byte_enable);
+    trans.set_byte_enable_length(byte_enable == nullptr ? 0 : len);
 
     sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
     dut.b_transport(trans, delay);
@@ -74,32 +81,69 @@ tlm::tlm_response_status access_status(host_gtimer& dut, uint64_t offset,
     return trans.get_response_status();
 }
 
+uint32_t debug_read32(host_gtimer& dut, uint64_t offset)
+{
+    tlm::tlm_generic_payload trans;
+    uint32_t value = 0;
+    trans.set_address(offset);
+    trans.set_command(tlm::TLM_READ_COMMAND);
+    trans.set_data_length(sizeof(value));
+    trans.set_streaming_width(sizeof(value));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+    EXPECT_EQ(dut.transport_dbg(trans), sizeof(value));
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    return value;
+}
+
+tlm::tlm_response_status debug_write_status(host_gtimer& dut,
+                                            uint64_t offset,
+                                            uint32_t value)
+{
+    tlm::tlm_generic_payload trans;
+    trans.set_address(offset);
+    trans.set_command(tlm::TLM_WRITE_COMMAND);
+    trans.set_data_length(sizeof(value));
+    trans.set_streaming_width(sizeof(value));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+    (void)dut.transport_dbg(trans);
+    return trans.get_response_status();
+}
+
 } // namespace
 
-TEST(HostGtimerTest, CounterBaseLowWordAdvances)
+TEST(HostGtimerTest, CounterReadsAreSideEffectFreeAndShared)
 {
-    host_gtimer dut("host_gtimer_counter");
-    dut.p_counter_base = true;
-    dut.p_counter_increment = 125u;
-    dut.before_end_of_elaboration();
+    gs::arm_system_counter counter("shared_counter");
+    host_gtimer base("host_gtimer_counter_base", counter);
+    host_gtimer read("host_gtimer_counter_read", &counter);
+    base.p_counter_base = true;
+    read.p_counter_read = true;
+    base.before_end_of_elaboration();
+    read.before_end_of_elaboration();
+    const sc_core::sc_time first_tick(8, sc_core::SC_NS);
 
-    EXPECT_EQ(read32(dut, PCTL), 125u);
-    EXPECT_EQ(read32(dut, PCTL), 250u);
+    EXPECT_EQ(access32(base, PCTL, tlm::TLM_READ_COMMAND, 0,
+                       first_tick), 1u);
+    EXPECT_EQ(access32(read, CNTREAD_L, tlm::TLM_READ_COMMAND, 0,
+                       first_tick), 1u);
+    EXPECT_EQ(access32(base, PCTL, tlm::TLM_READ_COMMAND, 0,
+                       first_tick), 1u);
 }
 
 TEST(HostGtimerTest, CounterBaseReportsFrequency)
 {
-    host_gtimer dut("host_gtimer_frequency");
+    gs::arm_system_counter counter("frequency_counter");
+    host_gtimer dut("host_gtimer_frequency", counter);
     dut.p_counter_base = true;
-    dut.p_frequency = 1000000000u;
     dut.before_end_of_elaboration();
 
-    EXPECT_EQ(read32(dut, FRQ), 1000000000u);
+    EXPECT_EQ(read32(dut, FRQ), 125000000u);
 }
 
 TEST(HostGtimerTest, RegistersPreserveWrites)
 {
-    host_gtimer dut("host_gtimer_rw");
+    gs::arm_system_counter counter("rw_counter");
+    host_gtimer dut("host_gtimer_rw", counter);
 
     write32(dut, P_CTL, 0x00000003u);
 
@@ -108,9 +152,9 @@ TEST(HostGtimerTest, RegistersPreserveWrites)
 
 TEST(HostGtimerTest, CntControlReportsFrequencyAndPreservesControlWrites)
 {
-    host_gtimer dut("host_gtimer_cntcontrol");
+    gs::arm_system_counter counter("control_counter");
+    host_gtimer dut("host_gtimer_cntcontrol", counter);
     dut.p_counter_control = true;
-    dut.p_frequency = 125000000u;
     dut.before_end_of_elaboration();
 
     EXPECT_EQ(read32(dut, CNTFID0), 125000000u);
@@ -131,20 +175,131 @@ TEST(HostGtimerTest, CntControlReportsFrequencyAndPreservesControlWrites)
 
 TEST(HostGtimerTest, CntReadLowHighReadsAreMonotonic)
 {
-    host_gtimer dut("host_gtimer_cntread");
+    gs::arm_system_counter counter("read_counter");
+    host_gtimer dut("host_gtimer_cntread", counter);
     dut.p_counter_read = true;
-    dut.p_counter_increment = 0x100000001ULL;
     dut.before_end_of_elaboration();
+    counter.reanchor_at(0xffffffffULL, 0, sc_core::SC_ZERO_TIME);
 
-    EXPECT_EQ(read32(dut, CNTREAD_L), 1u);
-    EXPECT_EQ(read32(dut, CNTREAD_H), 1u);
-    EXPECT_EQ(read32(dut, CNTREAD_L), 2u);
-    EXPECT_EQ(read32(dut, CNTREAD_H), 2u);
+    EXPECT_EQ(read32(dut, CNTREAD_H), 0u);
+    EXPECT_EQ(access32(dut, CNTREAD_L, tlm::TLM_READ_COMMAND, 0,
+                       sc_core::sc_time(8, sc_core::SC_NS)), 0u);
+    EXPECT_EQ(access32(dut, CNTREAD_H, tlm::TLM_READ_COMMAND, 0,
+                       sc_core::sc_time(8, sc_core::SC_NS)), 1u);
+}
+
+TEST(HostGtimerTest, AnnotatedSubNanosecondTimeIsPreserved)
+{
+    gs::arm_system_counter counter("sub_ns_transport_counter");
+    host_gtimer control("sub_ns_control", counter);
+    host_gtimer read("sub_ns_read", counter);
+    control.p_counter_control = true;
+    read.p_counter_read = true;
+    control.before_end_of_elaboration();
+    read.before_end_of_elaboration();
+    const sc_core::sc_time effective_time(2501, sc_core::SC_PS);
+
+    write32(control, CNTCV_L, 0x76543210u, effective_time);
+    write32(control, CNTCV_H, 0xfedcba98u, effective_time);
+
+    EXPECT_EQ(access32(read, CNTREAD_L, tlm::TLM_READ_COMMAND, 0,
+                       effective_time), 0x76543210u);
+    EXPECT_EQ(access32(read, CNTREAD_H, tlm::TLM_READ_COMMAND, 0,
+                       effective_time), 0xfedcba98u);
+    EXPECT_EQ(counter.snapshot().anchor_time_ticks,
+              effective_time.value());
+}
+
+TEST(HostGtimerTest, MirrorRelevantControlWritesAdvanceGeneration)
+{
+    gs::arm_system_counter counter("control_generation_counter");
+    host_gtimer control("generation_control", counter);
+    control.p_counter_control = true;
+    control.before_end_of_elaboration();
+    uint64_t generation = counter.snapshot().generation;
+
+    write32(control, CNTFID0, 100000000u);
+    EXPECT_EQ(counter.snapshot().generation, ++generation);
+    write32(control, 0x0d0, 8u);
+    EXPECT_EQ(counter.snapshot().generation, ++generation);
+    write32(control, CNTCR, 2u);
+    EXPECT_EQ(counter.snapshot().generation, ++generation);
+    write32(control, CNTCV_L, 0x12345678u);
+    EXPECT_EQ(counter.snapshot().generation, ++generation);
+}
+
+TEST(HostGtimerTest, DebugAccessIsObservational)
+{
+    gs::arm_system_counter counter("debug_counter");
+    host_gtimer control("debug_control", counter);
+    host_gtimer read("debug_read", counter);
+    control.p_counter_control = true;
+    read.p_counter_read = true;
+    control.before_end_of_elaboration();
+    read.before_end_of_elaboration();
+    const auto before = counter.snapshot();
+
+    EXPECT_EQ(debug_read32(read, CNTREAD_L), 0u);
+    EXPECT_EQ(debug_read32(read, CNTREAD_L), 0u);
+    EXPECT_EQ(debug_write_status(control, CNTCV_L, 0xffffffffu),
+              tlm::TLM_COMMAND_ERROR_RESPONSE);
+    const auto after = counter.snapshot();
+    EXPECT_EQ(after.anchor_count, before.anchor_count);
+    EXPECT_EQ(after.generation, before.generation);
+}
+
+TEST(HostGtimerTest, DirectMemoryAccessIsDenied)
+{
+    gs::arm_system_counter counter("dmi_counter");
+    host_gtimer read("dmi_read", counter);
+    tlm::tlm_generic_payload trans;
+    tlm::tlm_dmi dmi;
+    trans.set_address(CNTREAD_L);
+
+    EXPECT_FALSE(read.get_direct_mem_ptr(trans, dmi));
+    EXPECT_FALSE(trans.is_dmi_allowed());
+}
+
+TEST(HostGtimerTest, FrontendElaborationDoesNotResetSharedAuthority)
+{
+    gs::arm_system_counter counter("frontend_reset_counter");
+    counter.reanchor_at(0x123456789abcdef0ULL, 0,
+                        sc_core::SC_ZERO_TIME);
+    const uint64_t generation = counter.snapshot().generation;
+    host_gtimer read("frontend_reset_read", counter);
+    read.p_counter_read = true;
+    read.before_end_of_elaboration();
+
+    EXPECT_EQ(read32(read, CNTREAD_L), 0x9abcdef0u);
+    EXPECT_EQ(read32(read, CNTREAD_H), 0x12345678u);
+    EXPECT_EQ(counter.snapshot().generation, generation);
+}
+
+TEST(HostGtimerTest, CounterFramesRejectMalformedAccessShapes)
+{
+    gs::arm_system_counter counter("malformed_counter");
+    host_gtimer read("malformed_read", counter);
+    read.p_counter_read = true;
+    read.before_end_of_elaboration();
+    unsigned char byte_enable[4] = { 0xff, 0xff, 0xff, 0xff };
+
+    EXPECT_EQ(access_status(read, CNTREAD_L, tlm::TLM_READ_COMMAND, 2),
+              tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    EXPECT_EQ(access_status(read, CNTREAD_L + 1,
+                            tlm::TLM_READ_COMMAND, 4),
+              tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    EXPECT_EQ(access_status(read, CNTREAD_L, tlm::TLM_READ_COMMAND,
+                            4, 0, 2),
+              tlm::TLM_BURST_ERROR_RESPONSE);
+    EXPECT_EQ(access_status(read, CNTREAD_L, tlm::TLM_READ_COMMAND,
+                            4, 0, 4, byte_enable),
+              tlm::TLM_BYTE_ENABLE_ERROR_RESPONSE);
 }
 
 TEST(HostGtimerTest, SyncRegistersResetToZeroAndPreserveWrites)
 {
-    host_gtimer dut("host_gtimer_sync_rw");
+    gs::arm_system_counter counter("sync_rw_counter");
+    host_gtimer dut("host_gtimer_sync_rw", counter);
     dut.p_sync_frame = true;
     dut.before_end_of_elaboration();
 
@@ -160,7 +315,8 @@ TEST(HostGtimerTest, SyncRegistersResetToZeroAndPreserveWrites)
 
 TEST(HostGtimerTest, SyncRejectsUndocumentedOffsets)
 {
-    host_gtimer dut("host_gtimer_sync_decode");
+    gs::arm_system_counter counter("sync_decode_counter");
+    host_gtimer dut("host_gtimer_sync_decode", counter);
     dut.p_sync_frame = true;
     dut.before_end_of_elaboration();
 
@@ -175,7 +331,8 @@ TEST(HostGtimerTest, SyncRejectsUndocumentedOffsets)
 
 TEST(HostGtimerTest, AllocatedFrameReservedTailIsRazWi)
 {
-    host_gtimer dut("host_gtimer_reserved_tail");
+    gs::arm_system_counter counter("reserved_tail_counter");
+    host_gtimer dut("host_gtimer_reserved_tail", counter);
     dut.p_sync_frame = true;
     dut.before_end_of_elaboration();
 
@@ -186,7 +343,8 @@ TEST(HostGtimerTest, AllocatedFrameReservedTailIsRazWi)
 
 TEST(HostGtimerTest, SyncRejectsUnsupportedRegisterAccessSizes)
 {
-    host_gtimer dut("host_gtimer_sync_access_size");
+    gs::arm_system_counter counter("sync_access_counter");
+    host_gtimer dut("host_gtimer_sync_access_size", counter);
     dut.p_sync_frame = true;
     dut.before_end_of_elaboration();
 
@@ -203,7 +361,8 @@ TEST(HostGtimerTest, SyncRejectsUnsupportedRegisterAccessSizes)
 
 TEST(HostGtimerTest, SyncIdRegistersReportResetValuesAndIgnoreWrites)
 {
-    host_gtimer dut("host_gtimer_sync_id");
+    gs::arm_system_counter counter("sync_id_counter");
+    host_gtimer dut("host_gtimer_sync_id", counter);
     dut.p_sync_frame = true;
     dut.before_end_of_elaboration();
 
@@ -226,7 +385,8 @@ TEST(HostGtimerTest, SyncIdRegistersReportResetValuesAndIgnoreWrites)
 
 TEST(HostGtimerTest, SyncIdRegistersRejectUnsupportedAccessShapes)
 {
-    host_gtimer dut("host_gtimer_sync_id_access");
+    gs::arm_system_counter counter("sync_id_access_counter");
+    host_gtimer dut("host_gtimer_sync_id_access", counter);
     dut.p_sync_frame = true;
     dut.before_end_of_elaboration();
 

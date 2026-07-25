@@ -1,1 +1,2 @@
 gs_create_dymod(host_gtimer)
+target_link_libraries(host_gtimer PUBLIC arm_system_counter)
