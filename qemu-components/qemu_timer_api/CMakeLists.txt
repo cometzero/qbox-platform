@@ -1,0 +1,4 @@
+add_library(qemu_timer_api STATIC src/qemu_timer_api.cc)
+set_target_properties(qemu_timer_api PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(qemu_timer_api PUBLIC include)
+target_link_libraries(qemu_timer_api PUBLIC qbox)

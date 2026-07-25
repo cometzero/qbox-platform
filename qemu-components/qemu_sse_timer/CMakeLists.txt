@@ -1,0 +1,4 @@
+gs_create_dymod(qemu_sse_timer)
+target_link_libraries(qemu_sse_timer PUBLIC
+    qemu_sse_counter
+    qemu_timer_api)

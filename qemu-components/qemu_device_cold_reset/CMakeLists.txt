@@ -1,0 +1,2 @@
+gs_create_dymod(qemu_device_cold_reset)
+target_link_libraries(qemu_device_cold_reset PUBLIC qemu_timer_api)

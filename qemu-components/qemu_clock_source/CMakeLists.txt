@@ -1,0 +1,2 @@
+gs_create_dymod(qemu_clock_source)
+target_link_libraries(qemu_clock_source PUBLIC qemu_timer_api)

@@ -198,6 +198,11 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     nvic_armv7m
     ApolloRseCPU
     qemu_cc3xx
+    qemu_clock_source
+    qemu_sse_counter
+    qemu_sse_timer
+    qemu_arm_counter_mirror
+    qemu_device_cold_reset
     qemu_arm_arch_timer_mmio
     qemu_hexagon_qtimer
     mhu320ae
