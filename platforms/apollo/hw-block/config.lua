@@ -121,48 +121,41 @@ function apollo_system_reset_bind_targets()
     targets[#targets + 1] = "&rse_cpu_pass.cpu_0.accel_reset"
     targets[#targets + 1] = "&rse_sys_rss_reset_fanout.reset_in"
 
-    if apollo_live_cl0 then
-        targets[#targets + 1] = "&host_si_cl0_clus_ppu.reset"
-        targets[#targets + 1] = "&host_si_cl0_core0_ppu.reset"
-        targets[#targets + 1] = "&si_cl0_ni710ae_primary_nci.reset"
-        targets[#targets + 1] = "&si_cl0_ni710ae_secondary_nci.reset"
-        targets[#targets + 1] = "&si_cl0_ni710ae_mhu_nci.reset"
-        targets[#targets + 1] = "&si_cl0_qemu_inst.reset"
-        for _, frame in ipairs({
-            "si_cl0_ap_ns_mhu_pbx";
-            "si_cl0_ap_ns_mhu_mbx";
-            "si_cl0_ap_scmi_mhu_pbx";
-            "si_cl0_ap_scmi_mhu_mbx";
-            "si_cl0_ap_pfdi_monitor_mhu_pbx";
-            "si_cl0_ap_pfdi_monitor_mhu_mbx";
-            "si_cl0_rse_mhu_pbx";
-            "si_cl0_rse_mhu_mbx";
-        }) do
-            targets[#targets + 1] = "&"..frame..".reset"
-        end
+    targets[#targets + 1] = "&host_si_cl0_clus_ppu.reset"
+    targets[#targets + 1] = "&host_si_cl0_core0_ppu.reset"
+    targets[#targets + 1] = "&si_cl0_ni710ae_primary_nci.reset"
+    targets[#targets + 1] = "&si_cl0_ni710ae_secondary_nci.reset"
+    targets[#targets + 1] = "&si_cl0_ni710ae_mhu_nci.reset"
+    targets[#targets + 1] = "&si_cl0_qemu_inst.reset"
+    for _, frame in ipairs({
+        "si_cl0_ap_ns_mhu_pbx";
+        "si_cl0_ap_ns_mhu_mbx";
+        "si_cl0_ap_scmi_mhu_pbx";
+        "si_cl0_ap_scmi_mhu_mbx";
+        "si_cl0_ap_pfdi_monitor_mhu_pbx";
+        "si_cl0_ap_pfdi_monitor_mhu_mbx";
+        "si_cl0_rse_mhu_pbx";
+        "si_cl0_rse_mhu_mbx";
+    }) do
+        targets[#targets + 1] = "&"..frame..".reset"
     end
 
-    if apollo_live_cl1 then
-        targets[#targets + 1] = "&host_si_cl1_clus_ppu.reset"
-        targets[#targets + 1] = "&si_cl1_cluster_ppu.reset"
-        for cpu=0,3 do
-            targets[#targets + 1] = "&si_cl1_core"..cpu.."_ppu.reset"
-        end
-        targets[#targets + 1] = "&si_cl1_qemu_inst.reset"
-        for _, frame in ipairs({
-            "si_cl1_hipc_mhu_pbx";
-            "si_cl1_hipc_mhu_mbx";
-            "si_cl1_pfdi_mhu_pbx";
-            "si_cl1_pfdi_reply_mhu_mbx";
-        }) do
-            targets[#targets + 1] = "&"..frame..".reset"
-        end
+    targets[#targets + 1] = "&host_si_cl1_clus_ppu.reset"
+    targets[#targets + 1] = "&si_cl1_cluster_ppu.reset"
+    for cpu=0,3 do
+        targets[#targets + 1] = "&si_cl1_core"..cpu.."_ppu.reset"
     end
-
-    if apollo_live_cl0 and apollo_live_cl1 then
-        targets[#targets + 1] = "&si_cl0_pfdi_mhu_pbx.reset"
-        targets[#targets + 1] = "&si_cl0_pfdi_mhu_mbx.reset"
+    targets[#targets + 1] = "&si_cl1_qemu_inst.reset"
+    for _, frame in ipairs({
+        "si_cl1_hipc_mhu_pbx";
+        "si_cl1_hipc_mhu_mbx";
+        "si_cl1_pfdi_mhu_pbx";
+        "si_cl1_pfdi_reply_mhu_mbx";
+    }) do
+        targets[#targets + 1] = "&"..frame..".reset"
     end
+    targets[#targets + 1] = "&si_cl0_pfdi_mhu_pbx.reset"
+    targets[#targets + 1] = "&si_cl0_pfdi_mhu_mbx.reset"
 
     return table.concat(targets, ";")
 end
@@ -257,13 +250,6 @@ ap_pc_trace_interval = tonumber(getenv_or("QBOX_RDASPEN_AP_PC_TRACE_INTERVAL", "
 ap_pc_trace_limit = tonumber(getenv_or("QBOX_RDASPEN_AP_PC_TRACE_LIMIT", "4096"))
 ap_exception_trace = getenv_or("QBOX_RDASPEN_AP_EXCEPTION_TRACE", "false") == "true"
 enable_ap_cpus = getenv_or("QBOX_RDASPEN_ENABLE_AP_CPUS", "false") == "true"
-apollo_si_mode = getenv_or("QBOX_APOLLO_FULL_SI_MODE", "service-model")
-apollo_live_cl1 =
-    getenv_or("QBOX_APOLLO_FULL_LIVE_CL1", "false") == "true" or
-    apollo_si_mode == "live-cl1" or apollo_si_mode == "live-cl0-cl1"
-apollo_live_cl0 =
-    getenv_or("QBOX_APOLLO_FULL_LIVE_CL0", "false") == "true" or
-    apollo_si_mode == "live-cl0-cl1"
 rse_pc_trace = getenv_or("QBOX_RDASPEN_RSE_PC_TRACE", "false") == "true"
 rse_pc_trace_file = getenv_or(
     "QBOX_RDASPEN_RSE_PC_TRACE_FILE",
@@ -791,9 +777,6 @@ function config.create(apollo_dir, machine_contract, machine)
     return {
         apollo_dir = apollo_dir;
         apollo_root = root;
-        apollo_si_mode = apollo_si_mode;
-        apollo_live_cl0 = apollo_live_cl0;
-        apollo_live_cl1 = apollo_live_cl1;
         machine_contract = machine;
         machine_contract_module = machine_contract;
         request_context = {

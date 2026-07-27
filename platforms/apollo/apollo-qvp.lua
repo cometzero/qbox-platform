@@ -1,7 +1,7 @@
 -- Apollo QVP full-system entrypoint.
 --
--- The full-system wrapper composes subsystem-owned hardware blocks and then
--- enables live Safety Island paths according to QBOX_APOLLO_FULL_SI_MODE.
+-- The full-system wrapper composes subsystem-owned hardware blocks, including
+-- the real Safety Island CL0 and CL1 firmware domains.
 
 print("Apollo QVP full-system QBox config running...")
 
@@ -50,15 +50,10 @@ ap_compute.enable_ap_router(ctx, platform)
 si_cl0.define(ctx, platform)
 si_cl1.define(ctx, platform)
 
-if ctx.apollo_live_cl0 then
-    si_cl0.enable(ctx, platform)
-end
+si_cl0.enable(ctx, platform)
+si_cl1.enable(ctx, platform)
 
-if ctx.apollo_live_cl1 then
-    si_cl1.enable(ctx, platform)
-end
-
-if enable_ap_cpus and ctx.apollo_live_cl0 and ctx.apollo_live_cl1 then
+if enable_ap_cpus then
     platform.apollo_timer_snapshot = {
         moduletype = "apollo_timer_snapshot";
         args = {

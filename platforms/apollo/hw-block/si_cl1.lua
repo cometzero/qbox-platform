@@ -32,8 +32,8 @@ function si_cl1.define(ctx, platform)
         moduletype = "host_ppu";
         trace = host_ppu_trace;
         trace_limit = host_ppu_trace_limit;
-        assert_power_on_load = apollo_live_cl1;
-        power_on_load = apollo_live_cl1 and {bind = "&si_cl1_loader.reset"} or nil;
+        assert_power_on_load = true;
+        power_on_load = {bind = "&si_cl1_loader.reset"};
         power_on_load_pulse_width_ns = 0;
         target_socket = {
             address = HOST_SI_CL1_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
@@ -99,7 +99,7 @@ function si_cl1.enable(ctx, platform)
         ctx.apollo_root.."build/local-apollo-fvp/deploy/firmware/zephyr-demos-cl1.bin")
     local si_cl1_log = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL1_LOG",
-        ctx.apollo_root.."build/qbox-apollo-fvp/full-live-cl1/qbox-safety-island-cl1.log")
+        ctx.apollo_root.."build/qbox-apollo-fvp/full-system/qbox-safety-island-cl1.log")
     local si_cl1_uart_read_file = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL1_UART_READ_FILE",
         "/dev/null")
@@ -108,7 +108,7 @@ function si_cl1.enable(ctx, platform)
     local mhu_trace = ctx.getenv_bool_or("QBOX_APOLLO_FULL_SI_CL1_MHU_TRACE", false)
     local mhu_trace_file = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL1_MHU_TRACE_FILE",
-        ctx.apollo_root.."build/qbox-apollo-fvp/full-live-cl1/si-cl1-mhuv3-trace.log")
+        ctx.apollo_root.."build/qbox-apollo-fvp/full-system/si-cl1-mhuv3-trace.log")
     local mhu_trace_limit =
         ctx.getenv_number_or("QBOX_APOLLO_FULL_SI_CL1_MHU_TRACE_LIMIT", "4096")
 

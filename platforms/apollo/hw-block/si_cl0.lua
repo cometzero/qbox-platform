@@ -62,10 +62,10 @@ function si_cl0.define(ctx, platform)
         moduletype = "host_ppu";
         trace = host_ppu_trace;
         trace_limit = host_ppu_trace_limit;
-        assert_power_on_reset = apollo_live_cl0;
-        assert_power_on_load = apollo_live_cl0;
-        power_on_load = apollo_live_cl0 and {bind = "&si_cl0_loader.reset"} or nil;
-        power_on_reset = apollo_live_cl0 and {bind = "&si_cl0_cpu_0.reset"} or nil;
+        assert_power_on_reset = true;
+        assert_power_on_load = true;
+        power_on_load = {bind = "&si_cl0_loader.reset"};
+        power_on_reset = {bind = "&si_cl0_cpu_0.reset"};
         power_on_load_pulse_width_ns = 0;
         power_on_load_to_reset_delay_ns = 0;
         power_on_status_delay_ns = ctx.getenv_number_or(
@@ -265,7 +265,7 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
-    platform.si_cl0_pfdi_mhu_pbx = ctx.apollo_live_cl1 and {
+    platform.si_cl0_pfdi_mhu_pbx = {
         moduletype = "mhu320ae";
         frame = "pbx";
         pair = "apollo_si_cl0_pfdi_reply";
@@ -288,9 +288,9 @@ function si_cl0.enable(ctx, platform)
         };
         initiator_socket = {bind = "&si_cl0_router.target_socket"};
         log_level = 0;
-    } or nil
+    }
 
-    platform.si_cl0_pfdi_mhu_mbx = ctx.apollo_live_cl1 and {
+    platform.si_cl0_pfdi_mhu_mbx = {
         moduletype = "mhu320ae";
         frame = "mbx";
         pair = "apollo_si_cl1_pfdi";
@@ -315,7 +315,7 @@ function si_cl0.enable(ctx, platform)
         irq = {bind = "&si_cl0_gic.spi_in_"..
             (SI_CL0_CL1_MHU_INTID - GIC_SPI_BASE_INTID)};
         log_level = 0;
-    } or nil
+    }
 
     platform.host_si_atu.translation_socket = {
         address = 0x80000000;
@@ -499,7 +499,7 @@ function si_cl0.enable(ctx, platform)
         "QBOX_APOLLO_FULL_SI_CL0_LOG",
         ctx.getenv_or(
             "QBOX_RDASPEN_SCP_LOG",
-            ctx.apollo_root.."build/qbox-apollo-fvp/full-live-cl0-cl1/qbox-safety-island-cl0.log"))
+            ctx.apollo_root.."build/qbox-apollo-fvp/full-system/qbox-safety-island-cl0.log"))
     local si_cl0_uart_read_file = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL0_UART_READ_FILE",
         "/dev/null")
@@ -892,10 +892,10 @@ function si_cl0.enable(ctx, platform)
         platform["si_cl1_core"..i.."_ppu"] = {
             moduletype = "host_ppu";
             initial_power_status = 0x0;
-            assert_power_on_reset = ctx.apollo_live_cl1;
-            power_on_reset = ctx.apollo_live_cl1 and {
+            assert_power_on_reset = true;
+            power_on_reset = {
                 bind = "&si_cl1_cpu_"..i..".reset";
-            } or nil;
+            };
             target_socket = {
                 address = SI_CL1_CORE_PPU0_BASE +
                     (i * SI_CL1_CORE_PPU_STRIDE);
@@ -1079,7 +1079,7 @@ function si_cl0.enable(ctx, platform)
             false);
         trace_pc_file = ctx.getenv_or(
             "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_FILE",
-            ctx.apollo_root.."build/qbox-apollo-fvp/full-live-cl0-cl1/si-cl0-pc-trace.log");
+            ctx.apollo_root.."build/qbox-apollo-fvp/full-system/si-cl0-pc-trace.log");
         trace_pc_interval = ctx.getenv_number_or(
             "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_INTERVAL",
             "1");
