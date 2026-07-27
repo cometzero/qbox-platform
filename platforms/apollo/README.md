@@ -7,9 +7,9 @@ entrypoint is:
 hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-qvp.lua
 ```
 
-The full-system runner supports both `--si-mode live-cl1` and
-`--si-mode live-cl0-cl1`; the examples below use the complete live CL0/CL1
-configuration.
+The full-system runner always instantiates the real Safety Island CL0
+SCP-firmware and CL1 Zephyr domains. There is no Apollo QVP Safety Island mode
+selection.
 
 The full-system entrypoint composes subsystem-owned Apollo hardware blocks:
 
@@ -66,10 +66,9 @@ The QBox-owned SCMI/PFDI completer validates the shared-memory message length
 before protocol dispatch. A length smaller than the four-byte SCMI header or
 larger than the channel capacity returns `SCMI_PROTOCOL_ERROR`, publishes the
 channel as FREE, and performs no power/reset side effect. The next valid
-request on the same channel is accepted. The service-modeled RPMsg name-service
-path similarly bounds an invalid descriptor poll and permits a corrected
-descriptor on the next doorbell. PSCI and FF-A error semantics remain owned by
-TF-A and OP-TEE rather than being synthesized by the platform model.
+request on the same channel is accepted. The CL1 Zephyr firmware owns the RPMsg
+name-service exchange. PSCI and FF-A error semantics remain owned by TF-A and
+OP-TEE rather than being synthesized by the platform model.
 
 AP cold reset now resets every AP-owned MHU PBX/MBX frame while preserving the
 SMD-owned shared SRAM. Frame reset clears doorbell, interrupt, pending
@@ -226,14 +225,12 @@ top-level helpers:
 python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --skip-build --timeout 600 \
   --rootfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-msix-disk.img \
   --rootfs-bootargs-profile none \
   --out-dir <msix-output>
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --skip-build --timeout 600 \
   --rootfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-intx-disk.img \
   --rootfs-bootargs-profile none \
@@ -261,7 +258,6 @@ QBOX_APOLLO_NUM_CPUS=4 \
 QBOX_APOLLO_FAULT_EVENT_TEST=true \
 QBOX_APOLLO_FAULT_EVENT_LOG="$PWD/build/qbox-apollo-qvp/fault-events.json" \
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --skip-build \
   --local-build-dir build/local-apollo-qvp \
   --timeout 600 \
@@ -336,14 +332,13 @@ For an explicit local-source full-system run, use:
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --skip-build \
   --timeout 2400 \
   --rootfs-bootargs-profile quiet-console \
   --cc3xx-qemu-native-backend \
   --rse-lms-accel \
   --rse-fast-boot-sram-dmi \
-  --out-dir build/qbox-apollo-qvp/full-live-cl0-cl1-sram-dmi
+  --out-dir build/qbox-apollo-qvp/full-system-sram-dmi
 ```
 
 The RSE child `result.json` should report
@@ -369,7 +364,7 @@ comparison and verification report is
 The default SRAM DMI path should not create file-backed host SRAM images:
 
 ```bash
-find build/qbox-apollo-qvp/full-live-cl0-cl1-sram-dmi -type f \( \
+find build/qbox-apollo-qvp/full-system-sram-dmi -type f \( \
   -name 'host-si-cl*-sram.bin' -o \
   -name 'host-ap-*-sram.bin' \
 \) -print -quit
@@ -412,7 +407,6 @@ Then run the local-source full-system image and audit its result:
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --timeout 600 \
   --out-dir build/qbox-apollo-fvp/<run-id>
 python3 scripts/test/audit_qbox_apollo_fvp_full_coverage.py \
@@ -462,7 +456,6 @@ top-level project.
 ```bash
 export MACHINE="${MACHINE:-apollo-qvp}"
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --timeout 600 \
   --out-dir build/qbox-apollo-qvp/<run-id>
 ```
@@ -518,7 +511,6 @@ Full-system AP PC tracing uses the RSE-runner controls
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --skip-build \
   --keep-running-after-pass \
   --timeout "${QBOX_APOLLO_TIMEOUT:-2400}" \

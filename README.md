@@ -132,7 +132,6 @@ For explicit FVP local-source comparison:
 
 ```bash
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --si-mode live-cl0-cl1 \
   --skip-build \
   --timeout 900
 ```
