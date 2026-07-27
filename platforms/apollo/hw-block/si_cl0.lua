@@ -3,6 +3,7 @@ local si_cl0 = {}
 -- SCP-firmware exposes architectural GIC INTIDs, while QBox's spi_in_N
 -- sockets are zero-based SPI inputs (INTID 32 is spi_in_0).
 local GIC_SPI_BASE_INTID = 32
+local SI_CL0_SYSTEM_TIMER_INTID = 34
 local SI_CL0_UART_INTID = 40
 local SI_CL0_AP_NS_MHU_SEND_INTID = 96
 local SI_CL0_AP_NS_MHU_RECV_INTID = 97
@@ -636,6 +637,8 @@ function si_cl0.enable(ctx, platform)
         moduletype = "host_gtimer";
         args = {"&platform.css_system_counter"};
         counter_base = true;
+        irq = {bind = "&si_cl0_gic.spi_in_"..
+            (SI_CL0_SYSTEM_TIMER_INTID - GIC_SPI_BASE_INTID)};
         target_socket = {
             address = SI_CL0_TIMER_CNT_BASE;
             size = SI_CL0_TIMER_CNT_SIZE;

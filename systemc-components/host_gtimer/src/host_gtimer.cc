@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 #include <arm_system_counter.h>
@@ -92,6 +93,12 @@ uint32_t host_gtimer::read32(
         return static_cast<uint32_t>(
             m_counter.snapshot().reported_frequency_hz);
     }
+    if (p_counter_base.get_value() && offset == P_CTL) {
+        const uint32_t control =
+            load32(offset) & (P_CTL_ENABLE | P_CTL_IMASK);
+        return timer_expired(effective_time) ?
+            control | P_CTL_ISTATUS : control;
+    }
     if (p_counter_control.get_value()) {
         if (offset == CNTCR) {
             const auto state = m_counter.snapshot();
@@ -117,6 +124,14 @@ void host_gtimer::write32(
     uint32_t offset, uint32_t value,
     const sc_core::sc_time& effective_time)
 {
+    if (p_counter_base.get_value() &&
+        (offset == P_CVALL || offset == P_CVALH ||
+         offset == P_CTL)) {
+        store32(offset, offset == P_CTL ?
+            value & (P_CTL_ENABLE | P_CTL_IMASK) : value);
+        m_timer_rearm.notify(sc_core::SC_ZERO_TIME);
+        return;
+    }
     if (!p_counter_control.get_value()) {
         store32(offset, value);
         return;
@@ -154,6 +169,92 @@ void host_gtimer::reset_registers()
         store32(
             CNTFID0,
             static_cast<uint32_t>(state.reported_frequency_hz));
+    }
+}
+
+uint64_t host_gtimer::compare_value() const
+{
+    return (static_cast<uint64_t>(load32(P_CVALH)) << 32) |
+           load32(P_CVALL);
+}
+
+bool host_gtimer::timer_expired(const sc_core::sc_time& time) const
+{
+    return p_counter_base.get_value() &&
+           (load32(P_CTL) & P_CTL_ENABLE) != 0 &&
+           m_counter.count_at(time) >= compare_value();
+}
+
+bool host_gtimer::timer_delay(sc_core::sc_time& delay) const
+{
+    using Wide = unsigned __int128;
+
+    if (!p_counter_base.get_value() ||
+        (load32(P_CTL) & P_CTL_ENABLE) == 0) {
+        return false;
+    }
+
+    const sc_core::sc_time now = sc_core::sc_time_stamp();
+    const auto state = m_counter.snapshot_at(now);
+    const uint64_t compare = compare_value();
+    if (state.anchor_count >= compare || !state.running() ||
+        state.increment_8_24 == 0) {
+        return false;
+    }
+
+    const Wide count_delta =
+        (Wide(compare - state.anchor_count) <<
+         gs::arm_system_counter::fractional_bits) -
+        state.fractional_count;
+    const Wide input_ticks =
+        (count_delta + state.increment_8_24 - 1) /
+        state.increment_8_24;
+    const Wide ticks_per_second =
+        sc_core::sc_time(1, sc_core::SC_SEC).value();
+    const Wide required =
+        input_ticks * ticks_per_second;
+    const Wide remaining = required > state.input_tick_remainder ?
+        required - state.input_tick_remainder : 0;
+    Wide delay_ticks =
+        (remaining + state.input_frequency_hz - 1) /
+        state.input_frequency_hz;
+    const Wide max_delay_ticks =
+        std::numeric_limits<sc_dt::uint64>::max() - now.value();
+    if (delay_ticks > max_delay_ticks) {
+        return false;
+    }
+    delay = sc_core::sc_time::from_value(
+        static_cast<sc_dt::uint64>(delay_ticks));
+    return true;
+}
+
+void host_gtimer::update_timer_irq()
+{
+    const uint32_t control = load32(P_CTL);
+    const bool asserted =
+        timer_expired(sc_core::sc_time_stamp()) &&
+        (control & P_CTL_IMASK) == 0;
+    if (asserted == m_irq_asserted) {
+        return;
+    }
+    m_irq_asserted = asserted;
+    if (irq.size() != 0) {
+        irq->write(asserted);
+    }
+}
+
+void host_gtimer::timer_thread()
+{
+    for (;;) {
+        update_timer_irq();
+        sc_core::sc_time delay;
+        const auto events =
+            m_timer_rearm | m_counter.state_changed_event();
+        if (timer_delay(delay)) {
+            sc_core::wait(delay, events);
+        } else {
+            sc_core::wait(events);
+        }
     }
 }
 
@@ -285,6 +386,7 @@ host_gtimer::host_gtimer(
     , p_trace("trace", false)
     , p_trace_limit("trace_limit", 64)
     , target_socket("target_socket")
+    , irq("irq")
 {
     reset_registers();
     target_socket.register_b_transport(
@@ -304,6 +406,11 @@ host_gtimer::host_gtimer(
 void host_gtimer::before_end_of_elaboration()
 {
     reset_registers();
+    if (p_counter_base.get_value() && irq.size() != 0 &&
+        !m_timer_process_registered) {
+        SC_THREAD(timer_thread);
+        m_timer_process_registered = true;
+    }
 }
 
 host_gtimer::FrontendSnapshot host_gtimer::snapshot_at(

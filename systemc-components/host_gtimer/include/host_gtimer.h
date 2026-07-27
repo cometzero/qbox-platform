@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include <cci_configuration>
+#include <ports/initiator-signal-socket.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
@@ -28,6 +29,12 @@ class host_gtimer : public sc_core::sc_module
     static constexpr uint32_t CNTCV_L = 0x008;
     static constexpr uint32_t CNTCV_H = 0x00c;
     static constexpr uint32_t FRQ = 0x010;
+    static constexpr uint32_t P_CVALL = 0x020;
+    static constexpr uint32_t P_CVALH = 0x024;
+    static constexpr uint32_t P_CTL = 0x02c;
+    static constexpr uint32_t P_CTL_ENABLE = 1u << 0;
+    static constexpr uint32_t P_CTL_IMASK = 1u << 1;
+    static constexpr uint32_t P_CTL_ISTATUS = 1u << 2;
     static constexpr uint32_t CNTSCR = 0x010;
     static constexpr uint32_t CNTFID0 = 0x020;
     static constexpr uint32_t CNTINCR = 0x0d0;
@@ -47,6 +54,9 @@ class host_gtimer : public sc_core::sc_module
     gs::arm_system_counter& m_counter;
     std::array<uint8_t, REG_BYTES> m_regs{};
     unsigned int m_trace_count = 0;
+    bool m_irq_asserted = false;
+    bool m_timer_process_registered = false;
+    sc_core::sc_event m_timer_rearm;
 
     uint32_t load32(uint32_t offset) const;
     void store32(uint32_t offset, uint32_t value);
@@ -60,6 +70,11 @@ class host_gtimer : public sc_core::sc_module
     void write32(uint32_t offset, uint32_t value,
                  const sc_core::sc_time& effective_time);
     void reset_registers();
+    uint64_t compare_value() const;
+    bool timer_expired(const sc_core::sc_time& time) const;
+    bool timer_delay(sc_core::sc_time& delay) const;
+    void update_timer_irq();
+    void timer_thread();
     bool valid_access_shape(tlm::tlm_generic_payload& trans) const;
     bool access(tlm::tlm_generic_payload& trans, bool debug,
                 const sc_core::sc_time& delay);
@@ -67,6 +82,10 @@ class host_gtimer : public sc_core::sc_module
                       unsigned int len, bool debug);
 
 public:
+#if SC_VERSION_MAJOR < 3
+    SC_HAS_PROCESS(host_gtimer);
+#endif
+
     struct FrontendSnapshot {
         uint64_t counter = 0;
         uint64_t input_frequency_hz = 0;
@@ -84,6 +103,7 @@ public:
     cci::cci_param<unsigned int> p_trace_limit;
     tlm_utils::simple_target_socket<host_gtimer, DEFAULT_TLM_BUSWIDTH>
         target_socket;
+    InitiatorSignalSocket<bool> irq;
 
     host_gtimer(sc_core::sc_module_name name,
                 gs::arm_system_counter& counter);

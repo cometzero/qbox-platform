@@ -8,6 +8,7 @@ return {
         { name = "ap_watchdog_ws0"; source = "ap_watchdog_0.ws0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 50; owner = "ap"; scope = "zena_css_architecture" };
         { name = "ap_watchdog_ws1"; source = "ap_watchdog_0.ws1"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 51; owner = "smd"; scope = "zena_css_architecture" };
         { name = "ap_secure_watchdog_ws0"; source = "ap_secure_wdog.ws0"; sink = "ap_gic.spi"; controller = "ap_gic"; kind = "SPI"; id = 47; owner = "smd"; scope = "zena_css_architecture" };
+        { name = "si_cl0_system_timer"; source = "si_cl0_timer_cntbase"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 34; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "si_cl0_watchdog_ws0"; source = "si_cl0_watchdog.ws0"; sink = "si_cl0_gic.spi"; controller = "si_cl0_gic"; kind = "SPI"; id = 37; owner = "si_cl0"; scope = "zena_css_architecture" };
         { name = "rse_watchdog_ns_ws0"; source = "rse_watchdog_ns.ws0"; sink = "rse_nvic"; controller = "rse_nvic"; kind = "IRQ"; id = 1; owner = "rse"; scope = "zena_css_architecture" };
         { name = "rse_watchdog_ns_ws1"; source = "rse_watchdog_ns.ws1"; sink = "rse_nvic"; controller = "rse_nvic"; kind = "IRQ"; id = 0; owner = "rse"; scope = "zena_css_architecture" };
