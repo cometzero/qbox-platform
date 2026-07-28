@@ -154,18 +154,18 @@ python3 scripts/test/validate_qbox_apollo_topology.py \
 ```
 
 Run the same four-CPU smoke contract with either local-build or Yocto-owned
-artifacts through the top-level fidelity wrapper:
+artifacts through the canonical runner's fidelity mode:
 
 ```bash
-python3 scripts/run/run_qbox_apollo_fidelity.py \
+python3 scripts/run/run_qbox_apollo_fvp_full.py --fidelity \
   --artifacts local --cpus 4 --profile smoke
-python3 scripts/run/run_qbox_apollo_fidelity.py \
+python3 scripts/run/run_qbox_apollo_fvp_full.py --fidelity \
   --artifacts yocto --cpus 4 --profile smoke
 ```
 
 Each run writes `manifest.json`, `result.json`,
 `full-coverage-audit.json`, `fidelity-contract.json`, and
-`fidelity-summary.json` below `build/qbox-apollo-qvp/`. The wrapper rejects
+`fidelity-summary.json` below `build/qbox-apollo-qvp/`. The mode rejects
 local/Yocto artifact mixing and requires the Linux CPU IDs to be exactly
 0 through 3. It does not impose an emulator performance threshold.
 
@@ -377,10 +377,10 @@ for explicit debug or compatibility rollback:
 ./run_qbox_local.sh --legacy-file-backed-sram
 ```
 
-For direct RSE-runner debugging, the legacy equivalent is:
+For private RSE runtime debugging, the legacy equivalent is:
 
 ```bash
-python3 scripts/run/run_qbox_fvp_rd_aspen_rse.py \
+python3 scripts/run/run_qbox_apollo_fvp_full.py --runtime-child \
   --skip-build \
   --cc3xx-qemu-native-backend \
   --rse-lms-accel \
