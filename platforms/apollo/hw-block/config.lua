@@ -162,7 +162,7 @@ end
 
 print("Apollo QVP shared config running...")
 
-root = top().."../../../../../"
+root = top().."../../../../../../"
 deploy = root.."build/tmp_baremetal/deploy/images/fvp-rd-aspen/"
 
 rse_rom = getenv_or("QBOX_RDASPEN_RSE_ROM", deploy.."rse-rom-image.img")
