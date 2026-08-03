@@ -8,8 +8,24 @@ hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-qvp.lua
 ```
 
 The full-system runner always instantiates the real Safety Island CL0
-SCP-firmware and CL1 Zephyr domains. There is no Apollo QVP Safety Island mode
-selection.
+SCP-firmware and CL1 Zephyr domains. Its Safety Island interrupt-controller
+topology is explicit and rollback-safe:
+
+- The absent/default mode and `--si-split-gic` select the existing two-instance,
+  two-GIC CL0/CL1 graph.
+- `--si-single-gic` opts in to one shared SI `QemuInstance`, five Cortex-R82
+  PEs, and one canonical five-interface GIC.
+- `--si-split-gic` is the rollback command after a single-mode failure. It sets
+  `QBOX_APOLLO_FULL_SI_SINGLE_GIC=false`, which is semantically identical to
+  leaving the environment variable absent.
+
+The equivalent direct environment selection is
+`QBOX_APOLLO_FULL_SI_SINGLE_GIC=true|false`. Other values are rejected before
+platform construction. `topology.json` exports
+`safety_island_contract` with mode, instance, PE, GIC, reset, trace, and
+rollback metadata. The runner serializes that table into its status/result
+artifacts; `mode=split` reports two SI instances and `mode=single` reports one
+SI instance with five PEs and one canonical GIC.
 
 The full-system entrypoint composes subsystem-owned Apollo hardware blocks:
 
@@ -85,6 +101,12 @@ active AP core PPUs, RSE/SI QEMU instances, RSE accelerator and local crypto,
 SI0 NI-710AE policy, and the live-domain MHU frames. SI0 can then sequence the
 AP PPUs back on only after its second initialization, preventing AP measured
 boot traffic from being posted before the RSE receiver is ready.
+
+In split mode, the Apollo reset fanout retains exactly one reset for each
+legacy SI CL0/CL1 QEMU instance. In single mode, the finalized fanout removes
+both stale split-instance resets and contains one cold-reset target for each of
+the five PEs. The topology contract exposes the same ordered, duplicate-free
+SI reset subset used for status and trace reporting.
 
 The current Yocto FWU reset qualification reaches a second RSE/SI/TF-A/U-Boot
 and Linux Regular State. Capsule A/B acceptance is still open: a copied

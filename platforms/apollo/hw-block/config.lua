@@ -33,6 +33,62 @@ function getenv_bool_or(name, default)
     return value == "true" or value == "1" or value == "yes"
 end
 
+local function getenv_strict_bool_or(name, default)
+    local value = getenv_or(name, default and "true" or "false")
+    if value == "true" or value == "1" or value == "yes" then
+        return true
+    end
+    if value == "false" or value == "0" or value == "no" then
+        return false
+    end
+    error(name.." must be true, false, 1, 0, yes, or no")
+end
+
+local function single_si_value(suffix, default)
+    local unified_name = "QBOX_APOLLO_FULL_SI_"..suffix
+    local cl0_name = "QBOX_APOLLO_FULL_SI_CL0_"..suffix
+    local cl1_name = "QBOX_APOLLO_FULL_SI_CL1_"..suffix
+    local cl0_value = getenv_or(cl0_name, default)
+    local cl1_value = getenv_or(cl1_name, default)
+    assert(
+        cl0_value == cl1_value,
+        cl0_name.."="..cl0_value.." conflicts with "..
+            cl1_name.."="..cl1_value..
+            " when QBOX_APOLLO_FULL_SI_SINGLE_GIC=true")
+    local unified_value = os.getenv(unified_name)
+    if unified_value == nil or unified_value == "" then
+        unified_value = cl0_value
+    end
+    assert(
+        unified_value == cl0_value,
+        unified_name.."="..unified_value.." conflicts with "..
+            cl0_name.."="..cl0_value.." and "..
+            cl1_name.."="..cl1_value..
+            " when QBOX_APOLLO_FULL_SI_SINGLE_GIC=true")
+    return unified_value
+end
+
+local function single_si_configuration()
+    local enabled = getenv_strict_bool_or(
+        "QBOX_APOLLO_FULL_SI_SINGLE_GIC",
+        false)
+    if not enabled then
+        return {
+            single_gic = false;
+            gic_mode = "split";
+        }
+    end
+    return {
+        single_gic = true;
+        gic_mode = "single";
+        accel = single_si_value("ACCEL", "tcg");
+        tcg_mode = single_si_value("TCG_MODE", "MULTI");
+        sync_policy = single_si_value(
+            "SYNC_POLICY",
+            "multithread-quantum");
+    }
+end
+
 function repeat_value(value, count)
     local values = {}
     for _=1,count do
@@ -774,6 +830,15 @@ end
 
 function config.create(apollo_dir, machine_contract, machine)
     local hipc = machine_contract.range(machine, "si_cl1_hipc_shared")
+    local si = single_si_configuration()
+    local topology_contract = machine.topology.safety_island_contract
+    if topology_contract ~= nil then
+        assert(
+            topology_contract.mode == si.gic_mode and
+                topology_contract.enabled == si.single_gic,
+            "Safety Island topology/config mode mismatch")
+    end
+    machine.topology.si_gic_mode = si.gic_mode
     return {
         apollo_dir = apollo_dir;
         apollo_root = root;
@@ -815,6 +880,7 @@ function config.create(apollo_dir, machine_contract, machine)
             ap = {enable_cpus = enable_ap_cpus; qemu_args = ap_qemu_args};
             ros = {virtio = ap_virtio};
             system_mgmt = {};
+            si = si;
             si_cl0 = {};
             si_cl1 = {};
         };

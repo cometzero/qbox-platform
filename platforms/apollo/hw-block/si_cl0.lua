@@ -1,21 +1,364 @@
 local si_cl0 = {}
 
--- SCP-firmware exposes architectural GIC INTIDs, while QBox's spi_in_N
--- sockets are zero-based SPI inputs (INTID 32 is spi_in_0).
 local GIC_SPI_BASE_INTID = 32
-local SI_CL0_SYSTEM_TIMER_INTID = 34
-local SI_CL0_UART_INTID = 40
-local SI_CL0_AP_NS_MHU_SEND_INTID = 96
-local SI_CL0_AP_NS_MHU_RECV_INTID = 97
-local SI_CL0_AP_SCMI_MHU_SEND_INTID = 98
-local SI_CL0_AP_SCMI_MHU_RECV_INTID = 99
-local SI_CL0_AP_PFDI_MHU_SEND_INTID = 102
-local SI_CL0_AP_PFDI_MHU_RECV_INTID = 103
-local SI_CL0_RSE_MHU_INTID = 105
-local SI_CL0_CL1_MHU_INTID = 107
-local SI_CL0_FMU_CRITICAL_INTID = 128
-local SI_CL0_FMU_NON_CRITICAL_INTID = 129
-local SI_CL0_WDOG_WS0_INTID = 37
+local GIC_SPI_LIMIT_INTID = 992
+local SI_PE_COUNT = 5
+local SI_CL0_SRAM_BASE = 0x120000000
+local SI_CL0_ENTRY = 0x120000000
+local SI_CL0_GICD_VIEW0_BASE = 0x30000000
+local SI_CL0_GICR_VIEW0_BASES = {
+    0x30040000;
+    0x30060000;
+    0x30080000;
+    0x300a0000;
+    0x300c0000;
+}
+local SI_CL0_GICD_VIEW1_BASE = 0x30100000
+local SI_CL0_GICR_VIEW1_BASE = 0x30140000
+local SI_CL1_GICD_VIEW2_BASE = 0x30200000
+local SI_CL1_GICR0_BASE = 0x30260000
+local SI_GICR_SIZE = 0x00020000
+local SI_GIC_BACKEND_DIST_BASE = 0x30f00000
+local SI_GIC_BACKEND_REDIST_BASE = 0x30f40000
+local VALID_TRIGGER = {edge = true; level = true}
+local VALID_POLARITY = {
+    high = true; low = true; positive = true; negative = true; none = true
+}
+local VALID_TARGET_SEMANTICS = {
+    shared = true; per_cpu = true; directed = true; broadcast = true
+}
+
+function si_cl0.validate_irq_routes(routes)
+    assert(type(routes) == "table", "SI IRQ routes must be a table")
+    local names = {}
+    local bindings = {}
+    local owners = {}
+    for _, route in ipairs(routes) do
+        assert(
+            type(route.name) == "string" and route.name ~= "",
+            "SI IRQ route requires a name")
+        assert(names[route.name] == nil, "duplicate SI IRQ route: "..route.name)
+        names[route.name] = true
+        assert(
+            type(route.source) == "string" and route.source ~= "",
+            "invalid SI IRQ source: "..route.name)
+        assert(
+            type(route.controller) == "string" and
+                route.controller ~= "",
+            "invalid SI IRQ controller: "..route.name)
+        assert(
+            route.owner_view == "View1" or route.owner_view == "View2",
+            "invalid SI IRQ owner view: "..route.name)
+        assert(
+            VALID_TRIGGER[route.trigger] == true,
+            "invalid SI IRQ trigger: "..route.name)
+        assert(
+            VALID_POLARITY[route.polarity] == true,
+            "invalid SI IRQ polarity: "..route.name)
+        assert(
+            VALID_TARGET_SEMANTICS[route.target_semantics] == true,
+            "invalid SI IRQ target semantics: "..route.name)
+        assert(
+            type(route.target_pes) == "table" and #route.target_pes > 0,
+            "invalid SI IRQ targets: "..route.name)
+        local targets = {}
+        for _, pe in ipairs(route.target_pes) do
+            assert(
+                type(pe) == "number" and pe >= 0 and pe < SI_PE_COUNT and
+                    pe % 1 == 0 and targets[pe] == nil,
+                "invalid SI IRQ target PE: "..route.name)
+            targets[pe] = true
+        end
+        if route.kind == "SPI" then
+            assert(
+                route.socket_class == "normal_spi" and
+                    type(route.architectural_intid) == "number" and
+                    route.architectural_intid >= GIC_SPI_BASE_INTID and
+                    route.architectural_intid < GIC_SPI_LIMIT_INTID,
+                "invalid normal SPI route: "..route.name)
+            assert(
+                route.socket_index ==
+                    route.architectural_intid - GIC_SPI_BASE_INTID,
+                "normal SPI socket must equal architectural INTID - 32: "..
+                    route.name)
+        elseif route.kind == "PPI" then
+            assert(
+                route.socket_class == "ppi" and
+                    route.architectural_intid >= 16 and
+                    route.architectural_intid < GIC_SPI_BASE_INTID and
+                    route.socket_index == route.architectural_intid and
+                    route.target_semantics == "per_cpu",
+                "invalid PPI route: "..route.name)
+        elseif route.kind == "SGI" then
+            assert(
+                route.socket_class == "sgi" and
+                    route.architectural_intid >= 0 and
+                    route.architectural_intid < 16 and
+                    route.socket_index == route.architectural_intid and
+                    (route.target_semantics == "directed" or
+                        route.target_semantics == "broadcast"),
+                "invalid SGI route: "..route.name)
+        else
+            error(
+                "ESPI/EPPI and unknown classes cannot use normal SI routes: "..
+                    route.name)
+        end
+        local binding = route.source.."|"..route.controller.."|"..
+            route.socket_index
+        assert(bindings[binding] == nil, "duplicate SI IRQ binding: "..route.name)
+        bindings[binding] = true
+        local owner = route.controller.."|"..route.owner_view.."|"..
+            route.architectural_intid
+        assert(owners[owner] == nil, "duplicate SI IRQ owner: "..route.name)
+        owners[owner] = true
+    end
+    return names
+end
+
+function si_cl0.irq_route(routes, name)
+    si_cl0.validate_irq_routes(routes)
+    for _, route in ipairs(routes) do
+        if route.name == name then
+            return route
+        end
+    end
+    error("missing active SI IRQ route: "..name)
+end
+
+local function active_route(ctx, name)
+    local contract = ctx.machine_contract.signal_routes.si_active_routes
+    assert(
+        contract ~= nil and contract.schema_version == 2,
+        "unsupported active SI IRQ route schema")
+    return si_cl0.irq_route(contract.routes, name)
+end
+
+function si_cl0.ppi_index(ctx, name)
+    local route = active_route(ctx, name)
+    assert(
+        route.kind == "PPI" and route.socket_class == "ppi",
+        "active SI route is not a PPI: "..name)
+    return route.socket_index
+end
+
+function si_cl0.spi_target(ctx, name, expected_view)
+    local route = active_route(ctx, name)
+    assert(
+        route.kind == "SPI" and route.socket_class == "normal_spi",
+        "active SI route is not a normal SPI: "..name)
+    assert(
+        route.owner_view == expected_view,
+        "active SI route owner mismatch: "..name)
+    if ctx.config.si.single_gic then
+        local view = expected_view == "View1" and "view1" or "view2"
+        return "&si_gic_multiview."..view.."_spi_in_"..route.socket_index
+    end
+    return "&"..route.controller..".spi_in_"..route.socket_index
+end
+
+function si_cl0.define_qemu_instance(ctx, platform)
+    if ctx.config.si.single_gic then
+        assert(
+            platform.si_qemu_inst_mgr == nil and platform.si_qemu_inst == nil,
+            "single SI QEMU lifecycle was defined more than once")
+        platform.si_qemu_inst_mgr = {
+            moduletype = "QemuInstanceManager";
+            construction_priority = -300;
+        }
+        platform.si_qemu_inst = {
+            moduletype = "QemuInstance";
+            args = {"&platform.si_qemu_inst_mgr", "AARCH64"};
+            construction_priority = -299;
+            accel = ctx.config.si.accel;
+            tcg_mode = ctx.config.si.tcg_mode;
+            sync_policy = ctx.config.si.sync_policy;
+            managed_start_in_reset_release = true;
+            qemu_args = ctx.getenv_or(
+                "QBOX_APOLLO_FULL_SI_CL0_QEMU_ARGS",
+                "");
+        }
+        return "&platform.si_qemu_inst"
+    end
+
+    platform.si_cl0_qemu_inst_mgr = {
+        moduletype = "QemuInstanceManager";
+    }
+    platform.si_cl0_qemu_inst = {
+        moduletype = "QemuInstance";
+        args = {"&platform.si_cl0_qemu_inst_mgr", "AARCH64"};
+        accel = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL0_ACCEL", "tcg");
+        tcg_mode = ctx.getenv_or(
+            "QBOX_APOLLO_FULL_SI_CL0_TCG_MODE",
+            "MULTI");
+        sync_policy = ctx.getenv_or(
+            "QBOX_APOLLO_FULL_SI_CL0_SYNC_POLICY",
+            "multithread-quantum");
+        managed_start_in_reset_release = true;
+        qemu_args = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL0_QEMU_ARGS", "");
+    }
+    return "&platform.si_cl0_qemu_inst"
+end
+
+function si_cl0.define_cpu_reset_hooks(ctx, platform)
+    if ctx.config.si.single_gic then
+        platform.si_cl0_cpu_0_reset = {
+            moduletype = "qemu_device_cold_reset";
+            args = {"&platform.si_cl0_cpu_0"};
+        }
+    end
+end
+
+function si_cl0.define_interrupt_controller(
+    ctx,
+    platform,
+    qemu_instance)
+    local gic = {
+        moduletype = "arm_gicv3";
+        args = {qemu_instance};
+        dist_iface = {
+            address = ctx.config.si.single_gic and
+                SI_GIC_BACKEND_DIST_BASE or SI_CL0_GICD_VIEW1_BASE;
+            size = 0x00010000;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 10;
+            aliases = not ctx.config.si.single_gic and {
+                view0_functional = {
+                    address = SI_CL0_GICD_VIEW0_BASE;
+                    size = 0x00010000;
+                };
+            } or nil;
+        };
+        redist_iface_0 = {
+            address = ctx.config.si.single_gic and
+                SI_GIC_BACKEND_REDIST_BASE or SI_CL0_GICR_VIEW1_BASE;
+            size = SI_GICR_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 10;
+            aliases = not ctx.config.si.single_gic and {
+                view0_functional = {
+                    address = SI_CL0_GICR_VIEW0_BASES[1];
+                    size = SI_GICR_SIZE;
+                };
+            } or nil;
+        };
+    }
+
+    if ctx.config.si.single_gic then
+        gic.redist_region = {1, 4}
+        gic.redist_iface_1 = {
+            address = SI_GIC_BACKEND_REDIST_BASE + SI_GICR_SIZE;
+            size = 4 * SI_GICR_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+        }
+        gic.num_cpus = 5
+        gic.num_spi = 960
+    else
+        gic.redist_region = {1}
+        gic.num_cpus = 1
+        gic.num_spi = 384
+    end
+
+    platform.si_cl0_gic = gic
+    if ctx.config.si.single_gic then
+        platform.si_gic_power_bridge = {
+            moduletype = "gic720ae_power_bridge";
+            backend_redist_base = SI_GIC_BACKEND_REDIST_BASE;
+            backend_redist_stride = SI_GICR_SIZE;
+            redistributor_count = 5;
+            backend_socket = {bind = "&si_cl0_router.target_socket"};
+        }
+        platform.si_gic_reset = {
+            moduletype = "qemu_device_cold_reset";
+            args = {"&platform.si_cl0_gic"};
+        }
+    end
+end
+
+function si_cl0.define_loader_and_cpu(ctx, platform, qemu_instance, image)
+    platform.si_cl0_loader = {
+        moduletype = "loader";
+        request_origin_id = ctx.request_context.origin.si_cl0_loader;
+        request_domain_id = ctx.request_context.domain.si_cl0;
+        request_capabilities = ctx.request_context.capability.authenticated_image;
+        request_secure = true;
+        request_secure_valid = true;
+        initiator_socket = {bind = "&si_cl0_router.target_socket"};
+        { bin_file = image, address = SI_CL0_SRAM_BASE };
+    }
+
+    platform.si_cl0_cpu_0 = {
+        moduletype = "cpu_arm_cortexR82";
+        args = {qemu_instance};
+        construction_priority = ctx.config.si.single_gic and -200 or nil;
+        mem = {bind = "&si_cl0_ni710ae_primary_nci.protected_target_socket"};
+        has_el2 = true;
+        psci_conduit = "smc";
+        start_powered_off = false;
+        start_in_reset = true;
+        reset_power_on = true;
+        rvbar = SI_CL0_ENTRY;
+        cntfrq_hz = 125000000;
+        mp_affinity = 0x0;
+        request_origin_id = ctx.request_context.origin.si_cl0_cpu_base;
+        request_domain_id = ctx.request_context.domain.si_cl0;
+        requester_id = 0;
+        request_secure = true;
+        request_secure_valid = true;
+        trace_pc = ctx.getenv_bool_or("QBOX_APOLLO_FULL_SI_CL0_PC_TRACE", false);
+        trace_exception_state = ctx.getenv_bool_or(
+            "QBOX_APOLLO_FULL_SI_CL0_EXCEPTION_TRACE",
+            false);
+        trace_pc_file = ctx.getenv_or(
+            "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_FILE",
+            ctx.apollo_root.."build/qbox-apollo-fvp/full-system/si-cl0-pc-trace.log");
+        trace_pc_interval = ctx.getenv_number_or(
+            "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_INTERVAL",
+            "1");
+        trace_pc_limit = ctx.getenv_number_or(
+            "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_LIMIT",
+            "4096");
+        irq_timer_sec_out = {
+            bind = "&si_cl0_gic.ppi_in_cpu_0_"..
+                si_cl0.ppi_index(ctx, "si_secure_timer");
+        };
+        irq_timer_phys_out = {
+            bind = "&si_cl0_gic.ppi_in_cpu_0_"..
+                si_cl0.ppi_index(ctx, "si_physical_timer");
+        };
+        irq_timer_virt_out = {
+            bind = "&si_cl0_gic.ppi_in_cpu_0_"..
+                si_cl0.ppi_index(ctx, "si_virtual_timer");
+        };
+        irq_timer_hyp_out = {
+            bind = "&si_cl0_gic.ppi_in_cpu_0_"..
+                si_cl0.ppi_index(ctx, "si_hypervisor_timer");
+        };
+    }
+
+    platform.si_cl0_cpu_counter_mirror = {
+        moduletype = "qemu_arm_counter_mirror";
+        args = {
+            "&platform.si_cl0_cpu_0";
+            "&platform.css_system_counter";
+        };
+    }
+
+    if ctx.config.si.single_gic then
+        for _, signal in ipairs({"irq", "fiq", "virq", "vfiq"}) do
+            platform.si_cl0_gic[signal.."_out_0"] = {
+                bind = "&si_gic_power_bridge."..signal.."_in_0";
+            }
+            platform.si_gic_power_bridge[signal.."_out_0"] = {
+                bind = "&si_cl0_cpu_0."..signal.."_in";
+            }
+        end
+    else
+        platform.si_cl0_gic.irq_out_0 = {bind = "&si_cl0_cpu_0.irq_in"}
+        platform.si_cl0_gic.fiq_out_0 = {bind = "&si_cl0_cpu_0.fiq_in"}
+        platform.si_cl0_gic.virq_out_0 = {bind = "&si_cl0_cpu_0.virq_in"}
+        platform.si_cl0_gic.vfiq_out_0 = {bind = "&si_cl0_cpu_0.vfiq_in"}
+    end
+end
 
 function si_cl0.define(ctx, platform)
     platform.host_si_cl0_sram = {
@@ -108,8 +451,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_AP_NS_MHU_SEND_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_ap_ns_mhu_pbx", "View1")};
         log_level = 0;
     }
 
@@ -130,8 +473,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_AP_NS_MHU_RECV_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_ap_ns_mhu_mbx", "View1")};
         log_level = 0;
     }
 
@@ -152,8 +495,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_AP_SCMI_MHU_SEND_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_ap_scmi_mhu_pbx", "View1")};
         log_level = 0;
     }
 
@@ -174,8 +517,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_AP_SCMI_MHU_RECV_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_ap_scmi_mhu_mbx", "View1")};
         log_level = 0;
     }
 
@@ -196,8 +539,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_AP_PFDI_MHU_SEND_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_ap_pfdi_mhu_pbx", "View1")};
         log_level = 0;
     }
 
@@ -218,8 +561,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_AP_PFDI_MHU_RECV_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_ap_pfdi_mhu_mbx", "View1")};
         log_level = 0;
     }
 
@@ -260,8 +603,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&si_cl0_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_RSE_MHU_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_rse_mhu", "View1")};
         log_level = 0;
     }
 
@@ -312,8 +655,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
         };
         initiator_socket = {bind = "&si_cl0_router.target_socket"};
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_CL1_MHU_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_cl1_mhu", "View1")};
         log_level = 0;
     }
 
@@ -391,20 +734,7 @@ function si_cl0.enable(ctx, platform)
         log_level = 0;
     }
 
-    local SI_CL0_SRAM_BASE = 0x120000000
     local SI_CL0_SRAM_SIZE = 0x00800000
-    local SI_CL0_ENTRY = 0x120000000
-    local SI_CL0_GICD_VIEW0_BASE = 0x30000000
-    local SI_CL0_GICR_VIEW0_BASES = {
-        0x30040000;
-        0x30060000;
-        0x30080000;
-        0x300a0000;
-        0x300c0000;
-    }
-    local SI_CL0_GICD_VIEW1_BASE = 0x30100000
-    local SI_CL0_GICR_VIEW1_BASE = 0x30140000
-    local SI_CL0_GICR_SIZE = 0x00020000
     local SI_CL1_CLUSTER_UTILITY_BUS_BASE = 0x28800000
     local SI_CL1_CLUSTER_PPU_BASE = SI_CL1_CLUSTER_UTILITY_BUS_BASE + 0x00010000
     local SI_CL1_PPU_AE_BASE = SI_CL1_CLUSTER_UTILITY_BUS_BASE + 0x00080000
@@ -487,11 +817,6 @@ function si_cl0.enable(ctx, platform)
     local SI_CL0_ATW17_SMD_SRAM_SIZE = 0x00100000
     local SI_CL0_ATW18_SMCF_SMDEXP_SRAM_BASE = 0xe0340000
     local SI_CL0_ATW18_SMCF_SMDEXP_SRAM_SIZE = 0x00002000
-    local ARCH_TIMER_SEC_PPI = 16 + 13
-    local ARCH_TIMER_PHYS_PPI = 16 + 4
-    local ARCH_TIMER_VIRT_PPI = 16 + 11
-    local ARCH_TIMER_HYP_PPI = 16 + 3
-
     local si_cl0_image = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL0_IMAGE",
         ctx.apollo_root.."build/local-apollo-fvp/deploy/firmware/si0_ramfw.bin")
@@ -504,7 +829,6 @@ function si_cl0.enable(ctx, platform)
         "QBOX_APOLLO_FULL_SI_CL0_UART_READ_FILE",
         "/dev/null")
     local si_cl0_uart_poll_read = si_cl0_uart_read_file ~= "/dev/null"
-    local si_cl0_qemu_args = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL0_QEMU_ARGS", "")
     local si_gic_trace = ctx.getenv_bool_or("QBOX_APOLLO_FULL_SI_GIC_MULTIVIEW_TRACE", false)
     local si_gic_trace_limit =
         ctx.getenv_number_or("QBOX_APOLLO_FULL_SI_GIC_MULTIVIEW_TRACE_LIMIT", "256")
@@ -531,64 +855,100 @@ function si_cl0.enable(ctx, platform)
         moduletype = "gicx00_multiview";
         trace = si_gic_trace;
         trace_limit = si_gic_trace_limit;
-        view0_dist_cfgid = {
+        backend_dist_base = SI_GIC_BACKEND_DIST_BASE;
+        backend_redist_base = SI_GIC_BACKEND_REDIST_BASE;
+        backend_redist_stride = SI_GICR_SIZE;
+        backend_redist_count = ctx.config.si.single_gic and 5 or 0;
+        view_redist_stride = SI_GICR_SIZE;
+        view1_redist_first = 0;
+        view2_redist_first = 1;
+        spi_count = 960;
+        backend_socket = ctx.config.si.single_gic and {
+            bind = "&si_gic_power_bridge.target_socket";
+        } or nil;
+        view0_dist = ctx.config.si.single_gic and {
+            address = SI_CL0_GICD_VIEW0_BASE;
+            size = 0x00010000;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        } or nil;
+        view1_dist = ctx.config.si.single_gic and {
+            address = SI_CL0_GICD_VIEW1_BASE;
+            size = 0x00010000;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        } or nil;
+        view2_dist = ctx.config.si.single_gic and {
+            address = SI_CL1_GICD_VIEW2_BASE;
+            size = 0x00010000;
+            bind = "&si_cl1_router.initiator_socket";
+            priority = 0;
+        } or nil;
+        view1_redists = ctx.config.si.single_gic and {
+            address = SI_CL0_GICR_VIEW1_BASE;
+            size = SI_GICR_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        } or nil;
+        view2_redists = ctx.config.si.single_gic and {
+            address = SI_CL1_GICR0_BASE;
+            size = 4 * SI_GICR_SIZE;
+            bind = "&si_cl1_router.initiator_socket";
+            priority = 0;
+        } or nil;
+        view0_dist_cfgid = not ctx.config.si.single_gic and {
             address = SI_CL0_GICD_VIEW0_BASE + 0x0000f000;
             size = 0x00000008;
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
-        };
-        view0_dist_iviewr = {
+        } or nil;
+        view0_dist_iviewr = not ctx.config.si.single_gic and {
             address = SI_CL0_GICD_VIEW0_BASE + 0x0000f600;
             size = 0x00000400;
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
-        };
+        } or nil;
     }
 
-    for i=1,4 do
+    local first_view0_redist = ctx.config.si.single_gic and 0 or 1
+    for i=first_view0_redist,4 do
         platform.si_gic_multiview["view0_redist_"..i] = {
             address = SI_CL0_GICR_VIEW0_BASES[i + 1];
-            size = SI_CL0_GICR_SIZE;
+            size = SI_GICR_SIZE;
             bind = "&si_cl0_router.initiator_socket";
             priority = 20;
         }
     end
 
-    platform.si_gic_multiview.view0_redist_0_pwrr = {
-        address = SI_CL0_GICR_VIEW0_BASES[1] + 0x00000024;
-        size = 0x00000004;
-        bind = "&si_cl0_router.initiator_socket";
-        priority = 0;
-    }
-    platform.si_gic_multiview.view0_redist_0_viewr = {
-        address = SI_CL0_GICR_VIEW0_BASES[1] + 0x0000002c;
-        size = 0x00000004;
-        bind = "&si_cl0_router.initiator_socket";
-        priority = 0;
-    }
-    platform.si_gic_multiview.view0_redist_0_flushr = {
-        address = SI_CL0_GICR_VIEW0_BASES[1] + 0x00000030;
-        size = 0x00000004;
-        bind = "&si_cl0_router.initiator_socket";
-        priority = 0;
-    }
+    if not ctx.config.si.single_gic then
+        platform.si_gic_multiview.view0_redist_0_pwrr = {
+            address = SI_CL0_GICR_VIEW0_BASES[1] + 0x00000024;
+            size = 0x00000004;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        }
+        platform.si_gic_multiview.view0_redist_0_viewr = {
+            address = SI_CL0_GICR_VIEW0_BASES[1] + 0x0000002c;
+            size = 0x00000004;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        }
+        platform.si_gic_multiview.view0_redist_0_flushr = {
+            address = SI_CL0_GICR_VIEW0_BASES[1] + 0x00000030;
+            size = 0x00000004;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        }
+    else
+        for spi=0,959 do
+            platform.si_gic_multiview["spi_out_"..spi] = {
+                bind = "&si_cl0_gic.spi_in_"..spi;
+            }
+        end
+    end
 
     -- CL0 CPU backend and SRAM
-    platform.si_cl0_qemu_inst_mgr = {
-        moduletype = "QemuInstanceManager";
-    }
-
-    platform.si_cl0_qemu_inst = {
-        moduletype = "QemuInstance";
-        args = {"&platform.si_cl0_qemu_inst_mgr", "AARCH64"};
-        accel = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL0_ACCEL", "tcg");
-        tcg_mode = ctx.getenv_or(
-            "QBOX_APOLLO_FULL_SI_CL0_TCG_MODE", "MULTI");
-        sync_policy = ctx.getenv_or(
-            "QBOX_APOLLO_FULL_SI_CL0_SYNC_POLICY", "multithread-quantum");
-        managed_start_in_reset_release = true;
-        qemu_args = si_cl0_qemu_args;
-    }
+    local si_cl0_qemu_instance = si_cl0.define_qemu_instance(ctx, platform)
 
     platform.si_cl0_sram = {
         moduletype = "gs_memory";
@@ -637,8 +997,8 @@ function si_cl0.enable(ctx, platform)
         moduletype = "host_gtimer";
         args = {"&platform.css_system_counter"};
         counter_base = true;
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_SYSTEM_TIMER_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_system_timer", "View1")};
         target_socket = {
             address = SI_CL0_TIMER_CNT_BASE;
             size = SI_CL0_TIMER_CNT_SIZE;
@@ -663,8 +1023,8 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
         };
-        ws0 = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_WDOG_WS0_INTID - GIC_SPI_BASE_INTID)};
+        ws0 = {bind = si_cl0.spi_target(
+            ctx, "si_cl0_watchdog_ws0", "View1")};
         ws1 = {bind = "&host_reset_ctrl.si_watchdog_reset"};
         log_level = 0;
     }
@@ -696,10 +1056,14 @@ function si_cl0.enable(ctx, platform)
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
         };
-        critical_irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_FMU_CRITICAL_INTID - GIC_SPI_BASE_INTID)};
-        non_critical_irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_FMU_NON_CRITICAL_INTID - GIC_SPI_BASE_INTID)};
+        critical_irq = {
+            bind = si_cl0.spi_target(
+                ctx, "si_cl0_fmu_critical", "View1");
+        };
+        non_critical_irq = {
+            bind = si_cl0.spi_target(
+                ctx, "si_cl0_fmu_noncritical", "View1");
+        };
         critical_ssu = {bind = "&si_cl0_ssu.critical_in"};
         non_critical_ssu = {bind = "&si_cl0_ssu.non_critical_in"};
         log_level = 0;
@@ -990,37 +1354,10 @@ function si_cl0.enable(ctx, platform)
     end
 
     -- CL0 interrupt controller and console
-    platform.si_cl0_gic = {
-        moduletype = "arm_gicv3";
-        args = {"&platform.si_cl0_qemu_inst"};
-        dist_iface = {
-            address = SI_CL0_GICD_VIEW1_BASE;
-            size = 0x00010000;
-            bind = "&si_cl0_router.initiator_socket";
-            priority = 10;
-            aliases = {
-                view0_functional = {
-                    address = SI_CL0_GICD_VIEW0_BASE;
-                    size = 0x00010000;
-                };
-            };
-        };
-        redist_region = {1};
-        redist_iface_0 = {
-            address = SI_CL0_GICR_VIEW1_BASE;
-            size = SI_CL0_GICR_SIZE;
-            bind = "&si_cl0_router.initiator_socket";
-            priority = 10;
-            aliases = {
-                view0_functional = {
-                    address = SI_CL0_GICR_VIEW0_BASES[1];
-                    size = SI_CL0_GICR_SIZE;
-                };
-            };
-        };
-        num_cpus = 1;
-        num_spi = 384;
-    }
+    si_cl0.define_interrupt_controller(
+        ctx,
+        platform,
+        si_cl0_qemu_instance)
 
     platform.si_cl0_console_file = {
         moduletype = "char_backend_file";
@@ -1039,79 +1376,17 @@ function si_cl0.enable(ctx, platform)
             size = 0x00010000;
             bind = "&si_cl0_router.initiator_socket";
         };
-        irq = {bind = "&si_cl0_gic.spi_in_"..
-            (SI_CL0_UART_INTID - GIC_SPI_BASE_INTID)};
+        irq = {bind = si_cl0.spi_target(ctx, "si_cl0_uart", "View1")};
         backend_socket = {bind = "&si_cl0_console_file.biflow_socket"};
     }
 
-    -- CL0 boot image and Cortex-R82 CPU
-    platform.si_cl0_loader = {
-        moduletype = "loader";
-        request_origin_id = ctx.request_context.origin.si_cl0_loader;
-        request_domain_id = ctx.request_context.domain.si_cl0;
-        request_capabilities = ctx.request_context.capability.authenticated_image;
-        request_secure = true;
-        request_secure_valid = true;
-        initiator_socket = {bind = "&si_cl0_router.target_socket"};
-        { bin_file = si_cl0_image, address = SI_CL0_SRAM_BASE };
-    }
+    si_cl0.define_loader_and_cpu(
+        ctx,
+        platform,
+        si_cl0_qemu_instance,
+        si_cl0_image)
 
-    platform.si_cl0_cpu_0 = {
-        moduletype = "cpu_arm_cortexR82";
-        args = {"&platform.si_cl0_qemu_inst"};
-        mem = {bind = "&si_cl0_ni710ae_primary_nci.protected_target_socket"};
-        has_el2 = true;
-        psci_conduit = "smc";
-        start_powered_off = false;
-        start_in_reset = true;
-        reset_power_on = true;
-        rvbar = SI_CL0_ENTRY;
-        cntfrq_hz = 125000000;
-        mp_affinity = 0x0;
-        request_origin_id = ctx.request_context.origin.si_cl0_cpu_base;
-        request_domain_id = ctx.request_context.domain.si_cl0;
-        requester_id = 0;
-        request_secure = true;
-        request_secure_valid = true;
-        trace_pc = ctx.getenv_bool_or("QBOX_APOLLO_FULL_SI_CL0_PC_TRACE", false);
-        trace_exception_state = ctx.getenv_bool_or(
-            "QBOX_APOLLO_FULL_SI_CL0_EXCEPTION_TRACE",
-            false);
-        trace_pc_file = ctx.getenv_or(
-            "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_FILE",
-            ctx.apollo_root.."build/qbox-apollo-fvp/full-system/si-cl0-pc-trace.log");
-        trace_pc_interval = ctx.getenv_number_or(
-            "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_INTERVAL",
-            "1");
-        trace_pc_limit = ctx.getenv_number_or(
-            "QBOX_APOLLO_FULL_SI_CL0_PC_TRACE_LIMIT",
-            "4096");
-        irq_timer_sec_out = {
-            bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_SEC_PPI;
-        };
-        irq_timer_phys_out = {
-            bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_PHYS_PPI;
-        };
-        irq_timer_virt_out = {
-            bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_VIRT_PPI;
-        };
-        irq_timer_hyp_out = {
-            bind = "&si_cl0_gic.ppi_in_cpu_0_"..ARCH_TIMER_HYP_PPI;
-        };
-    }
-
-    platform.si_cl0_cpu_counter_mirror = {
-        moduletype = "qemu_arm_counter_mirror";
-        args = {
-            "&platform.si_cl0_cpu_0";
-            "&platform.css_system_counter";
-        };
-    }
-
-    platform.si_cl0_gic.irq_out_0 = {bind = "&si_cl0_cpu_0.irq_in"}
-    platform.si_cl0_gic.fiq_out_0 = {bind = "&si_cl0_cpu_0.fiq_in"}
-    platform.si_cl0_gic.virq_out_0 = {bind = "&si_cl0_cpu_0.virq_in"}
-    platform.si_cl0_gic.vfiq_out_0 = {bind = "&si_cl0_cpu_0.vfiq_in"}
+    si_cl0.define_cpu_reset_hooks(ctx, platform)
 
     print("si-cl0 image: "..si_cl0_image)
     print("si-cl0 log:   "..si_cl0_log)

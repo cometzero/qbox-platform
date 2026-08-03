@@ -109,10 +109,16 @@ if(BUILD_TESTING)
         endif()
     endmacro()
     set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS
+        apollo_si_canonical_gic
+        apollo_si_five_pe_topology
+        apollo_si_gic_irq
+        apollo_si_single_gic_config
+        apollo_si_single_instance
         arm_system_counter
         cc3xx
         dma350
         gic720ae_messreg
+        gic720ae_power_reset
         gicx00_multiview
         host_cmn_cyprus
         host_gtimer
@@ -210,6 +216,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     mhu320ae
     gicx00_multiview
     gic720ae_messreg
+    gic720ae_power_bridge
     zena_fmu
     zena_ssu
     zena_watchdog

@@ -1,0 +1,30 @@
+{
+  "format_version": 1,
+  "name": "apollo-qvp-gic720ae-linux-probe",
+  "default_enabled": false,
+  "package": "gic720ae-selftest",
+  "module": {
+    "role": "gic720ae_test",
+    "package": "kernel-module-gic720ae-test",
+    "install_path": "/lib/modules/<kernel-release>/extra/gic720ae_test.ko",
+    "run_helper": "/usr/libexec/gic720ae-selftest/run.sh"
+  },
+  "base_dtb": "apollo-qvp.dtb",
+  "overlay": "apollo-qvp-gic-linux-test-overlay.dtso",
+  "overlay_blob": "apollo-qvp-gic720ae.dtbo",
+  "merged_dtb": "apollo-qvp-gic720ae-probe.dtb",
+  "device_node": "/gic720ae-linux-selftest",
+  "compatible": "arm,gic720ae-linux-selftest",
+  "reserved_spi": 54,
+  "target_cpu": 1,
+  "artifacts": {
+    "kernel": "deploy/Image",
+    "merged_dtb": "deploy/apollo-qvp-gic720ae-probe.dtb",
+    "wic": "deploy/nexios-bsp-initramfs-apollo-qvp-gic720ae-probe.wic",
+    "qboxconf": "deploy/nexios-bsp-initramfs-apollo-qvp-gic720ae-probe.qboxconf",
+    "rootfs_packages": "deploy/rootfs-packages.txt",
+    "gic720ae_test": "deploy/lib/modules/<kernel-release>/extra/gic720ae_test.ko",
+    "uki_a_dtb": "verification/a.dtb",
+    "uki_b_dtb": "verification/b.dtb"
+  }
+}

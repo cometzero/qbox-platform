@@ -12,6 +12,7 @@
 
 #include <cci_configuration>
 #include <module_factory_registery.h>
+#include <ports/target-signal-socket.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_sockets_buswidth.h>
@@ -100,6 +101,7 @@ public:
     cci::cci_param<unsigned int> p_trace_limit;
 
     target_socket_t target_socket;
+    TargetSignalSocket<bool> reset;
 
     explicit gic720ae_messreg(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
@@ -107,10 +109,17 @@ public:
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 128)
         , target_socket("target_socket")
+        , reset("reset")
     {
         m_regs.fill(0);
         target_socket.register_b_transport(this, &gic720ae_messreg::b_transport);
         target_socket.register_transport_dbg(this, &gic720ae_messreg::transport_dbg);
+        reset.register_value_changed_cb([this](bool asserted) {
+            if (asserted) {
+                m_regs.fill(0);
+                m_trace_count = 0;
+            }
+        });
     }
 
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
