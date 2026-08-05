@@ -500,6 +500,49 @@ TEST(Gicx00MultiviewTest,
 }
 
 TEST(Gicx00MultiviewTest,
+     DistributorControlKeepsIndependentViewEnableState)
+{
+    constexpr uint32_t group_enable_mask = 0x7u;
+    StatefulCanonicalGicBackend backend("gicx00_ctlr_backend");
+    gicx00_multiview dut("gicx00_multiview_ctlr");
+    dut.backend_socket.bind(backend.target_socket);
+
+    access_dist_view32(
+        dut, 1, GICD_CTLR, tlm::TLM_WRITE_COMMAND, 0x51u);
+    EXPECT_EQ(read_dist32(dut, GICD_CTLR) & group_enable_mask, 0u);
+    access_dist_view32(
+        dut, 2, GICD_CTLR, tlm::TLM_WRITE_COMMAND, 0x12u);
+    EXPECT_EQ(read_dist32(dut, GICD_CTLR) & group_enable_mask, 0u);
+
+    write_dist32(dut, GICD_CTLR, 0x57u);
+
+    EXPECT_EQ(read_dist32(dut, GICD_CTLR) & group_enable_mask, 0x3u);
+    EXPECT_EQ(access_dist_view32(
+                  dut, 1, GICD_CTLR, tlm::TLM_READ_COMMAND) &
+                  group_enable_mask,
+              0x1u);
+    EXPECT_EQ(access_dist_view32(
+                  dut, 2, GICD_CTLR, tlm::TLM_READ_COMMAND) &
+                  group_enable_mask,
+              0x2u);
+
+    write_dist32(dut, GICD_CTLR, 0x52u);
+    EXPECT_EQ(read_dist32(dut, GICD_CTLR) & group_enable_mask, 0x2u);
+    EXPECT_EQ(access_dist_view32(
+                  dut, 1, GICD_CTLR, tlm::TLM_READ_COMMAND) &
+                  group_enable_mask,
+              0u);
+    EXPECT_EQ(access_dist_view32(
+                  dut, 2, GICD_CTLR, tlm::TLM_READ_COMMAND) &
+                  group_enable_mask,
+              0x2u);
+
+    access_dist_view32(
+        dut, 2, GICD_CTLR, tlm::TLM_WRITE_COMMAND, 0u);
+    EXPECT_EQ(read_dist32(dut, GICD_CTLR) & group_enable_mask, 0u);
+}
+
+TEST(Gicx00MultiviewTest,
      PinView0UsesOneCanonicalBackendForDistributorAndRedistributor)
 {
     FunctionalGicBackend backend("gicx00_pin_backend");

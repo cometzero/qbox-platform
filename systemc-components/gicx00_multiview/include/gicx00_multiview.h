@@ -36,6 +36,8 @@ class gicx00_multiview : public sc_core::sc_module
     static constexpr unsigned int DEFAULT_SPI_COUNT = 960;
     static constexpr uint32_t SPI_BASE_INTID = 32;
     static constexpr uint32_t SPI_LIMIT_INTID = 992;
+    static constexpr uint32_t GICD_CTLR = 0x0000;
+    static constexpr uint32_t GICD_CTLR_GROUP_ENABLE_MASK = 0x7;
     static constexpr uint32_t GICD_CFGID = 0xf000;
     static constexpr uint32_t GICD_IVIEWR_BASE = 0xf600;
     static constexpr uint32_t GICD_IVIEWR_LIMIT = 0xfa00;
@@ -69,6 +71,7 @@ class gicx00_multiview : public sc_core::sc_module
 
     std::array<uint32_t, GICD_IVIEWR_LAST + 1> m_iviewr {};
     std::array<uint32_t, REDIST_COUNT> m_viewr {};
+    std::array<uint32_t, 3> m_ctlr_view {};
     // Wire levels are retained only to make ownership mux handoff coherent;
     // architectural pending/active/enable state remains in the backend GIC.
     std::array<std::vector<bool>, 2> m_injection_levels;
@@ -104,6 +107,7 @@ class gicx00_multiview : public sc_core::sc_module
     {
         m_iviewr.fill(0);
         m_viewr.fill(0);
+        m_ctlr_view.fill(0);
     }
 
     void reset_model()
@@ -437,6 +441,80 @@ class gicx00_multiview : public sc_core::sc_module
         return true;
     }
 
+    bool access_ctlr(unsigned int view, tlm::tlm_generic_payload& trans,
+                     sc_core::sc_time& delay, bool debug)
+    {
+        const unsigned int len = trans.get_data_length();
+        uint8_t* data = trans.get_data_ptr();
+        if (view >= m_ctlr_view.size() || trans.get_address() != GICD_CTLR ||
+            data == nullptr || len != sizeof(uint32_t)) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return false;
+        }
+
+        if (trans.get_command() == tlm::TLM_READ_COMMAND) {
+            if (backend_socket.size() == 0) {
+                if (view == 0) {
+                    std::memset(data, 0, len);
+                } else {
+                    std::memcpy(data, &m_ctlr_view[view], len);
+                }
+                trans.set_response_status(tlm::TLM_OK_RESPONSE);
+                return true;
+            }
+            if (!forward_backend(
+                    "dist-ctlr", UINT32_MAX, trans, delay,
+                    p_backend_dist_base.get_value() + GICD_CTLR, debug)) {
+                return false;
+            }
+            if (view != 0) {
+                uint32_t value = 0;
+                std::memcpy(&value, data, len);
+                value &= ~GICD_CTLR_GROUP_ENABLE_MASK;
+                value |= (m_ctlr_view[0] & m_ctlr_view[view]) &
+                    GICD_CTLR_GROUP_ENABLE_MASK;
+                std::memcpy(data, &value, len);
+            }
+            return true;
+        }
+        if (trans.get_command() != tlm::TLM_WRITE_COMMAND) {
+            trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+            return false;
+        }
+
+        uint32_t requested = 0;
+        std::memcpy(&requested, data, len);
+        m_ctlr_view[view] = requested;
+        if (backend_socket.size() == 0) {
+            trans.set_response_status(tlm::TLM_OK_RESPONSE);
+            return true;
+        }
+
+        trans.set_command(tlm::TLM_READ_COMMAND);
+        bool success = forward_backend(
+            "dist-ctlr", UINT32_MAX, trans, delay,
+            p_backend_dist_base.get_value() + GICD_CTLR, debug);
+        if (success) {
+            uint32_t backend_value = 0;
+            std::memcpy(&backend_value, data, len);
+            const uint32_t group_enable =
+                (m_ctlr_view[0] &
+                 (m_ctlr_view[1] | m_ctlr_view[2])) &
+                GICD_CTLR_GROUP_ENABLE_MASK;
+            backend_value |= requested & ~GICD_CTLR_GROUP_ENABLE_MASK;
+            backend_value &= ~GICD_CTLR_GROUP_ENABLE_MASK;
+            backend_value |= group_enable;
+            std::memcpy(data, &backend_value, len);
+            trans.set_command(tlm::TLM_WRITE_COMMAND);
+            success = forward_backend(
+                "dist-ctlr", UINT32_MAX, trans, delay,
+                p_backend_dist_base.get_value() + GICD_CTLR, debug);
+        }
+        trans.set_command(tlm::TLM_WRITE_COMMAND);
+        std::memcpy(data, &requested, len);
+        return success;
+    }
+
     bool access_viewr(unsigned int index, tlm::tlm_generic_payload& trans,
                       bool debug)
     {
@@ -599,6 +677,10 @@ class gicx00_multiview : public sc_core::sc_module
                                    DIST_FRAME_BYTES, trans, debug);
         }
 
+        if (offset == GICD_CTLR) {
+            return access_ctlr(0, trans, delay, debug);
+        }
+
         if (is_iviewr_window(offset)) {
             return access_iviewr(trans, debug);
         }
@@ -633,6 +715,10 @@ class gicx00_multiview : public sc_core::sc_module
                 trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
             }
             return false;
+        }
+
+        if (offset == GICD_CTLR) {
+            return access_ctlr(view, trans, delay, debug);
         }
 
         std::array<uint8_t, sizeof(uint64_t)> original {};

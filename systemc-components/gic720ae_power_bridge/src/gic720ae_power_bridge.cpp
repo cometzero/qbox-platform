@@ -22,6 +22,7 @@ gic720ae_power_bridge::gic720ae_power_bridge(sc_core::sc_module_name name)
     , reset("reset")
 {
     m_state.resize(p_redistributor_count.get_value());
+    m_backend_sync_pending.resize(p_redistributor_count.get_value(), false);
     target_socket.register_b_transport(
         this, &gic720ae_power_bridge::b_transport);
     target_socket.register_transport_dbg(
@@ -42,6 +43,9 @@ gic720ae_power_bridge::gic720ae_power_bridge(sc_core::sc_module_name name)
             reset_model();
         }
     });
+    SC_METHOD(sync_pending_backend_wakers);
+    sensitive << m_backend_sync_event;
+    dont_initialize();
     reset_model();
 }
 
@@ -230,6 +234,47 @@ bool gic720ae_power_bridge::delivery_enabled(unsigned int index) const
            !state.children_asleep;
 }
 
+bool gic720ae_power_bridge::sync_backend_waker(unsigned int index)
+{
+    if (backend_socket.size() == 0 || index >= m_state.size()) {
+        return false;
+    }
+
+    uint32_t waker = 0;
+    tlm::tlm_generic_payload trans;
+    trans.set_command(tlm::TLM_READ_COMMAND);
+    trans.set_address(
+        p_backend_redist_base.get_value() +
+        index * p_backend_redist_stride.get_value() + GICR_WAKER);
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&waker));
+    trans.set_data_length(sizeof(waker));
+    trans.set_streaming_width(sizeof(waker));
+    trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
+
+    const unsigned int transferred = backend_socket->transport_dbg(trans);
+    if (transferred != sizeof(waker)) {
+        return false;
+    }
+
+    RedistributorState& state = m_state[index];
+    state.processor_sleep = (waker & WAKER_PROCESSOR_SLEEP) != 0;
+    state.children_asleep = (waker & WAKER_CHILDREN_ASLEEP) != 0;
+    return true;
+}
+
+void gic720ae_power_bridge::sync_pending_backend_wakers()
+{
+    for (unsigned int index = 0;
+         index < m_backend_sync_pending.size(); ++index) {
+        if (!m_backend_sync_pending[index]) {
+            continue;
+        }
+        m_backend_sync_pending[index] = false;
+        sync_backend_waker(index);
+        refresh(index);
+    }
+}
+
 void gic720ae_power_bridge::receive(
     unsigned int index, unsigned int kind, bool value)
 {
@@ -237,6 +282,10 @@ void gic720ae_power_bridge::receive(
         return;
     }
     m_state[index].input_level[kind] = value;
+    if (value && !delivery_enabled(index)) {
+        m_backend_sync_pending[index] = true;
+        m_backend_sync_event.notify(sc_core::SC_ZERO_TIME);
+    }
     drive(index, kind, delivery_enabled(index) ? value : false);
 }
 
@@ -282,6 +331,7 @@ void gic720ae_power_bridge::reset_model()
     m_sleep = false;
     m_quiescent = false;
     for (unsigned int index = 0; index < m_state.size(); ++index) {
+        m_backend_sync_pending[index] = false;
         m_state[index] = RedistributorState {};
         refresh(index);
     }

@@ -189,6 +189,10 @@ struct ResetObservation {
 };
 
 struct PowerObservation {
+    uint32_t initial_pwrr_up = UINT32_MAX;
+    uint32_t initial_waker = UINT32_MAX;
+    unsigned int delivery_while_backend_asleep = UINT32_MAX;
+    unsigned int delivery_after_backend_wake = 0;
     uint32_t waker_asleep = 0;
     uint32_t waker_quiescent = 0;
     uint32_t pwrr_down = 0;
@@ -228,6 +232,7 @@ public:
     TlmAccess view0;
     TlmAccess view1;
     TlmAccess redist;
+    TlmAccess backend_redist;
     TlmAccess message;
     gs::async_event keepalive;
     std::array<ResetObservation, 2> prepared {};
@@ -258,6 +263,7 @@ public:
         , view0("view0")
         , view1("view1")
         , redist("redist")
+        , backend_redist("backend_redist")
         , message("message")
         , keepalive("keepalive")
         , invalid_powerdown_order(invalid_order)
@@ -286,6 +292,7 @@ public:
         view0.socket.bind(multiview.view0_dist);
         view1.socket.bind(multiview.view1_dist);
         redist.socket.bind(multiview.view0_redist_0);
+        backend_redist.socket.bind(router.target_socket);
         message.socket.bind(messreg.target_socket);
 
         reset_source.signal.bind(reset_transaction.reset_in);
@@ -330,6 +337,38 @@ private:
         view1.write(enable, kBit);
         view1.write<uint8_t>(0x400 + kIntid, 0x80);
         view1.write<uint64_t>(0x6000 + kIntid * sizeof(uint64_t), 0);
+
+        backend_redist.write<uint32_t>(
+            kGicrBase + kGicrWaker, kProcessorSleep);
+        redist.write<uint32_t>(kGicrPwrr, 0);
+        power.initial_pwrr_up = poll_redist(
+            kGicrPwrr, kRedistributorPowerDown, false, power.up_polls);
+        power.initial_waker = redist.read<uint32_t>(kGicrWaker);
+        const unsigned int before_initial_irq = irq_tap.rises;
+        irq_source.write(true);
+        wait(sc_core::sc_time(1, sc_core::SC_MS));
+        power.delivery_while_backend_asleep =
+            irq_tap.rises - before_initial_irq;
+        irq_source.write(false);
+        wait(sc_core::sc_time(1, sc_core::SC_PS));
+
+        backend_redist.write<uint32_t>(kGicrBase + kGicrWaker, 0);
+        const unsigned int before_backend_wake_irq = irq_tap.rises;
+        irq_source.write(true);
+        sc_core::sc_event backend_wake_timeout;
+        backend_wake_timeout.notify(sc_core::sc_time(10, sc_core::SC_MS));
+        while (irq_tap.rises == before_backend_wake_irq) {
+            wait(irq_tap.changed | backend_wake_timeout);
+            if (backend_wake_timeout.triggered()) {
+                break;
+            }
+        }
+        power.delivery_after_backend_wake =
+            irq_tap.rises - before_backend_wake_irq;
+        irq_source.write(false);
+        view1.write(pending_clear, kBit);
+        wait(sc_core::sc_time(2, sc_core::SC_PS));
+
         redist.write<uint32_t>(kGicrWaker, kProcessorSleep);
         power.waker_asleep = poll_redist(
             kGicrWaker, kChildrenAsleep, true, power.sleep_polls);
@@ -366,6 +405,14 @@ private:
         power.delivery_after_up = irq_tap.rises - before_wake_irq;
 
         std::cout << "power_cycle"
+                  << " initial_pwrr_up="
+                  << (power.initial_pwrr_up & kRedistributorPowerDown)
+                  << " initial_waker=" << (power.initial_waker &
+                      (kProcessorSleep | kChildrenAsleep))
+                  << " delivery_while_backend_asleep="
+                  << power.delivery_while_backend_asleep
+                  << " delivery_after_backend_wake="
+                  << power.delivery_after_backend_wake
                   << " pwrr_down=" << (power.pwrr_down & kRedistributorPowerDown)
                   << " children_asleep=" << (power.waker_asleep & kChildrenAsleep)
                   << " quiescent=" << (power.waker_quiescent & kQuiescent)
@@ -625,6 +672,14 @@ TEST(Gic720aePowerReset, ColdAndWarmResetAreAtomicAcrossOwners)
     ASSERT_TRUE(bench->redist.ok);
     ASSERT_TRUE(bench->message.ok);
     EXPECT_NE(bench->power.waker_asleep & kChildrenAsleep, 0u);
+    EXPECT_EQ(
+        bench->power.initial_pwrr_up & kRedistributorPowerDown, 0u);
+    EXPECT_EQ(
+        bench->power.initial_waker &
+            (kProcessorSleep | kChildrenAsleep),
+        kProcessorSleep | kChildrenAsleep);
+    EXPECT_EQ(bench->power.delivery_while_backend_asleep, 0u);
+    EXPECT_NE(bench->power.delivery_after_backend_wake, 0u);
     EXPECT_NE(bench->power.waker_quiescent & kQuiescent, 0u);
     EXPECT_NE(bench->power.pwrr_down & kRedistributorPowerDown, 0u);
     EXPECT_EQ(bench->power.delivery_while_down, 0u);

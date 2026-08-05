@@ -48,6 +48,8 @@ class gic720ae_power_bridge : public sc_core::sc_module
     };
 
     std::vector<RedistributorState> m_state;
+    std::vector<bool> m_backend_sync_pending;
+    sc_core::sc_event m_backend_sync_event;
     bool m_sleep = false;
     bool m_quiescent = false;
 
@@ -68,13 +70,17 @@ class gic720ae_power_bridge : public sc_core::sc_module
     uint32_t waker_value(unsigned int index) const;
     bool all_children_asleep(
         unsigned int selected, const RedistributorState& selected_state) const;
+    bool sync_backend_waker(unsigned int index);
     bool delivery_enabled(unsigned int index) const;
+    void sync_pending_backend_wakers();
     void receive(unsigned int index, unsigned int kind, bool value);
     void drive(unsigned int index, unsigned int kind, bool value);
     void refresh(unsigned int index);
     void reset_model();
 
 public:
+    SC_HAS_PROCESS(gic720ae_power_bridge);
+
     cci::cci_param<uint64_t> p_backend_redist_base;
     cci::cci_param<uint64_t> p_backend_redist_stride;
     cci::cci_param<unsigned int> p_redistributor_count;
