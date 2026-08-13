@@ -3,6 +3,7 @@
 local AP_CORES_PER_CLUSTER = 4
 local AP_MAX_CLUSTERS = 4
 local AP_MAX_CPUS = AP_CORES_PER_CLUSTER * AP_MAX_CLUSTERS
+local MONITOR_DEFAULT_PORT = 18080
 local REQUEST_DOMAIN = {
     system = 0;
     ap = 1;
@@ -435,6 +436,12 @@ rse_cpuwait = getenv_number_or(
 rse_dma_boot_en = getenv_number_or(
     "QBOX_RDASPEN_RSE_DMA_BOOT_EN",
     "0x00000001")
+local monitor_enabled = getenv_bool_or("QBOX_APOLLO_MONITOR", false)
+local monitor_port = getenv_number_or(
+    "QBOX_APOLLO_MONITOR_PORT",
+    MONITOR_DEFAULT_PORT)
+assert(monitor_port >= 1 and monitor_port <= 65535 and monitor_port % 1 == 0,
+       "QBOX_APOLLO_MONITOR_PORT must be an integer in range 1..65535")
 
 local config = {}
 
@@ -464,6 +471,7 @@ function config.create(apollo_dir)
             system_mgmt = {};
             si_cl0 = {};
             si_cl1 = {};
+            monitor = {enabled = monitor_enabled; port = monitor_port};
         };
     }
 end

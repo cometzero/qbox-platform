@@ -51,6 +51,16 @@ si_cl1.define(ctx, platform)
 si_cl0.enable(ctx, platform)
 si_cl1.enable(ctx, platform)
 
+if ctx.config.monitor.enabled then
+    platform.qbox_monitor = {
+        moduletype = "monitor";
+        server_port = ctx.config.monitor.port;
+        use_html_presentation = true;
+    }
+    print("QBox monitor dashboard: http://127.0.0.1:"..
+          ctx.config.monitor.port.."/")
+end
+
 if enable_ap_cpus then
     platform.apollo_timer_snapshot = {
         moduletype = "apollo_timer_snapshot";

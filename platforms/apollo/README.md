@@ -152,6 +152,22 @@ python3 scripts/test/audit_qbox_apollo_fvp_full_coverage.py \
   --output build/qbox-apollo-qvp/<run-id>/full-coverage-audit.json
 ```
 
+Enable the QBox web monitor for an interactive full-system boot with
+`--monitor`. The dashboard listens on port 18080 by default. Supplying
+`--monitor-port` also enables the monitor:
+
+```bash
+./run_qbox_local.sh --monitor
+./run_qbox_local.sh --monitor-port 19090
+./run_qbox_yocto.sh --monitor --monitor-port 19090
+```
+
+Open `http://127.0.0.1:<port>/` while the QBox process is running. The monitor
+is disabled unless either option is present, so the default boot path does not
+open a listening socket. The existing QBox Crow monitor binds the requested
+port to all host interfaces. Use host firewall rules or an isolated network on
+shared systems when the dashboard must remain local-only.
+
 `hw-block/ros.lua` tracks the modeled Rest of System subset from the Arm Zena
 CSS FVP RoS peripheral table: AP-visible virtio block/net/rng and PL031 RTC.
 
