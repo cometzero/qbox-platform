@@ -1,5 +1,15 @@
 local ap_compute = {}
 
+local AP_QEMU = {
+    accel_env = "QBOX_APOLLO_FULL_AP_ACCEL";
+    accel = "tcg";
+    tcg_mode_env = "QBOX_APOLLO_FULL_AP_TCG_MODE";
+    tcg_mode = "MULTI";
+    sync_policy_env = "QBOX_APOLLO_FULL_AP_SYNC_POLICY";
+    sync_policy = "multithread-quantum";
+    time_sync_strategy_env = "QBOX_APOLLO_FULL_AP_TIME_SYNC_STRATEGY";
+    time_sync_strategy = "quantum_keeper";
+}
 local AP_ADDRESS = {
     shared_sram = 0x00000000;
     bl2_header_sram = 0x00100000;
@@ -242,9 +252,14 @@ function ap_compute.define(ctx, platform)
     platform.ap_qemu_inst = enable_ap_cpus and {
         moduletype = "QemuInstance";
         args = {"&platform.ap_qemu_inst_mgr", "AARCH64"};
-        accel = "tcg";
-        tcg_mode = ctx.getenv_or("QBOX_APOLLO_FULL_AP_TCG_MODE", "MULTI");
-        sync_policy = "multithread-freerunning";
+        accel = ctx.getenv_or(AP_QEMU.accel_env, AP_QEMU.accel);
+        tcg_mode = ctx.getenv_or(AP_QEMU.tcg_mode_env, AP_QEMU.tcg_mode);
+        sync_policy = ctx.getenv_or(
+            AP_QEMU.sync_policy_env,
+            AP_QEMU.sync_policy);
+        time_sync_strategy = ctx.getenv_or(
+            AP_QEMU.time_sync_strategy_env,
+            AP_QEMU.time_sync_strategy);
         managed_start_in_reset_release = true;
         qemu_args = ap_qemu_args;
         construction_priority = -299;

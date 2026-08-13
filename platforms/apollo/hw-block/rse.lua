@@ -1,5 +1,15 @@
 local rse = {}
 
+local RSE_QEMU = {
+    accel_env = "QBOX_RDASPEN_RSE_ACCEL";
+    accel = "tcg";
+    tcg_mode_env = "QBOX_RDASPEN_RSE_TCG_MODE";
+    tcg_mode = "SINGLE";
+    sync_policy_env = "QBOX_RDASPEN_RSE_SYNC_POLICY";
+    sync_policy = "multithread-quantum";
+    time_sync_strategy_env = "QBOX_RDASPEN_RSE_TIME_SYNC_STRATEGY";
+    time_sync_strategy = "quantum_keeper";
+}
 local RSE_ADDRESS = {
     rom_secure = 0x11000000;
     itcm_non_secure = 0x00000000;
@@ -221,8 +231,14 @@ function rse.define(ctx, platform)
     platform.qemu_inst = {
         moduletype = "QemuInstance";
         args = {"&platform.qemu_inst_mgr", "AARCH64"};
-        tcg_mode = rse_tcg_mode;
-        sync_policy = rse_sync_policy;
+        accel = ctx.getenv_or(RSE_QEMU.accel_env, RSE_QEMU.accel);
+        tcg_mode = ctx.getenv_or(RSE_QEMU.tcg_mode_env, RSE_QEMU.tcg_mode);
+        sync_policy = ctx.getenv_or(
+            RSE_QEMU.sync_policy_env,
+            RSE_QEMU.sync_policy);
+        time_sync_strategy = ctx.getenv_or(
+            RSE_QEMU.time_sync_strategy_env,
+            RSE_QEMU.time_sync_strategy);
         qemu_args = qemu_args;
     }
 
@@ -927,8 +943,14 @@ function rse.define(ctx, platform)
         qemu_inst = {
             moduletype = "QemuInstance";
             args = {"&qemu_inst_mgr", "AARCH64"};
-            tcg_mode = rse_tcg_mode;
-            sync_policy = rse_sync_policy;
+            accel = ctx.getenv_or(RSE_QEMU.accel_env, RSE_QEMU.accel);
+            tcg_mode = ctx.getenv_or(RSE_QEMU.tcg_mode_env, RSE_QEMU.tcg_mode);
+            sync_policy = ctx.getenv_or(
+                RSE_QEMU.sync_policy_env,
+                RSE_QEMU.sync_policy);
+            time_sync_strategy = ctx.getenv_or(
+                RSE_QEMU.time_sync_strategy_env,
+                RSE_QEMU.time_sync_strategy);
             qemu_args = qemu_args;
         },
 

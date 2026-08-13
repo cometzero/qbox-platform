@@ -254,10 +254,6 @@ uart_poll_interval_ms = tonumber(getenv_or(
     "QBOX_RDASPEN_UART_POLL_INTERVAL_MS",
     "100"))
 qemu_args = getenv_or("QBOX_RDASPEN_RSE_QEMU_ARGS", "")
-rse_tcg_mode = getenv_or("QBOX_RDASPEN_RSE_TCG_MODE", "MULTI")
-rse_sync_policy = getenv_or(
-    "QBOX_RDASPEN_RSE_SYNC_POLICY",
-    "multithread-freerunning")
 ap_qemu_args = getenv_or("QBOX_RDASPEN_AP_QEMU_ARGS", "")
 ap_pc_trace = getenv_or("QBOX_RDASPEN_AP_PC_TRACE", "false") == "true"
 ap_pc_trace_file = getenv_or(

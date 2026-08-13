@@ -89,23 +89,23 @@ yet emit `FWU: Updating`, `FIP_B`, or Trial State after that reset. Do not use
 the second Regular State result as evidence of capsule application or rollback
 persistence.
 
-The full-system AP, RSE, and both Safety Islands use multi-thread TCG so each
-vCPU has an independent wake condition. QBox completes managed start-in-reset
-release on the target vCPU and does not start a reset-held CPU's quantum
-keeper. This prevents an idle reset-held timehandler from owning a global
-SystemC suspend request. TF-A releases the AP secondary CPUs sequentially,
-while CL1 Zephyr's reset voting lock may select any released physical MPID as
-logical CPU 0.
+The full-system RSE and SI CL0 instances use single-thread TCG, while SI CL1
+and AP use multi-thread TCG. All four instances use `multithread-quantum`
+synchronization with the `quantum_keeper` time-sync strategy. QBox completes
+managed start-in-reset release on the target vCPU and does not start a
+reset-held CPU's quantum keeper. This prevents an idle reset-held timehandler
+from owning a global SystemC suspend request. TF-A releases the AP secondary
+CPUs sequentially, while CL1 Zephyr's reset voting lock may select any released
+physical MPID as logical CPU 0.
 
-CL1 also uses `multithread-quantum` synchronization. Its execution can run at
-most one global quantum ahead of SystemC. Managed CPUs stop their quantum
-keepers while reset is asserted, then restart time synchronization after the
-target-vCPU reset release completes. After release they remain wakeable across
-WFI so QEMU deadline timers can wake the CPUs reliably. The host PPU model
-preserves the current power state when firmware enables a lower dynamic
-minimum policy, so that policy update does not reassert CPU reset. Each CL1
-Cortex-R82 generic timer runs at 100 MHz to match the Zephyr system-clock
-configuration.
+With `multithread-quantum`, execution can run at most one global quantum ahead
+of SystemC. Managed CPUs stop their quantum keepers while reset is asserted,
+then restart time synchronization after the target-vCPU reset release
+completes. After release they remain wakeable across WFI so QEMU deadline
+timers can wake the CPUs reliably. The host PPU model preserves the current
+power state when firmware enables a lower dynamic minimum policy, so that
+policy update does not reassert CPU reset. Each CL1 Cortex-R82 generic timer
+runs at 100 MHz to match the Zephyr system-clock configuration.
 
 The SI1 PFDI postbox also uses the propagated TLM request context to identify
 the vCPU that issued each doorbell. It asserts that vCPU's co-simulation
@@ -117,11 +117,20 @@ CPUs 0 through 3. `sync_hold` pauses only QEMU/SystemC scheduling and the
 requester's quantum keeper; it does not synthesize an MHU response or expose a
 guest-visible halt, reset, IRQ, or power transition.
 
-Override the TCG defaults with `QBOX_APOLLO_FULL_AP_TCG_MODE`,
-`QBOX_RDASPEN_RSE_TCG_MODE`, `QBOX_RDASPEN_RSE_SYNC_POLICY`,
-`QBOX_APOLLO_FULL_SI_CL0_TCG_MODE`, `QBOX_APOLLO_FULL_SI_CL0_SYNC_POLICY`,
-`QBOX_APOLLO_FULL_SI_CL1_TCG_MODE`, and
-`QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY` for experiments.
+The QVP SCP-firmware build gives AP and SI1 online PFDI watchdogs 500 ms. This
+reserves five complete heartbeat, response, and SystemC-quantum windows for
+the four independently scheduled QEMU instances. The FVP reference remains at
+its 100 ms firmware timing; the additional margin is QVP host-scheduling
+budget rather than a guest-visible protocol change. The full-system runner
+treats any SI0 `PFDI monitor timeout` report as a failed validation even when
+later boot markers are present.
+
+Override the QEMU defaults with the `QBOX_APOLLO_FULL_AP_*`,
+`QBOX_RDASPEN_RSE_*`, `QBOX_APOLLO_FULL_SI_CL0_*`, and
+`QBOX_APOLLO_FULL_SI_CL1_*` environment-variable families. Each family
+provides `ACCEL`, `TCG_MODE`, `SYNC_POLICY`, and `TIME_SYNC_STRATEGY` controls.
+The canonical runner's `--platform-param` option has final precedence and is
+the preferred surface for one-run performance comparisons.
 
 Hardware-block helpers used by the full-system entrypoint live under:
 

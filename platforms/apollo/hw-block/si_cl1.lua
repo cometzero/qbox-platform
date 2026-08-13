@@ -1,4 +1,14 @@
 local si_cl1 = {}
+local SI_CL1_QEMU = {
+    accel_env = "QBOX_APOLLO_FULL_SI_CL1_ACCEL";
+    accel = "tcg";
+    tcg_mode_env = "QBOX_APOLLO_FULL_SI_CL1_TCG_MODE";
+    tcg_mode = "MULTI";
+    sync_policy_env = "QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY";
+    sync_policy = "multithread-quantum";
+    time_sync_strategy_env = "QBOX_APOLLO_FULL_SI_CL1_TIME_SYNC_STRATEGY";
+    time_sync_strategy = "quantum_keeper";
+}
 local SI_CL1_CPU_COUNT = 4
 local SI_CL1_SRAM_BASE = 0x140000000
 local SI_CL1_ENTRY = 0x14000647c
@@ -49,13 +59,16 @@ function si_cl1.define_qemu_instance(ctx, platform)
     platform.si_cl1_qemu_inst = {
         moduletype = "QemuInstance";
         args = {"&platform.si_cl1_qemu_inst_mgr", "AARCH64"};
-        accel = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_ACCEL", "tcg");
+        accel = ctx.getenv_or(SI_CL1_QEMU.accel_env, SI_CL1_QEMU.accel);
         tcg_mode = ctx.getenv_or(
-            "QBOX_APOLLO_FULL_SI_CL1_TCG_MODE",
-            "MULTI");
+            SI_CL1_QEMU.tcg_mode_env,
+            SI_CL1_QEMU.tcg_mode);
         sync_policy = ctx.getenv_or(
-            "QBOX_APOLLO_FULL_SI_CL1_SYNC_POLICY",
-            "multithread-quantum");
+            SI_CL1_QEMU.sync_policy_env,
+            SI_CL1_QEMU.sync_policy);
+        time_sync_strategy = ctx.getenv_or(
+            SI_CL1_QEMU.time_sync_strategy_env,
+            SI_CL1_QEMU.time_sync_strategy);
         managed_start_in_reset_release = true;
         qemu_args = ctx.getenv_or("QBOX_APOLLO_FULL_SI_CL1_QEMU_ARGS", "");
     }
