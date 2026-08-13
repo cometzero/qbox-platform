@@ -1,10 +1,13 @@
 local fabric = {}
 
+local SMD_PHYS_BASE = 0x2000000000000
+local SMD_PHYS_SIZE = 0x1000000000000
+local SYSTEMC_QUANTUM_NS = 10000000
+
 function fabric.create(ctx)
-    assert(ctx.machine_contract.topology.machine == "apollo-qvp")
     return {
         moduletype = "Container";
-        quantum_ns = 10000000;
+        quantum_ns = SYSTEMC_QUANTUM_NS;
 
         -- Root fabric
         system_router = {
@@ -22,10 +25,10 @@ function fabric.create(ctx)
 
         system_to_smd_nci = {
             moduletype = "addrtr";
-            mapped_base_addr = 0x2000000000000;
+            mapped_base_addr = SMD_PHYS_BASE;
             target_socket = {
-                address = 0x2000000000000;
-                size = 0x1000000000000;
+                address = SMD_PHYS_BASE;
+                size = SMD_PHYS_SIZE;
                 bind = "&system_router.initiator_socket";
                 relative_addresses = false;
             };

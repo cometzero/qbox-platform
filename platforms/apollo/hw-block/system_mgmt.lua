@@ -1,5 +1,72 @@
 local system_mgmt = {}
 
+local HOST_SI_PIK_PHYS_BASE = 0x400002A600000
+local HOST_SI_SCR_PHYS_BASE = 0x400002A6B0000
+local HOST_SI_ATU_PHYS_BASE = 0x4000031000000
+local HOST_SI_CONTROL_WINDOW_SIZE = 0x00010000
+local HOST_RSE_SI_MHU_PHYS_BASE = 0x400003C000000
+local RSE_MHU_FRAME_SIZE = 0x00020000
+local RSE_IRQ_SI_CL0_RSE_CMU_MHU_RECEIVER = 139
+local HOST_RSE_SI_SSRAM_PHYS_BASE = 0x4000040000000
+local HOST_RSE_SI_SSRAM_SIZE = 0x00040000
+local HOST_AP_SHARED_SRAM_PHYS_BASE = 0x00000000
+local HOST_AP_SDS_MEM_SIZE = 0x00000DC0
+local HOST_AP_SCMI_PAYLOAD_BASE =
+    HOST_AP_SHARED_SRAM_PHYS_BASE + HOST_AP_SDS_MEM_SIZE
+local HOST_AP_NS_SCMI_TX_SHMEM_BASE = 0x00180000
+local HOST_AP_NS_SCMI_RX_SHMEM_BASE = 0x00180100
+local HOST_AP_SI_NS_SCMI_MHU_PBX_PHYS_BASE = 0x400003B000000
+local HOST_AP_SI_NS_SCMI_MHU_MBX_PHYS_BASE = 0x400003B040000
+local HOST_AP_SI_SCMI_MHU_PBX_PHYS_BASE = 0x400003B080000
+local HOST_AP_SI_SCMI_MHU_MBX_PHYS_BASE = 0x400003B0C0000
+local HOST_AP_SI_CL1_MHU_PBX_PHYS_BASE = 0x400003B100000
+local HOST_AP_SI_CL1_MHU_MBX_PHYS_BASE = 0x400003B140000
+local HOST_AP_SI_PFDI_MONITOR_MHU_PBX_PHYS_BASE = 0x400003B380000
+local HOST_AP_SI_PFDI_MONITOR_MHU_MBX_PHYS_BASE = 0x400003B3C0000
+local HOST_AP_SI_MHU_FRAME_SIZE = 0x00030000
+local HOST_AP_SCMI_PFDI_MONITOR_OFFSET = 0x00000100
+local HOST_AP_SCMI_PFDI_MONITOR_BASE =
+    HOST_AP_SCMI_PAYLOAD_BASE + HOST_AP_SCMI_PFDI_MONITOR_OFFSET
+local HOST_AP_SCMI_PFDI_MONITOR_STRIDE = 40
+local HOST_AP_SCMI_PFDI_MONITOR_CHANNELS = 16
+local AP_SI_NS_MHU_PBX_IRQ = 112
+local AP_SI_NS_MHU_MBX_IRQ = 113
+local AP_SI_SCMI_MHU_PBX_IRQ = 114
+local AP_SI_SCMI_MHU_MBX_IRQ = 115
+local AP_SI_PFDI_MHU_PBX_IRQ = 118
+local AP_SI_PFDI_MHU_MBX_IRQ = 119
+local AP_SI_CL1_MHU_PBX_IRQ = 120
+local AP_SI_CL1_MHU_MBX_IRQ = 121
+local AP_SI_CL1_MHU_CHANNEL_COUNT = 32
+local HOST_AP_ATU_PHYS_BASE = 0x20000D0080000
+local HOST_AP_ATU_LOGICAL_BASE = 0x40000000
+local HOST_AP_ATU_LOGICAL_SIZE = 0x00800000
+local HOST_SMDEXP2SMD_ATU_PHYS_BASE = 0x20000D0070000
+local HOST_CSS_RGM_PHYS_BASE = 0x20000D0010000
+local HOST_SYSTOP_PIK_PHYS_BASE = 0x20000D0200000
+local HOST_CSS_COUNTERS_TIMERS_PHYS_BASE = 0x20000D0100000
+local HOST_CSS_COUNTER_CONTROL_OFFSET = 0x00000000
+local HOST_CSS_COUNTER_READ_OFFSET = 0x00010000
+local HOST_CSS_COUNTER_SYNC_OFFSET = 0x00020000
+local HOST_CSS_COUNTER_FRAME_SIZE = 0x00010000
+local SYSTEM_RESET_REGISTER_SIZE = 0x00010000
+local HOST_SMD_SHARED_SRAM_PHYS_BASE = 0x2000060000000
+local HOST_SMD_SHARED_SRAM_SIZE = 0x00100000
+local HOST_AP_RSE_MHU_PHYS_BASE = 0x300001B600000
+local MHU_V3_FRAME_SIZE = 0x00030000
+local HOST_AP_MHU_POINTER_ACCESS_PHYS_BASE = 0x0FFFE0000
+local HOST_AP_MHU_POINTER_ACCESS_SIZE = 0x00020000
+local HOST_AP_RSE_MAILBOX_PHYS_BASE = 0xFFFFC000
+local SYSTEM_ATU_BUILD_CONFIG = 0x000000C5
+local SYSTEM_COUNTER_FREQUENCY_HZ = 125000000
+local SYSTEM_COUNTER_INTEGER_INCREMENT = 1
+local SYSTEM_POWER_RESET_DELAY_NS = 1
+local SYSTEM_POWER_RESET_PULSE_WIDTH_NS = 1
+local atu_trace_address_min = tonumber(getenv_or(
+    "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MIN", "0"))
+local atu_trace_address_max = tonumber(getenv_or(
+    "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MAX", "0"))
+
 system_mgmt.ownership = {
     reset = {
         "reset_gpio";
@@ -71,7 +138,7 @@ function system_mgmt.define(ctx, platform)
         trace_filter = atu_trace_filter;
         trace_address_min = atu_trace_address_min;
         trace_address_max = atu_trace_address_max;
-        build_config = 0x000000C5;
+        build_config = SYSTEM_ATU_BUILD_CONFIG;
         target_socket = {
             address = HOST_SI_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
@@ -142,7 +209,7 @@ function system_mgmt.define(ctx, platform)
         trace_address_min = atu_trace_address_min;
         trace_address_max = atu_trace_address_max;
         enable_dmi = enable_ap_cpus and atu_dmi;
-        build_config = 0x000000C5;
+        build_config = SYSTEM_ATU_BUILD_CONFIG;
         target_socket = {
             address = HOST_AP_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
@@ -164,14 +231,14 @@ function system_mgmt.define(ctx, platform)
         frame = "pbx";
         pair = "ap_to_si_cl0_ns";
         protocol = "doorbell-bridge";
-        tx_shmem = 0x00180000;
-        rx_shmem = 0x00180100;
+        tx_shmem = HOST_AP_NS_SCMI_TX_SHMEM_BASE;
+        rx_shmem = HOST_AP_NS_SCMI_RX_SHMEM_BASE;
         init_shmem = false;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
         target_socket = {
-            address = 0x400003B000000;
+            address = HOST_AP_SI_NS_SCMI_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
             bind = "&system_router.initiator_socket";
         };
@@ -185,14 +252,14 @@ function system_mgmt.define(ctx, platform)
         frame = "mbx";
         pair = "si_cl0_to_ap_ns";
         protocol = "doorbell-bridge";
-        tx_shmem = 0x00180000;
-        rx_shmem = 0x00180100;
+        tx_shmem = HOST_AP_NS_SCMI_TX_SHMEM_BASE;
+        rx_shmem = HOST_AP_NS_SCMI_RX_SHMEM_BASE;
         init_shmem = false;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
         target_socket = {
-            address = 0x400003B040000;
+            address = HOST_AP_SI_NS_SCMI_MHU_MBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
             bind = "&system_router.initiator_socket";
         };
@@ -213,8 +280,8 @@ function system_mgmt.define(ctx, platform)
         power_domain_reset_delay_ns = ap_power_domain_reset_delay_ns;
         power_domain_reset_assert_on_power_off = false;
         power_domain_reset_pulse_on_power_on = true;
-        system_power_reset_delay_ns = 1;
-        system_power_reset_pulse_width_ns = 1;
+        system_power_reset_delay_ns = SYSTEM_POWER_RESET_DELAY_NS;
+        system_power_reset_pulse_width_ns = SYSTEM_POWER_RESET_PULSE_WIDTH_NS;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
@@ -255,17 +322,17 @@ function system_mgmt.define(ctx, platform)
         frame = "pbx";
         pair = "apollo_ap_to_si_cl1";
         protocol = "doorbell-bridge";
-        channel_count = 32;
+        channel_count = AP_SI_CL1_MHU_CHANNEL_COUNT;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
         target_socket = {
-            address = 0x400003B100000;
+            address = HOST_AP_SI_CL1_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
             bind = "&system_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&ap_gic.spi_in_120"};
+        irq = {bind = "&ap_gic.spi_in_"..AP_SI_CL1_MHU_PBX_IRQ};
         log_level = 0;
     } or nil
 
@@ -274,17 +341,17 @@ function system_mgmt.define(ctx, platform)
         frame = "mbx";
         pair = "apollo_si_cl1_to_ap";
         protocol = "doorbell-bridge";
-        channel_count = 32;
+        channel_count = AP_SI_CL1_MHU_CHANNEL_COUNT;
         trace = mhu_trace;
         trace_limit = mhu_trace_limit;
         trace_file = mhu_trace_file;
         target_socket = {
-            address = 0x400003B140000;
+            address = HOST_AP_SI_CL1_MHU_MBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
             bind = "&system_router.initiator_socket";
         };
         initiator_socket = {bind = "&system_router.target_socket"};
-        irq = {bind = "&ap_gic.spi_in_121"};
+        irq = {bind = "&ap_gic.spi_in_"..AP_SI_CL1_MHU_MBX_IRQ};
         log_level = 0;
     } or nil
 
@@ -343,7 +410,7 @@ function system_mgmt.define(ctx, platform)
         trace_filter = atu_trace_filter;
         trace_address_min = atu_trace_address_min;
         trace_address_max = atu_trace_address_max;
-        build_config = 0x000000C5;
+        build_config = SYSTEM_ATU_BUILD_CONFIG;
         target_socket = {
             address = HOST_SMDEXP2SMD_ATU_PHYS_BASE;
             size = HOST_SI_CONTROL_WINDOW_SIZE;
@@ -356,12 +423,12 @@ function system_mgmt.define(ctx, platform)
         moduletype = "zena_reset_ctrl";
         rgm = {
             address = HOST_CSS_RGM_PHYS_BASE;
-            size = 0x00001000;
+            size = SYSTEM_RESET_REGISTER_SIZE;
             bind = "&smd_router.initiator_socket";
         };
         pik = {
             address = HOST_SYSTOP_PIK_PHYS_BASE;
-            size = 0x00001000;
+            size = SYSTEM_RESET_REGISTER_SIZE;
             bind = "&smd_router.initiator_socket";
         };
         ap_reset = {bind = "&ap_cold_reset_fanout.reset_in"};
@@ -370,9 +437,9 @@ function system_mgmt.define(ctx, platform)
 
     platform.css_system_counter = {
         moduletype = "arm_system_counter";
-        input_frequency_hz = 125000000;
-        integer_increment = 1;
-        reported_frequency_hz = 125000000;
+        input_frequency_hz = SYSTEM_COUNTER_FREQUENCY_HZ;
+        integer_increment = SYSTEM_COUNTER_INTEGER_INCREMENT;
+        reported_frequency_hz = SYSTEM_COUNTER_FREQUENCY_HZ;
         construction_priority = -298;
     }
 
@@ -381,8 +448,9 @@ function system_mgmt.define(ctx, platform)
         args = {"&platform.css_system_counter"};
         counter_control = true;
         target_socket = {
-            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE;
-            size = 0x00010000;
+            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE +
+                HOST_CSS_COUNTER_CONTROL_OFFSET;
+            size = HOST_CSS_COUNTER_FRAME_SIZE;
             bind = "&smd_router.initiator_socket";
         };
         log_level = 0;
@@ -393,8 +461,8 @@ function system_mgmt.define(ctx, platform)
         args = {"&platform.css_system_counter"};
         counter_read = true;
         target_socket = {
-            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00010000;
-            size = 0x00010000;
+            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + HOST_CSS_COUNTER_READ_OFFSET;
+            size = HOST_CSS_COUNTER_FRAME_SIZE;
             bind = "&smd_router.initiator_socket";
         };
         log_level = 0;
@@ -405,8 +473,8 @@ function system_mgmt.define(ctx, platform)
         args = {"&platform.css_system_counter"};
         sync_frame = true;
         target_socket = {
-            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + 0x00020000;
-            size = 0x00010000;
+            address = HOST_CSS_COUNTERS_TIMERS_PHYS_BASE + HOST_CSS_COUNTER_SYNC_OFFSET;
+            size = HOST_CSS_COUNTER_FRAME_SIZE;
             bind = "&smd_router.initiator_socket";
         };
         log_level = 0;

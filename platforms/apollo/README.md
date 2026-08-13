@@ -7,25 +7,8 @@ entrypoint is:
 hsoc-stack/tools/qbox-platform/platforms/apollo/apollo-qvp.lua
 ```
 
-The full-system runner always instantiates the real Safety Island CL0
-SCP-firmware and CL1 Zephyr domains. Its Safety Island interrupt-controller
-topology is explicit and rollback-safe:
-
-- The absent/default mode and `--si-split-gic` select the existing two-instance,
-  two-GIC CL0/CL1 graph.
-- `--si-single-gic` opts in to one shared SI `QemuInstance`, five Cortex-R82
-  PEs, and one canonical five-interface GIC.
-- `--si-split-gic` is the rollback command after a single-mode failure. It sets
-  `QBOX_APOLLO_FULL_SI_SINGLE_GIC=false`, which is semantically identical to
-  leaving the environment variable absent.
-
-The equivalent direct environment selection is
-`QBOX_APOLLO_FULL_SI_SINGLE_GIC=true|false`. Other values are rejected before
-platform construction. `topology.json` exports
-`safety_island_contract` with mode, instance, PE, GIC, reset, trace, and
-rollback metadata. The runner serializes that table into its status/result
-artifacts; `mode=split` reports two SI instances and `mode=single` reports one
-SI instance with five PEs and one canonical GIC.
+The full-system runner instantiates the real Safety Island CL0 SCP-firmware
+and CL1 Zephyr domains with the normal two-instance, two-GIC CL0/CL1 graph.
 
 The full-system entrypoint composes subsystem-owned Apollo hardware blocks:
 
@@ -40,27 +23,21 @@ hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl0.lua
 hsoc-stack/tools/qbox-platform/platforms/apollo/hw-block/si_cl1.lua
 ```
 
-The full-system machine contract is loaded from the same directory before
-platform construction:
+There is no separate machine-contract Lua layer. Runtime values are owned by
+the hardware block that consumes them. `config.lua` contains shared runtime
+options, assembly helpers, and request-context identifiers only. Hardware
+addresses, window sizes, IRQs, and fixed hardware parameters are declared in
+top-level local constant tables in `fabric.lua`, `rse.lua`, `ap_compute.lua`,
+`ros.lua`, `system_mgmt.lua`, `si_cl0.lua`, or `si_cl1.lua`, then consumed by
+the block that implements the corresponding behavior. Active SI interrupt
+routing remains owned by `si_cl0.lua`.
 
-```text
-hw-block/topology.lua
-hw-block/address_map.lua
-hw-block/transaction_routes.lua
-hw-block/signal_routes.lua
-hw-block/boot_control.lua
-hw-block/software_contract.lua
-hw-block/machine_contract.lua
-```
-
-`topology.lua` declares 52-bit system/AP/SMD, 32-bit RSE, and 40-bit SI CL0/CL1
-views. The runtime currently instantiates `system_router`, `ap_router`,
+The runtime currently instantiates `system_router`, `ap_router`,
 `smd_router`, `rse_router`, `si_cl0_router`, and `si_cl1_router`. The
 `system_to_smd_nci` bridge decodes only the SMD high-nibble. AP and both SI
 views have no broad one-to-one system bridge: cross-domain traffic uses the
 RSE-programmed AP/SI/SMDEXP ATUs or an explicitly declared static SCMI/HIPC,
-shared-SRAM, or GIC window. The contract phase is `A4_policy_routing`, broad
-passthrough is forbidden, and `compatibility_debt` is empty.
+shared-SRAM, or GIC window. Broad passthrough is forbidden.
 
 AP/SI HIPC windows and the SI CL0-to-SI CL1 SCMI window use explicit bridges.
 Local targets, CPU initiators, GPEX, and loaders bind to their domain router,
@@ -102,11 +79,8 @@ SI0 NI-710AE policy, and the live-domain MHU frames. SI0 can then sequence the
 AP PPUs back on only after its second initialization, preventing AP measured
 boot traffic from being posted before the RSE receiver is ready.
 
-In split mode, the Apollo reset fanout retains exactly one reset for each
-legacy SI CL0/CL1 QEMU instance. In single mode, the finalized fanout removes
-both stale split-instance resets and contains one cold-reset target for each of
-the five PEs. The topology contract exposes the same ordered, duplicate-free
-SI reset subset used for status and trace reporting.
+The Apollo reset fanout retains exactly one reset for each SI CL0/CL1 QEMU
+instance and orders the SI GIC multiview reset before both QEMU reset targets.
 
 The current Yocto FWU reset qualification reaches a second RSE/SI/TF-A/U-Boot
 and Linux Regular State. Capsule A/B acceptance is still open: a copied
@@ -168,28 +142,15 @@ hw-block/ros.lua
 hw-block/system_mgmt.lua
 ```
 
-Export and validate the machine-readable contract with:
+Run the canonical local-source full-system boot and its coverage audit:
 
 ```bash
-python3 scripts/test/validate_qbox_apollo_topology.py \
-  --emit build/qbox-apollo-qvp/topology/topology.json
+python3 scripts/run/run_qbox_apollo_fvp_full.py \
+  --timeout 600 --out-dir build/qbox-apollo-qvp/<run-id>
+python3 scripts/test/audit_qbox_apollo_fvp_full_coverage.py \
+  --result-json build/qbox-apollo-qvp/<run-id>/result.json \
+  --output build/qbox-apollo-qvp/<run-id>/full-coverage-audit.json
 ```
-
-Run the same four-CPU smoke contract with either local-build or Yocto-owned
-artifacts through the canonical runner's fidelity mode:
-
-```bash
-python3 scripts/run/run_qbox_apollo_fvp_full.py --fidelity \
-  --artifacts local --cpus 4 --profile smoke
-python3 scripts/run/run_qbox_apollo_fvp_full.py --fidelity \
-  --artifacts yocto --cpus 4 --profile smoke
-```
-
-Each run writes `manifest.json`, `result.json`,
-`full-coverage-audit.json`, `fidelity-contract.json`, and
-`fidelity-summary.json` below `build/qbox-apollo-qvp/`. The mode rejects
-local/Yocto artifact mixing and requires the Linux CPU IDs to be exactly
-0 through 3. It does not impose an emulator performance threshold.
 
 `hw-block/ros.lua` tracks the modeled Rest of System subset from the Arm Zena
 CSS FVP RoS peripheral table: AP-visible virtio block/net/rng and PL031 RTC.
@@ -421,7 +382,6 @@ reset-held CPU quantum-keeper fix. Reproduce the narrow build/test gate first:
 ```bash
 ./local_build.sh qbox --qbox-unit-tests
 python3 scripts/test/validate_qbox_apollo_fvp_full_map.py
-python3 scripts/test/validate_qbox_apollo_topology.py
 python3 scripts/test/audit_qbox_core_boundary.py
 ```
 

@@ -16,8 +16,6 @@ local function apollo_top()
 end
 
 local apollo_dir = apollo_top()
-local machine_contract = dofile(apollo_dir.."hw-block/machine_contract.lua")
-local machine = machine_contract.load(apollo_dir.."hw-block")
 local config = dofile(apollo_dir.."hw-block/config.lua")
 local fabric = dofile(apollo_dir.."hw-block/fabric.lua")
 local ros = dofile(apollo_dir.."hw-block/ros.lua")
@@ -27,7 +25,7 @@ local ap_compute = dofile(apollo_dir.."hw-block/ap_compute.lua")
 local si_cl0 = dofile(apollo_dir.."hw-block/si_cl0.lua")
 local si_cl1 = dofile(apollo_dir.."hw-block/si_cl1.lua")
 
-local ctx = config.create(apollo_dir, machine_contract, machine)
+local ctx = config.create(apollo_dir)
 ctx.modules = {
     rse = rse;
     ap_compute = ap_compute;
