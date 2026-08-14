@@ -119,11 +119,12 @@ guest-visible halt, reset, IRQ, or power transition.
 
 The QVP SCP-firmware build gives AP and SI1 online PFDI watchdogs 500 ms. This
 reserves five complete heartbeat, response, and SystemC-quantum windows for
-the four independently scheduled QEMU instances. The FVP reference remains at
-its 100 ms firmware timing; the additional margin is QVP host-scheduling
-budget rather than a guest-visible protocol change. The full-system runner
-treats any SI0 `PFDI monitor timeout` report as a failed validation even when
-later boot markers are present.
+the four independently scheduled QEMU instances. The Arm FVP reference keeps
+its original AP 100 ms and SI1 60 ms firmware values; the additional margin
+is owned by the Apollo QVP metadata as a host-scheduling budget rather than a
+guest-visible protocol change. The full-system runner treats any SI0 `PFDI
+monitor timeout` report as a failed validation even when later boot markers
+are present.
 
 Override the QEMU defaults with the `QBOX_APOLLO_FULL_AP_*`,
 `QBOX_RDASPEN_RSE_*`, `QBOX_APOLLO_FULL_SI_CL0_*`, and
