@@ -90,22 +90,24 @@ the second Regular State result as evidence of capsule application or rollback
 persistence.
 
 The full-system RSE and SI CL0 instances use single-thread TCG, while SI CL1
-and AP use multi-thread TCG. All four instances use `multithread-quantum`
-synchronization with the `quantum_keeper` time-sync strategy. QBox completes
+and AP use multi-thread TCG. RSE, SI CL0, and SI CL1 use
+`multithread-quantum` synchronization with the `quantum_keeper` time-sync
+strategy. AP uses `multithread-freerunning` with `quantum_keeper` to avoid the
+global-quantum rendezvous on the primary-compute boot path. QBox completes
 managed start-in-reset release on the target vCPU and does not start a
 reset-held CPU's quantum keeper. This prevents an idle reset-held timehandler
 from owning a global SystemC suspend request. TF-A releases the AP secondary
 CPUs sequentially, while CL1 Zephyr's reset voting lock may select any released
 physical MPID as logical CPU 0.
 
-With `multithread-quantum`, execution can run at most one global quantum ahead
-of SystemC. Managed CPUs stop their quantum keepers while reset is asserted,
-then restart time synchronization after the target-vCPU reset release
-completes. After release they remain wakeable across WFI so QEMU deadline
-timers can wake the CPUs reliably. The host PPU model preserves the current
-power state when firmware enables a lower dynamic minimum policy, so that
-policy update does not reassert CPU reset. Each CL1 Cortex-R82 generic timer
-runs at 100 MHz to match the Zephyr system-clock configuration.
+With `multithread-quantum`, RSE and Safety Island execution can run at most one
+global quantum ahead of SystemC. Managed CPUs stop their quantum keepers while
+reset is asserted, then restart time synchronization after the target-vCPU
+reset release completes. After release they remain wakeable across WFI so QEMU
+deadline timers can wake the CPUs reliably. The host PPU model preserves the
+current power state when firmware enables a lower dynamic minimum policy, so
+that policy update does not reassert CPU reset. Each CL1 Cortex-R82 generic
+timer runs at 100 MHz to match the Zephyr system-clock configuration.
 
 The SI1 PFDI postbox also uses the propagated TLM request context to identify
 the vCPU that issued each doorbell. It asserts that vCPU's co-simulation
