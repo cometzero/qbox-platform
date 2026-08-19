@@ -6,7 +6,7 @@ local RSE_QEMU = {
     tcg_mode_env = "QBOX_RDASPEN_RSE_TCG_MODE";
     tcg_mode = "SINGLE";
     sync_policy_env = "QBOX_RDASPEN_RSE_SYNC_POLICY";
-    sync_policy = "multithread-quantum";
+    sync_policy = "multithread-freerunning";
     time_sync_strategy_env = "QBOX_RDASPEN_RSE_TIME_SYNC_STRATEGY";
     time_sync_strategy = "quantum_keeper";
 }
