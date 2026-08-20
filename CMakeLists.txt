@@ -110,6 +110,7 @@ if(BUILD_TESTING)
     endmacro()
     set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS
         arm_system_counter
+        apollo_cpu_ras
         cc3xx
         dma350
         gic720ae_messreg
@@ -212,6 +213,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     mhu320ae
     gicx00_multiview
     gic720ae_messreg
+    apollo_cpu_ras
     apollo_sbist
     zena_fmu
     zena_ssu

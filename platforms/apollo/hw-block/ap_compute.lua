@@ -18,6 +18,7 @@ local AP_ADDRESS = {
     flash = 0x38000000;
     trusted_nvctr = 0x32030000;
     dram1 = 0x80000000;
+    cper = 0xFFA00000;
     ffa_mm_comm_buffer = 0xFFBF0000;
     spmc = 0xFFC00000;
     dram2 = 0x20000000000;
@@ -67,6 +68,7 @@ local AP_SIZE = {
     flash_sector = 0x00001000;
     trusted_nvctr = 0x00010000;
     dram1 = 0x7F000000;
+    cper = 0x00100000;
     ffa_mm_comm_buffer = 0x00002000;
     spmc_local = 0x003E0000;
     dram2 = 0x80000000;
@@ -98,6 +100,7 @@ local AP_IRQ = {
     arch_timer_hyp = 16 + 10;
     gic_maintenance = 25;
     pmu = 23;
+    ras_fault = 17;
     gpex = {300; 301; 302; 303};
     sys_timer_secure = 48;
     sys_timer_non_secure = 49;
@@ -526,6 +529,17 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
+    platform.host_ap_cper = enable_ap_cpus and {
+        moduletype = "gs_memory";
+        target_socket = {
+            address = AP_ADDRESS.cper;
+            size = AP_SIZE.cper;
+            bind = "&system_router.initiator_socket";
+        };
+        init_mem = true;
+        log_level = 0;
+    } or nil
+
     platform.ap_gic = enable_ap_cpus and {
         moduletype = "arm_gicv3";
         args = {"&platform.ap_qemu_inst"};
@@ -838,6 +852,12 @@ if enable_ap_cpus then
     end
 
     for i=0,(AP_NUM_CPUS-1) do
+        platform["ap_cpu_ras_fault_sync_"..i] = {
+            moduletype = "signal_fanout";
+            signal_out = {
+                bind = "&ap_gic.ppi_in_cpu_"..i.."_"..AP_IRQ.ras_fault;
+            };
+        }
         local cpu = {
             moduletype = "cpu_arm_cortexA720AE";
             args = {"&platform.ap_qemu_inst"};
@@ -860,6 +880,13 @@ if enable_ap_cpus then
                 bind = "&ap_gic.ppi_in_cpu_"..i.."_"..AP_IRQ.gic_maintenance;
             };
             pmu_interrupt = {bind = "&ap_gic.ppi_in_cpu_"..i.."_"..AP_IRQ.pmu};
+            ras_fault_interrupt = {
+                bind = "&ap_cpu_ras_fault_sync_"..i..".signal_in";
+            };
+            ras_uncontainable_interrupt = {
+                bind = "&si_cl0_ap_ras_cluster"..math.floor(i / 4)..
+                    ".cpu_fault_"..(i % 4);
+            };
             psci_conduit = getenv_or("QBOX_RDASPEN_AP_PSCI_CONDUIT", "disabled");
             mp_affinity = mp_affinity(i);
             start_powered_off = i ~= 0;
@@ -1043,6 +1070,7 @@ function ap_compute.enable_ap_router(ctx, platform)
     bind_ap_socket(platform.host_ap_trusted_nvctr, "target_socket")
     bind_ap_socket(platform.host_ap_dram1, "target_socket")
     bind_ap_socket(platform.host_ap_dram2, "target_socket")
+    bind_ap_socket(platform.host_ap_cper, "target_socket")
     bind_ap_socket(platform.host_ap_ffa_mm_comm_buffer, "target_socket")
     bind_ap_socket(platform.host_ap_spmc_sdram, "target_socket")
     bind_ap_socket(platform.ap_gic, "dist_iface")

@@ -83,6 +83,8 @@ public:
     QemuInitiatorSignalSocket irq_timer_sec_out;
     QemuInitiatorSignalSocket irq_maintenance_out;
     QemuInitiatorSignalSocket irq_pmu_out;
+    QemuInitiatorSignalSocket ras_fault_interrupt;
+    QemuInitiatorSignalSocket ras_uncontainable_interrupt;
     cpu_arm_cortexA720AE(const sc_core::sc_module_name& name, sc_core::sc_object* o)
         : cpu_arm_cortexA720AE(name, *(dynamic_cast<QemuInstance*>(o)))
     {
@@ -116,6 +118,8 @@ public:
         , irq_timer_sec_out("irq_timer_sec_out")
         , irq_maintenance_out("gicv3_maintenance_interrupt")
         , irq_pmu_out("pmu_interrupt")
+        , ras_fault_interrupt("ras_fault_interrupt")
+        , ras_uncontainable_interrupt("ras_uncontainable_interrupt")
     {
         m_external_ev |= irq_in->default_event();
         m_external_ev |= fiq_in->default_event();
@@ -164,6 +168,9 @@ public:
         irq_timer_sec_out.init(m_dev, 3);
         irq_maintenance_out.init_named(m_dev, "gicv3-maintenance-interrupt", 0);
         irq_pmu_out.init_named(m_dev, "pmu-interrupt", 0);
+        ras_fault_interrupt.init_named(m_dev, "ras-fault-interrupt", 0);
+        ras_uncontainable_interrupt.init_named(
+            m_dev, "ras-uncontainable-interrupt", 0);
     }
 
     void initiator_customize_tlm_payload(TlmPayload& payload) override

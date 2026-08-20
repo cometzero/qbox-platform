@@ -121,6 +121,8 @@ SI_CONST.SI_CL0_AP_CLUSTER_COUNT = 4
 SI_CONST.SI_CL0_AP_CORE_PER_CLUSTER_COUNT = 4
 SI_CONST.SI_CL0_AP_CLUSTER_PPU_OFFSET = 0x01030000
 SI_CONST.SI_CL0_AP_CLUSTER_AE_OFFSET = 0x01050000
+SI_CONST.SI_CL0_AP_CORE_RAS_OFFSET = 0x010A0000
+SI_CONST.SI_CL0_AP_CORE_RAS_SIZE = 0x00000040
 SI_CONST.SI_CL0_AP_CORE_PPU0_OFFSET = 0x01080000
 SI_CONST.SI_CL0_AP_CORE_PPU_STRIDE = 0x00100000
 SI_CONST.SI_CL0_AP_CLUSTER_CONTROL_OFFSET = 0x02000000
@@ -221,6 +223,10 @@ SI_CONST.SI_IRQ = {
     cl0_cl1_mhu = 107;
     cl0_fmu_critical = 128;
     cl0_fmu_noncritical = 129;
+    cl0_ap_ras_cluster0 = 325;
+    cl0_ap_ras_cluster1 = 327;
+    cl0_ap_ras_cluster2 = 329;
+    cl0_ap_ras_cluster3 = 331;
 }
 local VALID_TRIGGER = {edge = true; level = true}
 local VALID_POLARITY = {
@@ -323,6 +329,18 @@ local SI_ACTIVE_ROUTES = {
     irq_route_definition(
         "si_cl0_fmu_noncritical", "si_cl0_fmu.non_critical_irq", "SPI", SI_CONST.SI_IRQ.cl0_fmu_noncritical,
         "View1", "shared", {0});
+    irq_route_definition(
+        "si_cl0_ap_ras_cluster0", "si_cl0_ap_ras_cluster0.cluster_irq", "SPI",
+        SI_CONST.SI_IRQ.cl0_ap_ras_cluster0, "View1", "shared", {0});
+    irq_route_definition(
+        "si_cl0_ap_ras_cluster1", "si_cl0_ap_ras_cluster1.cluster_irq", "SPI",
+        SI_CONST.SI_IRQ.cl0_ap_ras_cluster1, "View1", "shared", {0});
+    irq_route_definition(
+        "si_cl0_ap_ras_cluster2", "si_cl0_ap_ras_cluster2.cluster_irq", "SPI",
+        SI_CONST.SI_IRQ.cl0_ap_ras_cluster2, "View1", "shared", {0});
+    irq_route_definition(
+        "si_cl0_ap_ras_cluster3", "si_cl0_ap_ras_cluster3.cluster_irq", "SPI",
+        SI_CONST.SI_IRQ.cl0_ap_ras_cluster3, "View1", "shared", {0});
 }
 
 function si_cl0.validate_irq_routes(routes)
@@ -1386,6 +1404,23 @@ function si_cl0.enable(ctx, platform)
     for cluster=0,(SI_CONST.SI_CL0_AP_CLUSTER_COUNT - 1) do
         local cluster_base = SI_CONST.SI_CL0_CLUSTER_UTILITY_PHYS_BASE +
             (cluster * SI_CONST.SI_CL0_CLUSTER_UTILITY_STRIDE)
+        local ras = {
+            moduletype = "apollo_cpu_ras";
+            cluster_irq = {bind = si_cl0.spi_target(
+                ctx, "si_cl0_ap_ras_cluster"..cluster, "View1")};
+            log_level = 0;
+        }
+        for core=0,(SI_CONST.SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
+            ras["record_"..core] = {
+                address = cluster_base + SI_CONST.SI_CL0_AP_CORE_RAS_OFFSET +
+                    (core * SI_CONST.SI_CL0_AP_CORE_PPU_STRIDE);
+                size = SI_CONST.SI_CL0_AP_CORE_RAS_SIZE;
+                bind = "&system_router.initiator_socket";
+                priority = 0;
+            }
+        end
+        platform["si_cl0_ap_ras_cluster"..cluster] = ras
+
         platform["si_cl0_ap_cluster"..cluster.."_ppu"] = {
             moduletype = "host_ppu";
             initial_power_status = 0x0;

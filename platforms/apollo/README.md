@@ -136,6 +136,18 @@ traverse and acknowledge the normal FMU hierarchy. The AP PFDI logical MHU
 window is explicitly bridged to its SMD-owned PBX window; no broad AP-to-SMD
 passthrough is used.
 
+CPU RAS pseudo-fault generation is implemented in the Cortex-A720AE QEMU
+error records. Correctable and deferred errors drive per-CPU fault PPI 17
+through a SystemC delta synchronizer, and TF-A publishes CPER records through
+the backed `0xFFA00000` buffer and notification SPI 89. Uncontainable errors
+populate the SI0-visible per-core RAS records at cluster-utility offset
+`0x010A0000` and assert cluster IRQs 325, 327, 329, or 331 until SCP-firmware
+clears the status. Run the product qualification with:
+
+```bash
+./run_test.sh --machine apollo-qvp --test-profile ras_cpu
+```
+
 Run the Yocto BSP PFDI qualification through the root test interface:
 
 ```bash
