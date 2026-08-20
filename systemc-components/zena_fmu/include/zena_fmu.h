@@ -589,26 +589,68 @@ class zena_fmu : public sc_core::sc_module
         m_event_sequence = 0;
     }
 
+    void latch_child_fault_summaries()
+    {
+        Bank& root = m_banks[0];
+
+        for (unsigned int bank_index = 1; bank_index < bank_count();
+             ++bank_index) {
+            bool critical = false;
+            bool non_critical = false;
+            const Bank& child = m_banks[bank_index];
+
+            for (unsigned int index = 0; index < record_count(); ++index) {
+                if ((child.status[index] & STATUS_V) == 0) {
+                    continue;
+                }
+
+                if (is_critical_record(index) &&
+                    (child.ctlr[index] & CTLR_CI) != 0) {
+                    critical = true;
+                }
+                if (is_non_critical_record(index) &&
+                    (child.ctlr[index] &
+                     (CTLR_FI | CTLR_UE | CTLR_CFI)) != 0) {
+                    non_critical = true;
+                }
+            }
+
+            const unsigned int critical_record = (bank_index - 1) * 2;
+            const unsigned int non_critical_record = critical_record + 1;
+            if (critical && critical_record < record_count()) {
+                root.status[critical_record] |=
+                    STATUS_V | STATUS_CI | STATUS_IERR_ERR_IN |
+                    STATUS_SERR_SW;
+            }
+            if (non_critical && non_critical_record < record_count()) {
+                root.status[non_critical_record] |=
+                    STATUS_V | STATUS_UE | STATUS_IERR_ERR_IN |
+                    STATUS_SERR_SW;
+            }
+        }
+    }
+
     void update_irqs()
     {
         bool critical = false;
         bool non_critical = false;
 
-        for (unsigned int bank_index = 0; bank_index < bank_count(); ++bank_index) {
-            const Bank& bank = m_banks[bank_index];
-            for (unsigned int index = 0; index < record_count(); ++index) {
-                if ((bank.status[index] & STATUS_V) == 0) {
-                    continue;
-                }
+        latch_child_fault_summaries();
 
-                if (is_critical_record(index) && (bank.ctlr[index] & CTLR_CI) != 0) {
-                    critical = true;
-                }
+        const Bank& root = m_banks[0];
+        for (unsigned int index = 0; index < record_count(); ++index) {
+            if ((root.status[index] & STATUS_V) == 0) {
+                continue;
+            }
 
-                if (is_non_critical_record(index) &&
-                    (bank.ctlr[index] & (CTLR_FI | CTLR_UE | CTLR_CFI)) != 0) {
-                    non_critical = true;
-                }
+            if (is_critical_record(index) &&
+                (root.ctlr[index] & CTLR_CI) != 0) {
+                critical = true;
+            }
+
+            if (is_non_critical_record(index) &&
+                (root.ctlr[index] & (CTLR_FI | CTLR_UE | CTLR_CFI)) != 0) {
+                non_critical = true;
             }
         }
 

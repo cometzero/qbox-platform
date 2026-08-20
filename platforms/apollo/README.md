@@ -127,6 +127,26 @@ guest-visible protocol change. The full-system runner treats any SI0 `PFDI
 monitor timeout` report as a failed validation even when later boot markers
 are present.
 
+The AP cluster-utility SBIST FCTLR windows are backed by the `apollo_sbist`
+SystemC model. Writing the force-failure bit injects the CPU-specific SBISTC
+EQ failure into SI0 FMU device 1, records 210 through 213. The `zena_fmu`
+model latches child-device critical and non-critical state into the matching
+root summary record before raising the SI0 FMU interrupt, so SCP-firmware can
+traverse and acknowledge the normal FMU hierarchy. The AP PFDI logical MHU
+window is explicitly bridged to its SMD-owned PBX window; no broad AP-to-SMD
+passthrough is used.
+
+Run the Yocto BSP PFDI qualification through the root test interface:
+
+```bash
+./run_test.sh --machine apollo-qvp --bsp --test-profile pfdi
+```
+
+The profile boots the canonical Yocto QBox provider, checks the same four-CPU
+prerequisite, service, CLI, OnL, monitoring, force-error, FMU, SBISTC, and
+PFDI-monitor failure evidence as the FVP OEQA profile, and writes its result
+below `build/tests/<timestamp>-qbox-bsp-pfdi/`.
+
 Override the QEMU defaults with the `QBOX_APOLLO_FULL_AP_*`,
 `QBOX_RDASPEN_RSE_*`, `QBOX_APOLLO_FULL_SI_CL0_*`, and
 `QBOX_APOLLO_FULL_SI_CL1_*` environment-variable families. Each family

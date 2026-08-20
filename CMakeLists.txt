@@ -113,6 +113,7 @@ if(BUILD_TESTING)
         cc3xx
         dma350
         gic720ae_messreg
+        apollo_sbist
         gicx00_multiview
         host_cmn_cyprus
         host_gtimer
@@ -211,6 +212,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     mhu320ae
     gicx00_multiview
     gic720ae_messreg
+    apollo_sbist
     zena_fmu
     zena_ssu
     zena_watchdog

@@ -25,6 +25,7 @@
 namespace {
 
 constexpr uint64_t RECORD_STRIDE = 0x40;
+constexpr uint64_t BANK_BYTES = 0x10000;
 constexpr uint64_t ERR_CTLR = 0x008;
 constexpr uint64_t ERR_STATUS = 0x010;
 constexpr uint64_t ERR_IMPDEF = 0x8000;
@@ -147,6 +148,14 @@ void write32_keyed(zena_fmu& dut, uint64_t offset, uint32_t value)
     write32(dut, offset, value);
 }
 
+void write32_keyed_bank(zena_fmu& dut, unsigned int bank, uint64_t offset,
+                        uint32_t value)
+{
+    const uint64_t bank_offset = bank * BANK_BYTES;
+    write32(dut, bank_offset + SYS_KEY, SYS_KEY_VALUE);
+    write32(dut, bank_offset + offset, value);
+}
+
 uint32_t ssu_access32(zena_ssu& dut, uint64_t offset,
                       tlm::tlm_command command, uint32_t value = 0)
 {
@@ -250,6 +259,26 @@ TEST(ZenaFmuTest, StatusUsesWriteOneToClearBits)
 
     write32_keyed(dut, record_offset(1, ERR_STATUS), STATUS_V | STATUS_UE);
     EXPECT_EQ(read32(dut, record_offset(1, ERR_STATUS)) & STATUS_V, 0u);
+    EXPECT_EQ(read32(dut, ERRGSR0_L) & (1u << 1), 0u);
+}
+
+TEST(ZenaFmuTest, ChildFaultLatchesRootSummaryBeforeIrq)
+{
+    zena_fmu dut("fmu_hierarchy");
+    dut.before_end_of_elaboration();
+
+    write32_keyed_bank(dut, 1, impdef_offset(210), IMPDEF_IE);
+
+    EXPECT_EQ(read32(dut, BANK_BYTES + ERRGSR0_L + 3 * 8) & (1u << 18),
+              1u << 18);
+    EXPECT_EQ(read32(dut, ERRGSR0_L) & (1u << 1), 1u << 1);
+
+    write32_keyed_bank(dut, 1, impdef_offset(210), 0xcu);
+    EXPECT_EQ(read32(dut, BANK_BYTES + ERRGSR0_L + 3 * 8) & (1u << 18),
+              0u);
+    EXPECT_EQ(read32(dut, ERRGSR0_L) & (1u << 1), 1u << 1);
+
+    write32_keyed(dut, impdef_offset(1), 0xcu);
     EXPECT_EQ(read32(dut, ERRGSR0_L) & (1u << 1), 0u);
 }
 

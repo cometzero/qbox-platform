@@ -40,6 +40,8 @@ local AP_ADDRESS = {
     fmu_cl1 = 0x1D100000;
     fmu_cl2 = 0x1D200000;
     fmu_cl3 = 0x1D300000;
+    sbist_cluster0 = 0x140100000;
+    si_cl0_fmu = 0x2A510000;
     gic_dist = 0x20800000;
     gic_redist = 0x20880000;
     gic_view0_dist = 0x20000000;
@@ -51,6 +53,8 @@ local AP_ADDRESS = {
     host_fmu_cl2 = 0x20000D2200000;
     host_fmu_cl3 = 0x20000D2300000;
     mhu_pointer_access = 0x0FFFE0000;
+    pfdi_monitor_mhu_pbx = 0x40110000;
+    host_pfdi_monitor_mhu_pbx = 0x400003B380000;
     hipc_alias = 0x00100000;
 }
 local AP_SIZE = {
@@ -76,6 +80,7 @@ local AP_SIZE = {
     sys_timer = 0x00010000;
     rgic2lgic_messreg = 0x00010000;
     fmu_modeled = 0x00050000;
+    sbist = 0x00100000;
     gic_dist = 0x00010000;
     gic_redist = 0x00040000;
     gic_view0_dist = 0x00080000;
@@ -83,6 +88,7 @@ local AP_SIZE = {
     gic_its = 0x00040000;
     smmu = 0x08000000;
     mhu_pointer_access = 0x00020000;
+    pfdi_monitor_mhu = 0x00030000;
     register_window = 0x00010000;
 }
 local AP_IRQ = {
@@ -804,6 +810,24 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
+    if enable_ap_cpus then
+        for cluster=0,3 do
+            platform["ap_sbist_cluster"..cluster] = {
+                moduletype = "apollo_sbist";
+                cpu_base = cluster * 4;
+                fmu_base = AP_ADDRESS.si_cl0_fmu;
+                target_socket = {
+                    address = AP_ADDRESS.sbist_cluster0 + (cluster * 0x04000000);
+                    size = AP_SIZE.sbist;
+                    bind = "&system_router.initiator_socket";
+                    priority = 0;
+                };
+                fmu_initiator = {bind = "&si_cl0_router.target_socket"};
+                log_level = 0;
+            }
+        end
+    end
+
 if enable_ap_cpus then
     for i=0,(AP_HW.gic_active_redist_regions-1) do
         platform["ap_gic"]["redist_iface_"..i] = {
@@ -903,6 +927,20 @@ function ap_compute.enable_ap_router(ctx, platform)
         target_socket = {
             address = AP_ADDRESS.mhu_pointer_access;
             size = AP_SIZE.mhu_pointer_access;
+            bind = "&ap_router.initiator_socket";
+            relative_addresses = false;
+            priority = 0;
+        };
+        initiator_socket = {bind = "&system_router.target_socket"};
+        log_level = 0;
+    }
+
+    platform.ap_to_system_pfdi_monitor_mhu_bridge = {
+        moduletype = "addrtr";
+        mapped_base_addr = AP_ADDRESS.host_pfdi_monitor_mhu_pbx;
+        target_socket = {
+            address = AP_ADDRESS.pfdi_monitor_mhu_pbx;
+            size = AP_SIZE.pfdi_monitor_mhu;
             bind = "&ap_router.initiator_socket";
             relative_addresses = false;
             priority = 0;
@@ -1043,6 +1081,9 @@ function ap_compute.enable_ap_router(ctx, platform)
     bind_ap_socket(platform.ap_cl1_ni710ae_fmu, "target_socket")
     bind_ap_socket(platform.ap_cl2_ni710ae_fmu, "target_socket")
     bind_ap_socket(platform.ap_cl3_ni710ae_fmu, "target_socket")
+    for cluster=0,3 do
+        bind_ap_socket(platform["ap_sbist_cluster"..cluster], "target_socket")
+    end
     -- AP CPU initiator view
     for i=0,15 do
         local cpu = platform["ap_cpu_"..i]
