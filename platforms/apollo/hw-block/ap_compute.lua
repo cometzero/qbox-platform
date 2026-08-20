@@ -773,54 +773,59 @@ function ap_compute.define(ctx, platform)
         log_level = 0;
     } or nil
 
-    -- Models only the active 5-bank FMU register block in each 1 MiB
-    -- APP aperture; unmapped gaps remain explicit coverage debt.
-
     platform.ap_cl0_ni710ae_fmu = enable_ap_cpus and {
-        moduletype = "zena_fmu";
-        bank_count = AP_HW.fmu_bank_count;
-        record_count = AP_HW.fmu_record_count;
+        moduletype = "zena_ni710ae_fmu";
+        node_index = 0xb;
+        parent_critical_record = 3;
+        parent_non_critical_record = 1;
         target_socket = {
             address = AP_ADDRESS.fmu_cl0;
-            size = AP_SIZE.fmu_modeled;
+            size = AP_SIZE.register_window;
             bind = "&system_router.initiator_socket";
         };
+        fault_socket = {bind = "&si_cl0_router.target_socket"};
         log_level = 0;
     } or nil
 
     platform.ap_cl1_ni710ae_fmu = enable_ap_cpus and {
-        moduletype = "zena_fmu";
-        bank_count = AP_HW.fmu_bank_count;
-        record_count = AP_HW.fmu_record_count;
+        moduletype = "zena_ni710ae_fmu";
+        node_index = 0xb;
+        parent_critical_record = 18;
+        parent_non_critical_record = 16;
         target_socket = {
             address = AP_ADDRESS.fmu_cl1;
-            size = AP_SIZE.fmu_modeled;
+            size = AP_SIZE.register_window;
             bind = "&system_router.initiator_socket";
         };
+        fault_socket = {bind = "&si_cl0_router.target_socket"};
         log_level = 0;
     } or nil
 
     platform.ap_cl2_ni710ae_fmu = enable_ap_cpus and {
-        moduletype = "zena_fmu";
-        bank_count = AP_HW.fmu_bank_count;
-        record_count = AP_HW.fmu_record_count;
+        moduletype = "zena_ni710ae_fmu";
+        node_index = 0xb;
+        parent_critical_record = 33;
+        parent_non_critical_record = 31;
         target_socket = {
             address = AP_ADDRESS.fmu_cl2;
-            size = AP_SIZE.fmu_modeled;
+            size = AP_SIZE.register_window;
             bind = "&system_router.initiator_socket";
         };
+        fault_socket = {bind = "&si_cl0_router.target_socket"};
         log_level = 0;
     } or nil
 
     platform.ap_cl3_ni710ae_fmu = enable_ap_cpus and {
-        moduletype = "zena_fmu";
-        bank_count = AP_HW.fmu_bank_count;
-        record_count = AP_HW.fmu_record_count;
+        moduletype = "zena_ni710ae_fmu";
+        node_index = 0xb;
+        parent_critical_record = 48;
+        parent_non_critical_record = 46;
         target_socket = {
             address = AP_ADDRESS.fmu_cl3;
-            size = AP_SIZE.fmu_modeled;
+            size = AP_SIZE.register_window;
             bind = "&system_router.initiator_socket";
         };
+        fault_socket = {bind = "&si_cl0_router.target_socket"};
         log_level = 0;
     } or nil
 

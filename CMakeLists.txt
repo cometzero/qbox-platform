@@ -137,6 +137,7 @@ if(BUILD_TESTING)
         rse_sysctrl
         strata_flash_j3
         zena_fmu
+        zena_leaf_fmu
         zena_ssu
         zena_watchdog
         zena_reset_ctrl
@@ -216,6 +217,8 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     apollo_cpu_ras
     apollo_sbist
     zena_fmu
+    zena_device_fmu
+    zena_ni710ae_fmu
     zena_ssu
     zena_watchdog
     zena_reset_ctrl

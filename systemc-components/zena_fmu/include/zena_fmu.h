@@ -75,7 +75,12 @@ class zena_fmu : public sc_core::sc_module
     static constexpr uint32_t IMPDEF_DE_MASK = 0x000001f0;
     static constexpr uint32_t IMPDEF_IE_MASK = 0x00003e00;
     static constexpr uint32_t IMPDEF_IC_MASK = 0x0000000c;
+    static constexpr uint32_t IMPDEF_CI_INJECT = 1u << 15;
     static constexpr uint32_t IMPDEF_STORED_MASK = 0xffff01f1;
+    static constexpr uint32_t IMPDEF_COUNT_MASK = 0x00ff0000;
+    static constexpr unsigned int IMPDEF_COUNT_SHIFT = 16;
+    static constexpr uint32_t IMPDEF_THRESHOLD_MASK = 0xff000000;
+    static constexpr unsigned int IMPDEF_THRESHOLD_SHIFT = 24;
 
     struct Bank {
         std::array<uint32_t, MAX_RECORDS> ctlr {};
@@ -260,6 +265,17 @@ class zena_fmu : public sc_core::sc_module
 
     void set_software_error(Bank& bank, unsigned int index, bool critical)
     {
+        uint32_t& impdef = bank.impdef[index];
+        const uint32_t count =
+            std::min<uint32_t>(
+                ((impdef & IMPDEF_COUNT_MASK) >> IMPDEF_COUNT_SHIFT) + 1,
+                0xffu);
+        impdef = (impdef & ~IMPDEF_COUNT_MASK) |
+            (count << IMPDEF_COUNT_SHIFT);
+        const uint32_t threshold =
+            (impdef & IMPDEF_THRESHOLD_MASK) >> IMPDEF_THRESHOLD_SHIFT;
+        critical = critical ||
+            ((impdef & IMPDEF_UE) != 0 && count > threshold);
         uint32_t status = STATUS_V | STATUS_IERR_ERR_IN | STATUS_SERR_SW;
 
         if (critical) {
@@ -345,17 +361,15 @@ class zena_fmu : public sc_core::sc_module
 
         if (value & IMPDEF_IC_MASK) {
             bank.status[index] &= ~(STATUS_V | STATUS_UE | STATUS_OF |
-                                    STATUS_CE_MASK | STATUS_CI |
-                                    STATUS_IERR_MASK | STATUS_SERR_MASK);
+                                    STATUS_CE_MASK | STATUS_CI);
         }
 
         if ((value & IMPDEF_IE_MASK) != 0 && (bank.ctlr[index] & CTLR_ED) != 0) {
-            const bool critical = is_critical_record(index);
-            if ((value & IMPDEF_DE_MASK) != 0 || (value & IMPDEF_UE) != 0) {
-                set_software_error(bank, index, critical);
-            } else {
-                set_software_error(bank, index, critical);
-            }
+            const bool root_critical = &bank == &m_banks[0] &&
+                is_critical_record(index);
+            const bool critical = root_critical ||
+                (value & IMPDEF_CI_INJECT) != 0;
+            set_software_error(bank, index, critical);
             return;
         }
 
@@ -604,11 +618,11 @@ class zena_fmu : public sc_core::sc_module
                     continue;
                 }
 
-                if (is_critical_record(index) &&
+                if ((child.status[index] & STATUS_CI) != 0 &&
                     (child.ctlr[index] & CTLR_CI) != 0) {
                     critical = true;
                 }
-                if (is_non_critical_record(index) &&
+                if ((child.status[index] & STATUS_CI) == 0 &&
                     (child.ctlr[index] &
                      (CTLR_FI | CTLR_UE | CTLR_CFI)) != 0) {
                     non_critical = true;
@@ -643,12 +657,12 @@ class zena_fmu : public sc_core::sc_module
                 continue;
             }
 
-            if (is_critical_record(index) &&
+            if ((root.status[index] & STATUS_CI) != 0 &&
                 (root.ctlr[index] & CTLR_CI) != 0) {
                 critical = true;
             }
 
-            if (is_non_critical_record(index) &&
+            if ((root.status[index] & STATUS_CI) == 0 &&
                 (root.ctlr[index] & (CTLR_FI | CTLR_UE | CTLR_CFI)) != 0) {
                 non_critical = true;
             }

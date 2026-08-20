@@ -46,7 +46,12 @@ constexpr uint32_t CTLR_RW_MASK = 0x00002119;
 constexpr uint32_t STATUS_V = 1u << 30;
 constexpr uint32_t STATUS_UE = 1u << 29;
 constexpr uint32_t STATUS_CI = 1u << 19;
+constexpr uint32_t STATUS_IERR_ERR_IN = 1u << 12;
 constexpr uint32_t IMPDEF_IE = 1u << 9;
+constexpr uint32_t IMPDEF_IC = 0xcu;
+constexpr uint32_t IMPDEF_UE = 1u;
+constexpr uint32_t IMPDEF_COUNT_SHIFT = 16;
+constexpr uint32_t IMPDEF_THRESHOLD_SHIFT = 24;
 constexpr uint64_t SSU_ERR_STATUS = 0x010;
 constexpr uint64_t SSU_SYS_KEY = 0x804;
 constexpr uint64_t SSU_SYS_STATUS = 0x808;
@@ -260,6 +265,45 @@ TEST(ZenaFmuTest, StatusUsesWriteOneToClearBits)
     write32_keyed(dut, record_offset(1, ERR_STATUS), STATUS_V | STATUS_UE);
     EXPECT_EQ(read32(dut, record_offset(1, ERR_STATUS)) & STATUS_V, 0u);
     EXPECT_EQ(read32(dut, ERRGSR0_L) & (1u << 1), 0u);
+}
+
+TEST(ZenaFmuTest, InjectionAckPreservesErrorSyndrome)
+{
+    zena_fmu dut("fmu_ack_syndrome");
+    dut.before_end_of_elaboration();
+
+    write32_keyed(dut, impdef_offset(1), IMPDEF_IE);
+    write32_keyed(dut, impdef_offset(1), IMPDEF_IC);
+
+    EXPECT_EQ(read32(dut, record_offset(1, ERR_STATUS)) & STATUS_V, 0u);
+    EXPECT_EQ(read32(dut, record_offset(1, ERR_STATUS)) &
+                  STATUS_IERR_ERR_IN,
+              STATUS_IERR_ERR_IN);
+}
+
+TEST(ZenaFmuTest, UpgradeThresholdPromotesThirdInjection)
+{
+    zena_fmu dut("fmu_upgrade");
+    dut.before_end_of_elaboration();
+    const uint32_t configuration = IMPDEF_UE |
+        (2u << IMPDEF_THRESHOLD_SHIFT);
+    write32_keyed(dut, impdef_offset(1), configuration);
+
+    for (uint32_t expected_count = 1; expected_count <= 3;
+         ++expected_count) {
+        write32_keyed(
+            dut, impdef_offset(1),
+            read32(dut, impdef_offset(1)) | IMPDEF_IE);
+        const uint32_t status =
+            read32(dut, record_offset(1, ERR_STATUS));
+        EXPECT_EQ((read32(dut, impdef_offset(1)) >> IMPDEF_COUNT_SHIFT) &
+                      0xffu,
+                  expected_count);
+        EXPECT_EQ((status & STATUS_CI) != 0, expected_count > 2);
+        write32_keyed(
+            dut, impdef_offset(1),
+            read32(dut, impdef_offset(1)) | IMPDEF_IC);
+    }
 }
 
 TEST(ZenaFmuTest, ChildFaultLatchesRootSummaryBeforeIrq)

@@ -180,13 +180,21 @@ TEST(ZenaSsuTest, StatusDetailPreservesLowSixteenBits)
     EXPECT_EQ(read32(dut, STATUS_DETAIL), 0xabcdu);
 }
 
-TEST(ZenaSsuTest, SysCtrlUpdatesVisibleState)
+TEST(ZenaSsuTest, SysCtrlFollowsSafetyStateTransitions)
 {
     zena_ssu dut("ssu_sys_ctrl");
     dut.before_end_of_elaboration();
 
-    write32_keyed(dut, SYS_CTRL, 1);
+    write32_keyed(dut, SYS_CTRL, 0);
     EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_SAFE);
+    write32_keyed(dut, SYS_CTRL, 1);
+    EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_ERRN);
+    write32_keyed(dut, SYS_CTRL, 0);
+    EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_SAFE);
+    write32_keyed(dut, SYS_CTRL, 2);
+    EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_ERRC);
+    write32_keyed(dut, SYS_CTRL, 0);
+    EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_ERRC);
     EXPECT_EQ(read32(dut, SYS_CTRL), 0u);
 }
 

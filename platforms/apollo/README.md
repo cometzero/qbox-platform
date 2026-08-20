@@ -154,6 +154,19 @@ Run the Yocto BSP PFDI qualification through the root test interface:
 ./run_test.sh --machine apollo-qvp --bsp --test-profile pfdi
 ```
 
+Run the SI0 SSU and FMU integration diagnostics with:
+
+```bash
+./run_test.sh --machine apollo-qvp --bsp \
+  --test-profile safety-diagnostics-tests
+```
+
+The diagnostics exercise the SSU safety-state sequence, System FMU software
+injection and fault upgrade, eleven GIC/MHU device FMUs, and six NI-710AE
+FMUs. Device faults use the configured System FMU parent bank and record, so
+the normal SCP-firmware root-first discovery and acknowledgement path is
+preserved.
+
 The profile boots the canonical Yocto QBox provider, checks the same four-CPU
 prerequisite, service, CLI, OnL, monitoring, force-error, FMU, SBISTC, and
 PFDI-monitor failure evidence as the FVP OEQA profile, and writes its result

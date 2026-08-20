@@ -148,15 +148,16 @@ class zena_ssu : public sc_core::sc_module
     {
         switch (value & 0x3u) {
         case 0:
-            m_sys_status = SYS_STATUS_TEST;
+            if (m_sys_status != SYS_STATUS_ERRC) {
+                m_sys_status = SYS_STATUS_SAFE;
+            }
             break;
         case 1:
-            m_sys_status = SYS_STATUS_SAFE;
+            if (m_sys_status != SYS_STATUS_ERRC) {
+                m_sys_status = SYS_STATUS_ERRN;
+            }
             break;
         case 2:
-            m_sys_status = SYS_STATUS_ERRN;
-            break;
-        case 3:
             m_sys_status = SYS_STATUS_ERRC;
             break;
         default:
