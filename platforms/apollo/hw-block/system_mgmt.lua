@@ -277,6 +277,7 @@ function system_mgmt.define(ctx, platform)
         rx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
         init_shmem = false;
         power_domain_reset_count = AP_NUM_CPUS;
+        performance_domain_count = math.floor((AP_NUM_CPUS + 3) / 4);
         power_domain_reset_delay_ns = ap_power_domain_reset_delay_ns;
         power_domain_reset_assert_on_power_off = false;
         power_domain_reset_pulse_on_power_on = true;

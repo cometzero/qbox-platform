@@ -99,6 +99,12 @@ reset-held timehandler from owning a global SystemC suspend request. TF-A
 releases the AP secondary CPUs sequentially, while CL1 Zephyr's reset voting
 lock may select any released physical MPID as logical CPU 0.
 
+The Apollo SCMI Performance model exposes one domain per four AP CPUs and the
+1.8, 2.0, and 2.5 GHz operating points used by the guest cpufreq contract.
+Each domain keeps independent limits and selected levels. These values model
+the guest-visible SCMI interface only; QEMU TCG execution rate is not coupled
+to the selected operating point.
+
 Managed CPUs stop their quantum keepers while reset is asserted, then restart
 time synchronization after the target-vCPU reset release completes. After
 release they remain wakeable across WFI so QEMU deadline timers can wake the

@@ -75,6 +75,7 @@ constexpr uint32_t SCMI_MESSAGE_SYS_POWER_STATE_SET = 0x3;
 constexpr uint32_t SCMI_MESSAGE_SYS_POWER_STATE_NOTIFY = 0x5;
 constexpr uint32_t SCMI_MESSAGE_PERF_DOMAIN_ATTRIBUTES = 0x3;
 constexpr uint32_t SCMI_MESSAGE_PERF_DESCRIBE_LEVELS = 0x4;
+constexpr uint32_t SCMI_MESSAGE_PERF_LIMITS_SET = 0x5;
 constexpr uint32_t SCMI_MESSAGE_PERF_LIMITS_GET = 0x6;
 constexpr uint32_t SCMI_MESSAGE_PERF_LEVEL_SET = 0x7;
 constexpr uint32_t SCMI_MESSAGE_PERF_LEVEL_GET = 0x8;
@@ -580,6 +581,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
                                 cci::cci_value(4u));
     broker.set_preset_cci_value("rse_si_pbx.power_domain_reset_pulse_on_power_on",
                                 cci::cci_value(true));
+    broker.set_preset_cci_value("rse_si_pbx.performance_domain_count",
+                                cci::cci_value(4u));
     broker.set_preset_cci_value("rse_si_mbx.pair", cci::cci_value(std::string("rse_si_cl0")));
     broker.set_preset_cci_value("rse_si_mbx.frame", cci::cci_value(std::string("mbx")));
     broker.set_preset_cci_value("ap_rse_pbx.pair", cci::cci_value(std::string("ap_rse")));
@@ -1089,7 +1092,7 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(shmem.read32(SCMI_STATUS), 1u);
     EXPECT_EQ(shmem.read32(SCMI_LENGTH), 24u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
-    EXPECT_EQ(shmem.read16(SCMI_PAYLOAD + sizeof(uint32_t)), 1u);
+    EXPECT_EQ(shmem.read16(SCMI_PAYLOAD + sizeof(uint32_t)), 4u);
     EXPECT_EQ(shmem.read16(SCMI_PAYLOAD + sizeof(uint32_t) + sizeof(uint16_t)), 0u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2), 0u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 3), 0u);
@@ -1118,8 +1121,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(shmem.read32(SCMI_LENGTH), 40u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t)), 0xf0000000u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 3), 2000000u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 4), 2000u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 3), 2500000u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 4), 2500u);
 
     shmem.write32(SCMI_STATUS, 0);
     shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 3);
@@ -1134,10 +1137,10 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
     EXPECT_EQ(shmem.read16(SCMI_PAYLOAD + sizeof(uint32_t)), 3u);
     EXPECT_EQ(shmem.read16(SCMI_PAYLOAD + sizeof(uint32_t) + sizeof(uint16_t)), 0u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2), 1000u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2 + 12), 1000000u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2), 1800u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2 + 12), 1800000u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2 + 16), 0u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2 + 40), 2000u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2 + 40), 2500u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2 + 56), 2u);
 
     shmem.write32(SCMI_STATUS, 0);
@@ -1150,15 +1153,15 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(shmem.read32(SCMI_STATUS), 1u);
     EXPECT_EQ(shmem.read32(SCMI_LENGTH), 16u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t)), 2000u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2), 1000u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t)), 2500u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t) * 2), 1800u);
 
     shmem.write32(SCMI_STATUS, 0);
     shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 3);
     shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_PERFORMANCE,
                                            SCMI_MESSAGE_PERF_LEVEL_SET));
     shmem.write32(SCMI_PAYLOAD, 0);
-    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t), 1500);
+    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t), 2000);
     write32(pbx_bus, DBCW_SET, 2);
 
     EXPECT_EQ(shmem.read32(SCMI_STATUS), 1u);
@@ -1175,7 +1178,63 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(shmem.read32(SCMI_STATUS), 1u);
     EXPECT_EQ(shmem.read32(SCMI_LENGTH), 12u);
     EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
-    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t)), 1500u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t)), 2000u);
+
+    shmem.write32(SCMI_STATUS, 0);
+    shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 3);
+    shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_PERFORMANCE,
+                                           SCMI_MESSAGE_PERF_LEVEL_SET));
+    shmem.write32(SCMI_PAYLOAD, 3);
+    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t), 1800);
+    write32(pbx_bus, DBCW_SET, 2);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
+
+    shmem.write32(SCMI_STATUS, 0);
+    shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 2);
+    shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_PERFORMANCE,
+                                           SCMI_MESSAGE_PERF_LEVEL_GET));
+    shmem.write32(SCMI_PAYLOAD, 3);
+    write32(pbx_bus, DBCW_SET, 2);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t)), 1800u);
+
+    shmem.write32(SCMI_STATUS, 0);
+    shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 4);
+    shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_PERFORMANCE,
+                                           SCMI_MESSAGE_PERF_LIMITS_SET));
+    shmem.write32(SCMI_PAYLOAD, 3);
+    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t), 2000);
+    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t) * 2, 1800);
+    write32(pbx_bus, DBCW_SET, 2);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
+
+    shmem.write32(SCMI_STATUS, 0);
+    shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 4);
+    shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_PERFORMANCE,
+                                           SCMI_MESSAGE_PERF_LIMITS_SET));
+    shmem.write32(SCMI_PAYLOAD, 3);
+    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t), 1800);
+    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t) * 2, 2500);
+    write32(pbx_bus, DBCW_SET, 2);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0xfffffffeu);
+
+    shmem.write32(SCMI_STATUS, 0);
+    shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 3);
+    shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_PERFORMANCE,
+                                           SCMI_MESSAGE_PERF_LEVEL_SET));
+    shmem.write32(SCMI_PAYLOAD, 3);
+    shmem.write32(SCMI_PAYLOAD + sizeof(uint32_t), 2500);
+    write32(pbx_bus, DBCW_SET, 2);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0xfffffffeu);
+
+    shmem.write32(SCMI_STATUS, 0);
+    shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 2);
+    shmem.write32(SCMI_HEADER, scmi_header(SCMI_PROTOCOL_PERFORMANCE,
+                                           SCMI_MESSAGE_PERF_LEVEL_GET));
+    shmem.write32(SCMI_PAYLOAD, 0);
+    write32(pbx_bus, DBCW_SET, 2);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + sizeof(uint32_t)), 2000u);
 
     shmem.write32(SCMI_STATUS, 0);
     shmem.write32(SCMI_LENGTH, sizeof(uint32_t) * 4);

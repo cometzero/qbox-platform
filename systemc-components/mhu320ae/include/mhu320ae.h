@@ -107,11 +107,11 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint8_t SCMI_PERF_LEVEL_GET = 0x8;
     static constexpr uint8_t SCMI_PERF_NOTIFY_LIMITS = 0x9;
     static constexpr uint8_t SCMI_PERF_NOTIFY_LEVEL = 0xa;
-    static constexpr uint32_t SCMI_PERF_DOMAIN_COUNT = 1;
+    static constexpr unsigned int SCMI_PERF_MAX_DOMAINS = 4;
     static constexpr unsigned int SCMI_PERF_OPP_COUNT = 3;
-    static constexpr uint32_t SCMI_PERF_MIN_LEVEL = 1000;
-    static constexpr uint32_t SCMI_PERF_MAX_LEVEL = 2000;
-    static constexpr uint32_t SCMI_PERF_SUSTAINED_FREQ_KHZ = 2000000;
+    static constexpr uint32_t SCMI_PERF_MIN_LEVEL = 1800;
+    static constexpr uint32_t SCMI_PERF_MAX_LEVEL = 2500;
+    static constexpr uint32_t SCMI_PERF_SUSTAINED_FREQ_KHZ = 2500000;
     static constexpr uint32_t SCMI_PERF_DOMAIN_SUPPORTS_SET_LIMITS = 1u << 31;
     static constexpr uint32_t SCMI_PERF_DOMAIN_SUPPORTS_SET_LEVEL = 1u << 30;
     static constexpr uint32_t SCMI_PERF_DOMAIN_SUPPORTS_LIMIT_NOTIFY = 1u << 29;
@@ -446,6 +446,7 @@ private:
     cci::cci_param<uint32_t> p_sys_power_version;
     cci::cci_param<uint32_t> p_power_domain_attributes;
     cci::cci_param<std::string> p_power_domain_name;
+    cci::cci_param<unsigned int> p_performance_domain_count;
     cci::cci_param<bool> p_assert_power_on_reset;
     cci::cci_param<unsigned int> p_power_domain_reset_count;
     cci::cci_param<uint64_t> p_power_domain_reset_delay_ns;
@@ -525,7 +526,9 @@ private:
     gs::async_event m_irq_update_event;
     std::mutex m_irq_update_lock;
     std::array<uint32_t, 256> m_power_domain_states {};
-    std::array<uint32_t, SCMI_PERF_DOMAIN_COUNT> m_performance_levels {};
+    std::array<uint32_t, SCMI_PERF_MAX_DOMAINS> m_performance_levels {};
+    std::array<uint32_t, SCMI_PERF_MAX_DOMAINS> m_performance_max_limits {};
+    std::array<uint32_t, SCMI_PERF_MAX_DOMAINS> m_performance_min_limits {};
     uint32_t m_power_domain_state = 0;
     std::deque<bool> m_pending_power_on_resets;
     sc_core::sc_event m_power_on_reset_event;
@@ -1384,18 +1387,21 @@ private:
     void respond_scmi_performance(uint32_t header, const std::vector<uint8_t>& request,
                                   uint32_t& status, std::vector<uint8_t>& payload)
     {
-        const auto valid_domain = [](uint32_t domain) {
-            return domain < SCMI_PERF_DOMAIN_COUNT;
+        const auto valid_domain = [&](uint32_t domain) {
+            return domain < p_performance_domain_count.get_value();
         };
         const auto opp_level = [](unsigned int index) {
             switch (index) {
             case 0:
-                return 1000u;
+                return 1800u;
             case 1:
-                return 1500u;
-            default:
                 return 2000u;
+            default:
+                return 2500u;
             }
+        };
+        const auto valid_level = [](uint32_t level) {
+            return level == 1800u || level == 2000u || level == 2500u;
         };
         const auto opp_power = [](unsigned int index) {
             switch (index) {
@@ -1422,7 +1428,8 @@ private:
             append_u32(payload, SCMI_PERFORMANCE_VERSION);
             break;
         case 0x1:
-            append_u16(payload, SCMI_PERF_DOMAIN_COUNT);
+            append_u16(payload, static_cast<uint16_t>(
+                p_performance_domain_count.get_value()));
             append_u16(payload, 0);
             append_u32(payload, 0);
             append_u32(payload, 0);
@@ -1486,8 +1493,19 @@ private:
         }
         case SCMI_PERF_LIMITS_SET: {
             const uint32_t domain = read_le32(request, 0);
-            if (!valid_domain(domain)) {
+            const uint32_t maximum = read_le32(request, sizeof(uint32_t));
+            const uint32_t minimum = read_le32(request, sizeof(uint32_t) * 2);
+            if (request.size() < sizeof(uint32_t) * 3 ||
+                !valid_domain(domain) || !valid_level(maximum) ||
+                !valid_level(minimum) || minimum > maximum) {
                 status = SCMI_ERR_PARAM;
+                break;
+            }
+            m_performance_max_limits[domain] = maximum;
+            m_performance_min_limits[domain] = minimum;
+            const uint32_t current = m_performance_levels[domain];
+            if (current != 0 && (current < minimum || current > maximum)) {
+                m_performance_levels[domain] = maximum;
             }
             break;
         }
@@ -1497,8 +1515,10 @@ private:
                 status = SCMI_ERR_PARAM;
                 break;
             }
-            append_u32(payload, SCMI_PERF_MAX_LEVEL);
-            append_u32(payload, SCMI_PERF_MIN_LEVEL);
+            append_u32(payload, m_performance_max_limits[domain] != 0 ?
+                m_performance_max_limits[domain] : SCMI_PERF_MAX_LEVEL);
+            append_u32(payload, m_performance_min_limits[domain] != 0 ?
+                m_performance_min_limits[domain] : SCMI_PERF_MIN_LEVEL);
             break;
         }
         case SCMI_PERF_LEVEL_SET: {
@@ -1508,7 +1528,16 @@ private:
                 status = SCMI_ERR_PARAM;
                 break;
             }
-            m_performance_levels[domain] = level != 0 ? level : SCMI_PERF_MAX_LEVEL;
+            const uint32_t maximum = m_performance_max_limits[domain] != 0 ?
+                m_performance_max_limits[domain] : SCMI_PERF_MAX_LEVEL;
+            const uint32_t minimum = m_performance_min_limits[domain] != 0 ?
+                m_performance_min_limits[domain] : SCMI_PERF_MIN_LEVEL;
+            if (request.size() < sizeof(uint32_t) * 2 ||
+                !valid_level(level) || level < minimum || level > maximum) {
+                status = SCMI_ERR_PARAM;
+                break;
+            }
+            m_performance_levels[domain] = level;
             break;
         }
         case SCMI_PERF_LEVEL_GET: {
@@ -2964,6 +2993,7 @@ public:
         , p_sys_power_version("sys_power_version", 0x00020000)
         , p_power_domain_attributes("power_domain_attributes", 0)
         , p_power_domain_name("power_domain_name", std::string("AP"))
+        , p_performance_domain_count("performance_domain_count", 1)
         , p_assert_power_on_reset("assert_power_on_reset", false)
         , p_power_domain_reset_count("power_domain_reset_count", 0)
         , p_power_domain_reset_delay_ns("power_domain_reset_delay_ns", 1)
