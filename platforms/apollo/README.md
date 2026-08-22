@@ -157,14 +157,16 @@ clears the status. Run the product qualification with:
 Run the Yocto BSP PFDI qualification through the root test interface:
 
 ```bash
-./run_test.sh --machine apollo-qvp --bsp --test-profile pfdi
+./run_test.sh --machine apollo-qvp --bsp --test-profile pfdi \
+  --fvp-reference build/tests/<fvp-pfdi-run>/summary.json
 ```
 
 Run the SI0 SSU and FMU integration diagnostics with:
 
 ```bash
 ./run_test.sh --machine apollo-qvp --bsp \
-  --test-profile safety-diagnostics-tests
+  --test-profile safety-diagnostics-tests \
+  --fvp-reference build/tests/<fvp-safety-diagnostics-run>/summary.json
 ```
 
 The diagnostics exercise the SSU safety-state sequence, System FMU software
@@ -177,6 +179,45 @@ The profile boots the canonical Yocto QBox provider, checks the same four-CPU
 prerequisite, service, CLI, OnL, monitoring, force-error, FMU, SBISTC, and
 PFDI-monitor failure evidence as the FVP OEQA profile, and writes its result
 below `build/tests/<timestamp>-qbox-bsp-pfdi/`.
+
+## Validation Profiles
+
+All named QBox validation profiles are FVP-reference gated. Run the matching
+FVP profile first, then pass its `summary.json` with `--fvp-reference`; the
+root runner rejects stale, failed, skipped, image-mismatched, CPU-count
+mismatched, or contract-drifted references before QBox starts.
+
+The currently implemented QBox profile surfaces are:
+
+| Profile | Image | Command shape | Current state |
+| --- | --- | --- | --- |
+| `bsp-core` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile bsp-core --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented; reuses existing firmware, Linux, device, and topology probes. |
+| `si-cl1` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile si-cl1 --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented; reuses CL1 console and multicore markers. |
+| `smcf` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile smcf --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented; reuses SMCF command/result markers. |
+| `pfdi` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile pfdi --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented. |
+| `pfdi-si-cl1` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile pfdi-si-cl1 --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented for SI CL1 PFDI plus SI monitoring. |
+| `safety-diagnostics-tests` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile safety-diagnostics-tests --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented. |
+| `cpuidle` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile cpuidle --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented; current-SHA final runtime remains deferred. |
+| `cpufreq` | BSP | `./run_test.sh --machine apollo-qvp --bsp --test-profile cpufreq --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented for the guest SCMI contract; QEMU TCG rate coupling is not claimed. |
+| `ras_cpu` | product | `./run_test.sh --machine apollo-qvp --test-profile ras_cpu --fvp-reference build/tests/<fvp-run>/summary.json` | Implemented. |
+
+The remaining non-Xen profiles are not current QBox PASS claims:
+
+- `platform-devices` is blocked on final FVP product network/device evidence.
+  QBox may only claim semantic network transport coverage: guest link, address,
+  route, and a runner-owned host HTTP response. It is not FVP-identical host
+  ping or SSH transport.
+- `trusted-services` is blocked on current-SHA FVP evidence.
+- `crypto-extension` is semantic on QBox: deterministic OpenSSL known-answer
+  equality plus bounded AES/SHA instruction-use evidence. It must not reuse
+  FVP crypto-plugin wall-time thresholds.
+- `hipc` is blocked on a final FVP HIPC reference.
+- `mbpp` is blocked on the isolated 16-CPU FVP lane and QBox prerequisites.
+
+The complete 14 FVP plus 14 QBox aggregate and final `coverage.json` are
+pending Todo 23. Current deferred and blocked items are tracked in
+`.work/validation-plan/final-review-backlog.md`; do not treat fixture
+aggregate output as final runtime coverage.
 
 Override the QEMU defaults with the `QBOX_APOLLO_FULL_AP_*`,
 `QBOX_RDASPEN_RSE_*`, `QBOX_APOLLO_FULL_SI_CL0_*`, and
