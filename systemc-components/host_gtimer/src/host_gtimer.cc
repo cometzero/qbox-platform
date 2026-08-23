@@ -246,10 +246,20 @@ void host_gtimer::update_timer_irq()
 void host_gtimer::timer_thread()
 {
     for (;;) {
-        update_timer_irq();
-        sc_core::sc_time delay;
         const auto events =
             m_timer_rearm | m_counter.state_changed_event();
+        const auto counter_state = m_counter.snapshot();
+        const sc_core::sc_time now = sc_core::sc_time_stamp();
+        if (counter_state.anchor_time_ticks > now.value()) {
+            sc_core::wait(
+                sc_core::sc_time::from_value(
+                    counter_state.anchor_time_ticks - now.value()),
+                events);
+            continue;
+        }
+
+        update_timer_irq();
+        sc_core::sc_time delay;
         if (timer_delay(delay)) {
             sc_core::wait(delay, events);
         } else {

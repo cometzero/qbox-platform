@@ -104,6 +104,18 @@ TEST(HostGtimerIrqTest, RaisesAndMasksCompareInterrupt)
     EXPECT_EQ(read32(dut, P_CTL),
               P_CTL_ENABLE | P_CTL_IMASK | P_CTL_ISTATUS);
     EXPECT_FALSE(irq.values.back());
+
+    write32(dut, P_CVALL, 1000u);
+    write32(dut, P_CVALH, 0u);
+    write32(dut, P_CTL, P_CTL_ENABLE);
+    const sc_core::sc_time anchor_time =
+        sc_core::sc_time_stamp() + sc_core::sc_time(1, sc_core::SC_NS);
+    ASSERT_TRUE(counter.set_enabled_at(false, anchor_time));
+
+    EXPECT_NO_THROW(sc_core::sc_start(sc_core::SC_ZERO_TIME));
+    EXPECT_NO_THROW(sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS)));
+    EXPECT_FALSE(read32(dut, P_CTL) & P_CTL_ISTATUS);
+    EXPECT_TRUE(irq.values.empty() || !irq.values.back());
 }
 
 int sc_main(int argc, char* argv[])
