@@ -182,6 +182,7 @@ private:
     static constexpr uint32_t CC3XX_ENGINE_AES_TO_HASH_AND_DOUT = 0x0a;
     static constexpr uint32_t CC3XX_HASH_ALG_SHA256 = 0x02;
     static constexpr uint32_t CC3XX_AES_MODE_ECB = 0x00;
+    static constexpr uint32_t CC3XX_AES_MODE_CBC = 0x01;
     static constexpr uint32_t CC3XX_AES_MODE_CTR = 0x02;
     static constexpr uint32_t CC3XX_AES_MODE_CMAC = 0x07;
     static constexpr uint32_t CC3XX_AES_KEYSIZE_128 = 0x00;
@@ -272,6 +273,9 @@ private:
         uint64_t aes_ecb_ops = 0;
         uint64_t aes_ecb_bytes = 0;
         uint64_t aes_ecb_chunks = 0;
+        uint64_t aes_cbc_ops = 0;
+        uint64_t aes_cbc_bytes = 0;
+        uint64_t aes_cbc_blocks = 0;
         uint64_t aes_read_failures = 0;
         uint64_t aes_write_failures = 0;
         uint64_t cmac_resets = 0;
@@ -1560,6 +1564,69 @@ private:
         return true;
     }
 
+    bool aes_cbc_xcrypt(uint64_t source, uint64_t dest, uint64_t len)
+    {
+        if ((len % 16) != 0) {
+            return false;
+        }
+
+        ++m_stats.aes_cbc_ops;
+        m_stats.aes_cbc_bytes += len;
+        const size_t key_len = aes_key_size_bytes();
+        const bool decrypt = aes_decrypt();
+        std::array<uint8_t, 32> key{};
+        std::array<uint8_t, 16> iv{};
+        std::array<uint8_t, 16> input{};
+        std::array<uint8_t, 16> block{};
+        std::array<uint8_t, 16> output{};
+
+        std::copy(m_regs.begin() + AES_KEY_0,
+                  m_regs.begin() + AES_KEY_0 + key_len, key.begin());
+        std::copy(m_regs.begin() + AES_IV_0,
+                  m_regs.begin() + AES_IV_0 + iv.size(), iv.begin());
+
+        while (len != 0) {
+            ++m_stats.aes_cbc_blocks;
+            if (!mem_read(source, input.data(), input.size())) {
+                ++m_stats.aes_read_failures;
+                return false;
+            }
+
+            if (decrypt) {
+                if (!aes_decrypt_block(key.data(), key_len, input.data(),
+                                       block.data())) {
+                    return false;
+                }
+                for (size_t index = 0; index < output.size(); ++index) {
+                    output[index] = block[index] ^ iv[index];
+                }
+                iv = input;
+            } else {
+                for (size_t index = 0; index < block.size(); ++index) {
+                    block[index] = input[index] ^ iv[index];
+                }
+                if (!aes_encrypt_block(key.data(), key_len, block.data(),
+                                       output.data())) {
+                    return false;
+                }
+                iv = output;
+            }
+
+            if (!mem_write(dest, output.data(), output.size())) {
+                ++m_stats.aes_write_failures;
+                return false;
+            }
+            source += input.size();
+            dest += output.size();
+            len -= input.size();
+        }
+
+        std::copy(iv.begin(), iv.end(), m_regs.begin() + AES_IV_0);
+        store32(AES_REMAINING_BYTES, 0);
+        store32(AES_BUSY, 0);
+        return true;
+    }
+
     void cmac_reset()
     {
         ++m_stats.cmac_resets;
@@ -1751,7 +1818,10 @@ private:
         if (offset == HASH_CONTROL) {
             store32(HASH_CONTROL, value);
             if ((value & 0xfu) == CC3XX_HASH_ALG_SHA256) {
+                const uint64_t restored_bytes = hash_current_len();
                 sha256_reset();
+                m_sha256.bytes = restored_bytes;
+                store_hash_current_len(restored_bytes);
             } else {
                 m_sha256.active = false;
                 m_sha256.finalized = false;
@@ -1838,6 +1908,10 @@ private:
         switch (aes_mode()) {
         case CC3XX_AES_MODE_ECB:
             (void)aes_ecb_xcrypt(source, dest, len);
+            timing_add(m_stats.aes_dma_ns, timing);
+            return;
+        case CC3XX_AES_MODE_CBC:
+            (void)aes_cbc_xcrypt(source, dest, len);
             timing_add(m_stats.aes_dma_ns, timing);
             return;
         case CC3XX_AES_MODE_CTR:
@@ -2250,6 +2324,9 @@ public:
             << "  \"aes_ecb_ops\": " << m_stats.aes_ecb_ops << ",\n"
             << "  \"aes_ecb_bytes\": " << m_stats.aes_ecb_bytes << ",\n"
             << "  \"aes_ecb_chunks\": " << m_stats.aes_ecb_chunks << ",\n"
+            << "  \"aes_cbc_ops\": " << m_stats.aes_cbc_ops << ",\n"
+            << "  \"aes_cbc_bytes\": " << m_stats.aes_cbc_bytes << ",\n"
+            << "  \"aes_cbc_blocks\": " << m_stats.aes_cbc_blocks << ",\n"
             << "  \"aes_read_failures\": "
             << m_stats.aes_read_failures << ",\n"
             << "  \"aes_write_failures\": "
