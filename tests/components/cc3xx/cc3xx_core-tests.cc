@@ -23,7 +23,9 @@ constexpr uint64_t PKA_SRAM_WDATA = 0x0d8;
 constexpr uint64_t PKA_SRAM_RDATA = 0x0dc;
 constexpr uint64_t PKA_SRAM_RADDR = 0x0e4;
 constexpr uint64_t AES_KEY_0 = 0x400;
+constexpr uint64_t AES_KEY_1 = 0x420;
 constexpr uint64_t AES_IV_0 = 0x440;
+constexpr uint64_t AES_IV_1 = 0x450;
 constexpr uint64_t AES_CTR_0 = 0x460;
 constexpr uint64_t AES_CMAC_INIT = 0x47c;
 constexpr uint64_t AES_REMAINING_BYTES = 0x4bc;
@@ -33,11 +35,15 @@ constexpr uint64_t AES_RBG_SEEDING_RDY = 0x4fc;
 constexpr uint64_t HASH_H = 0x640;
 constexpr uint64_t AUTO_HW_PADDING = 0x684;
 constexpr uint64_t HASH_XOR_DIN = 0x688;
+constexpr uint64_t HASH_SEL_AES_MAC = 0x6a4;
 constexpr uint64_t HASH_CONTROL = 0x7c0;
 constexpr uint64_t HASH_PAD_CFG = 0x7c8;
 constexpr uint64_t HASH_CUR_LEN0 = 0x7cc;
 constexpr uint64_t HASH_CUR_LEN1 = 0x7d0;
 constexpr uint64_t CRYPTO_CTL = 0x900;
+constexpr uint64_t GHASH_SUBKEY_0 = 0x960;
+constexpr uint64_t GHASH_IV_0 = 0x970;
+constexpr uint64_t GHASH_INIT = 0x984;
 constexpr uint64_t HOST_RGF_IRR = 0xa00;
 constexpr uint64_t HOST_RGF_ICR = 0xa08;
 constexpr uint64_t DIN_SRC_LLI_WORD0 = 0xc28;
@@ -58,9 +64,11 @@ constexpr uint32_t CC3XX_HASH_ALG_SHA256 = 0x02;
 constexpr uint32_t CC3XX_HASH_ALG_SHA224 = 0x0a;
 constexpr uint32_t CC3XX_ENGINE_AES = 0x01;
 constexpr uint32_t CC3XX_ENGINE_HASH = 0x07;
+constexpr uint32_t CC3XX_ENGINE_AES_TO_HASH_AND_DOUT = 0x0a;
 constexpr uint32_t CC3XX_AES_MODE_ECB = 0x00;
 constexpr uint32_t CC3XX_AES_MODE_CBC = 0x01;
 constexpr uint32_t CC3XX_AES_MODE_CTR = 0x02;
+constexpr uint32_t CC3XX_AES_MODE_CBC_MAC = 0x03;
 constexpr uint32_t CC3XX_AES_MODE_CMAC = 0x07;
 constexpr uint32_t CC3XX_AES_KEYSIZE_128 = 0x00;
 
@@ -525,6 +533,161 @@ TEST(Cc3xxCoreTest, AesCbcDmaDecryptsNistVector)
 
     EXPECT_EQ(std::memcmp(memory.bytes.data() + 0x60, plaintext,
                           sizeof(plaintext)), 0);
+}
+
+TEST(Cc3xxCoreTest, AesCcmTunnelMatchesRfc3610Vector)
+{
+    Cc3xxCore dut("cc3xx_ccm");
+    TestMemory memory(0x400);
+    dut.set_memory(&memory);
+
+    const uint8_t key[] = {
+        0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
+        0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf,
+    };
+    const uint8_t b0[] = {
+        0x59, 0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00,
+        0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0x00, 0x17,
+    };
+    const uint8_t aad[] = {
+        0x00, 0x08, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0x06, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+    const uint8_t plaintext[] = {
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+    };
+    const uint8_t expected_ciphertext[] = {
+        0x58, 0x8c, 0x97, 0x9a, 0x61, 0xc6, 0x63, 0xd2,
+        0xf0, 0x66, 0xd0, 0xc2, 0xc0, 0xf9, 0x89, 0x80,
+        0x6d, 0x5f, 0x6b, 0x61, 0xda, 0xc3, 0x84,
+    };
+    const uint8_t expected_tag[] = {
+        0x17, 0xe8, 0xd1, 0x2c, 0xfd, 0xf9, 0x26, 0xe0,
+    };
+    const uint8_t counter_1[] = {
+        0x01, 0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00,
+        0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0x00, 0x01,
+    };
+    const uint8_t counter_0[] = {
+        0x01, 0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00,
+        0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0x00, 0x00,
+    };
+
+    std::copy(std::begin(b0), std::end(b0), memory.bytes.begin() + 0x20);
+    std::copy(std::begin(aad), std::end(aad), memory.bytes.begin() + 0x40);
+    std::copy(std::begin(plaintext), std::end(plaintext),
+              memory.bytes.begin() + 0x80);
+    write_reg_bytes(dut, AES_KEY_0, key, sizeof(key));
+    write_reg_bytes(dut, AES_KEY_1, key, sizeof(key));
+    write32(dut, AES_CONTROL, CC3XX_AES_MODE_CBC_MAC << 2);
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_AES);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x20);
+    write32(dut, DIN_SRC_LLI_WORD1, sizeof(b0));
+    write32(dut, DIN_SRC_LLI_WORD0, 0x40);
+    write32(dut, DIN_SRC_LLI_WORD1, sizeof(aad));
+
+    for (size_t index = 0; index < 4; ++index) {
+        write32(dut, AES_IV_1 + index * sizeof(uint32_t),
+                read32(dut, AES_IV_0 + index * sizeof(uint32_t)));
+    }
+    write_reg_bytes(dut, AES_CTR_0, counter_1, sizeof(counter_1));
+    const uint32_t tunnel_control =
+        (CC3XX_AES_MODE_CTR << 2) |
+        (CC3XX_AES_MODE_CBC_MAC << 5) |
+        (1u << 10) | (0x7u << 23);
+    write32(dut, AES_CONTROL, tunnel_control);
+    write32(dut, DOUT_DST_LLI_WORD0, 0x100);
+    write32(dut, DOUT_DST_LLI_WORD1, sizeof(plaintext));
+    write32(dut, DIN_SRC_LLI_WORD0, 0x80);
+    write32(dut, DIN_SRC_LLI_WORD1, sizeof(plaintext));
+    EXPECT_TRUE(std::equal(std::begin(expected_ciphertext),
+                           std::end(expected_ciphertext),
+                           memory.bytes.begin() + 0x100));
+
+    write_reg_bytes(dut, AES_CTR_0, counter_0, sizeof(counter_0));
+    for (size_t index = 0; index < 4; ++index) {
+        const uint32_t word = read32(dut, AES_IV_1 + index * sizeof(uint32_t));
+        std::memcpy(memory.bytes.data() + 0x180 + index * sizeof(uint32_t),
+                    &word, sizeof(word));
+    }
+    write32(dut, AES_CONTROL, CC3XX_AES_MODE_CTR << 2);
+    write32(dut, DOUT_DST_LLI_WORD0, 0x1c0);
+    write32(dut, DOUT_DST_LLI_WORD1, 16);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x180);
+    write32(dut, DIN_SRC_LLI_WORD1, 16);
+    EXPECT_TRUE(std::equal(std::begin(expected_tag), std::end(expected_tag),
+                           memory.bytes.begin() + 0x1c0));
+}
+
+TEST(Cc3xxCoreTest, AesGcmMatchesNistVector)
+{
+    Cc3xxCore dut("cc3xx_gcm");
+    TestMemory memory(0x400);
+    dut.set_memory(&memory);
+
+    const uint8_t zero[16] = {};
+    const uint8_t counter_1[] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    };
+    const uint8_t counter_2[] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+    };
+    const uint8_t expected_ciphertext[] = {
+        0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92,
+        0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
+    };
+    const uint8_t expected_tag[] = {
+        0xab, 0x6e, 0x47, 0xd4, 0x2c, 0xec, 0x13, 0xbd,
+        0xf5, 0x3a, 0x67, 0xb2, 0x12, 0x57, 0xbd, 0xdf,
+    };
+    uint8_t length_block[16] = {};
+    length_block[15] = 0x80;
+    std::copy(std::begin(zero), std::end(zero), memory.bytes.begin() + 0x20);
+    std::copy(std::begin(length_block), std::end(length_block),
+              memory.bytes.begin() + 0x40);
+
+    write_reg_bytes(dut, AES_KEY_0, zero, sizeof(zero));
+    write32(dut, AES_CONTROL, (CC3XX_AES_MODE_CTR << 2) | (1u << 1));
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_AES);
+    write_reg_bytes(dut, AES_CTR_0, zero, sizeof(zero));
+    write32(dut, DOUT_DST_LLI_WORD0, 0x100);
+    write32(dut, DOUT_DST_LLI_WORD1, sizeof(zero));
+    write32(dut, DIN_SRC_LLI_WORD0, 0x20);
+    write32(dut, DIN_SRC_LLI_WORD1, sizeof(zero));
+    write_reg_bytes(dut, GHASH_SUBKEY_0, memory.bytes.data() + 0x100, 16);
+    write32(dut, GHASH_INIT, 1);
+    write32(dut, HASH_SEL_AES_MAC, 2);
+
+    write_reg_bytes(dut, AES_CTR_0, counter_2, sizeof(counter_2));
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_AES_TO_HASH_AND_DOUT);
+    write32(dut, DOUT_DST_LLI_WORD0, 0x120);
+    write32(dut, DOUT_DST_LLI_WORD1, sizeof(zero));
+    write32(dut, DIN_SRC_LLI_WORD0, 0x20);
+    write32(dut, DIN_SRC_LLI_WORD1, sizeof(zero));
+    EXPECT_TRUE(std::equal(std::begin(expected_ciphertext),
+                           std::end(expected_ciphertext),
+                           memory.bytes.begin() + 0x120));
+
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x40);
+    write32(dut, DIN_SRC_LLI_WORD1, sizeof(length_block));
+    for (size_t index = 0; index < 4; ++index) {
+        const uint32_t word = read32(dut, GHASH_IV_0 + index * sizeof(uint32_t));
+        std::memcpy(memory.bytes.data() + 0x160 + index * sizeof(uint32_t),
+                    &word, sizeof(word));
+    }
+    write_reg_bytes(dut, AES_CTR_0, counter_1, sizeof(counter_1));
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_AES);
+    write32(dut, DOUT_DST_LLI_WORD0, 0x180);
+    write32(dut, DOUT_DST_LLI_WORD1, 16);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x160);
+    write32(dut, DIN_SRC_LLI_WORD1, 16);
+    EXPECT_TRUE(std::equal(std::begin(expected_tag), std::end(expected_tag),
+                           memory.bytes.begin() + 0x180));
 }
 
 TEST(Cc3xxCoreTest, CmacFinishWritesTagToIvRegisters)

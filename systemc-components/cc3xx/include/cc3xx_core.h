@@ -120,7 +120,9 @@ private:
     static constexpr uint32_t PKA_SRAM_RDATA = 0x0dc;
     static constexpr uint32_t PKA_SRAM_RADDR = 0x0e4;
     static constexpr uint32_t AES_KEY_0 = 0x400;
+    static constexpr uint32_t AES_KEY_1 = 0x420;
     static constexpr uint32_t AES_IV_0 = 0x440;
+    static constexpr uint32_t AES_IV_1 = 0x450;
     static constexpr uint32_t AES_CTR_0 = 0x460;
     static constexpr uint32_t AES_BUSY = 0x470;
     static constexpr uint32_t AES_CMAC_INIT = 0x47c;
@@ -131,6 +133,7 @@ private:
     static constexpr uint32_t HASH_H = 0x640;
     static constexpr uint32_t AUTO_HW_PADDING = 0x684;
     static constexpr uint32_t HASH_XOR_DIN = 0x688;
+    static constexpr uint32_t HASH_SEL_AES_MAC = 0x6a4;
     static constexpr uint32_t HASH_CONTROL = 0x7c0;
     static constexpr uint32_t HASH_PAD_CFG = 0x7c8;
     static constexpr uint32_t HASH_CUR_LEN0 = 0x7cc;
@@ -139,6 +142,10 @@ private:
     static constexpr uint32_t CRYPTO_CTL = 0x900;
     static constexpr uint32_t CRYPTO_BUSY = 0x910;
     static constexpr uint32_t HASH_BUSY = 0x91c;
+    static constexpr uint32_t GHASH_SUBKEY_0 = 0x960;
+    static constexpr uint32_t GHASH_IV_0 = 0x970;
+    static constexpr uint32_t GHASH_BUSY = 0x980;
+    static constexpr uint32_t GHASH_INIT = 0x984;
     static constexpr uint32_t HOST_RGF_IRR = 0xa00;
     static constexpr uint32_t HOST_RGF_IMR = 0xa04;
     static constexpr uint32_t HOST_RGF_ICR = 0xa08;
@@ -186,6 +193,7 @@ private:
     static constexpr uint32_t CC3XX_AES_MODE_ECB = 0x00;
     static constexpr uint32_t CC3XX_AES_MODE_CBC = 0x01;
     static constexpr uint32_t CC3XX_AES_MODE_CTR = 0x02;
+    static constexpr uint32_t CC3XX_AES_MODE_CBC_MAC = 0x03;
     static constexpr uint32_t CC3XX_AES_MODE_CMAC = 0x07;
     static constexpr uint32_t CC3XX_AES_KEYSIZE_128 = 0x00;
     static constexpr uint32_t CC3XX_AES_KEYSIZE_192 = 0x01;
@@ -1203,6 +1211,47 @@ private:
         }
     }
 
+    static void ghash_multiply(uint8_t* value, const uint8_t* subkey)
+    {
+        std::array<uint8_t, 16> product{};
+        std::array<uint8_t, 16> factor{};
+        std::copy(subkey, subkey + factor.size(), factor.begin());
+
+        for (unsigned int bit = 0; bit < 128; ++bit) {
+            if ((value[bit / 8] & (0x80u >> (bit % 8))) != 0) {
+                aes_xor_block(product.data(), factor.data());
+            }
+
+            const bool reduce = (factor.back() & 1u) != 0;
+            uint8_t carry = 0;
+            for (auto& byte : factor) {
+                const uint8_t next_carry = byte & 1u;
+                byte = static_cast<uint8_t>((byte >> 1) | (carry << 7));
+                carry = next_carry;
+            }
+            if (reduce) {
+                factor.front() ^= 0xe1u;
+            }
+        }
+
+        std::copy(product.begin(), product.end(), value);
+    }
+
+    void ghash_update_block(const uint8_t* block)
+    {
+        std::array<uint8_t, 16> state{};
+        std::array<uint8_t, 16> subkey{};
+        std::copy(m_regs.begin() + GHASH_IV_0,
+                  m_regs.begin() + GHASH_IV_0 + state.size(), state.begin());
+        std::copy(m_regs.begin() + GHASH_SUBKEY_0,
+                  m_regs.begin() + GHASH_SUBKEY_0 + subkey.size(),
+                  subkey.begin());
+        aes_xor_block(state.data(), block);
+        ghash_multiply(state.data(), subkey.data());
+        std::copy(state.begin(), state.end(), m_regs.begin() + GHASH_IV_0);
+        store32(GHASH_BUSY, 0);
+    }
+
     static bool aes_cmac(const uint8_t* key, size_t key_len,
                          const std::vector<uint8_t>& data, uint8_t* tag)
     {
@@ -1457,7 +1506,7 @@ private:
 
     uint32_t aes_mode() const
     {
-        return (load32(AES_CONTROL) >> 2) & 0xfu;
+        return (load32(AES_CONTROL) >> 2) & 0x7u;
     }
 
     bool aes_decrypt() const
@@ -1509,6 +1558,160 @@ private:
             source += chunk_len;
             dest += chunk_len;
             len -= chunk_len;
+        }
+
+        std::copy(counter.begin(), counter.end(), m_regs.begin() + AES_CTR_0);
+        store32(AES_REMAINING_BYTES, 0);
+        store32(AES_BUSY, 0);
+        return true;
+    }
+
+    bool aes_cbc_mac_update(uint64_t source, uint64_t len,
+                            uint32_t iv_offset, bool pad_last)
+    {
+        const size_t key_len = aes_key_size_bytes();
+        std::array<uint8_t, 32> key{};
+        std::array<uint8_t, 16> iv{};
+        std::array<uint8_t, 16> block{};
+
+        std::copy(m_regs.begin() + AES_KEY_0,
+                  m_regs.begin() + AES_KEY_0 + key_len, key.begin());
+        std::copy(m_regs.begin() + iv_offset,
+                  m_regs.begin() + iv_offset + iv.size(), iv.begin());
+
+        while (len != 0) {
+            block.fill(0);
+            const auto block_len = static_cast<unsigned int>(
+                std::min<uint64_t>(len, block.size()));
+            if (block_len != block.size() && !pad_last) {
+                return false;
+            }
+            if (!mem_read(source, block.data(), block_len)) {
+                ++m_stats.aes_read_failures;
+                return false;
+            }
+            aes_xor_block(block.data(), iv.data());
+            if (!aes_encrypt_block(key.data(), key_len, block.data(),
+                                   iv.data())) {
+                return false;
+            }
+            source += block_len;
+            len -= block_len;
+        }
+
+        std::copy(iv.begin(), iv.end(), m_regs.begin() + iv_offset);
+        store32(AES_BUSY, 0);
+        return true;
+    }
+
+    bool aes_ccm_tunnel_xcrypt(uint64_t source, uint64_t dest, uint64_t len)
+    {
+        ++m_stats.aes_ctr_ops;
+        m_stats.aes_ctr_bytes += len;
+        const size_t key_len = aes_key_size_bytes();
+        const bool encrypt = (load32(AES_CONTROL) & (1u << 24)) != 0;
+        std::array<uint8_t, 32> key{};
+        std::array<uint8_t, 16> counter{};
+        std::array<uint8_t, 16> stream{};
+        std::array<uint8_t, 16> input{};
+        std::array<uint8_t, 16> output{};
+        std::array<uint8_t, 16> mac_state{};
+        std::array<uint8_t, 16> mac_block{};
+
+        std::copy(m_regs.begin() + AES_KEY_0,
+                  m_regs.begin() + AES_KEY_0 + key_len, key.begin());
+        std::copy(m_regs.begin() + AES_CTR_0,
+                  m_regs.begin() + AES_CTR_0 + counter.size(), counter.begin());
+        std::copy(m_regs.begin() + AES_IV_1,
+                  m_regs.begin() + AES_IV_1 + mac_state.size(),
+                  mac_state.begin());
+
+        while (len != 0) {
+            input.fill(0);
+            output.fill(0);
+            const auto block_len = static_cast<unsigned int>(
+                std::min<uint64_t>(len, input.size()));
+            ++m_stats.aes_ctr_chunks;
+            if (!mem_read(source, input.data(), block_len)) {
+                ++m_stats.aes_read_failures;
+                return false;
+            }
+            if (!aes_encrypt_block(key.data(), key_len, counter.data(),
+                                   stream.data())) {
+                return false;
+            }
+            for (unsigned int index = 0; index < block_len; ++index) {
+                output[index] = input[index] ^ stream[index];
+            }
+            mac_block = encrypt ? input : output;
+            aes_xor_block(mac_block.data(), mac_state.data());
+            if (!aes_encrypt_block(key.data(), key_len, mac_block.data(),
+                                   mac_state.data())) {
+                return false;
+            }
+            if (!mem_write(dest, output.data(), block_len)) {
+                ++m_stats.aes_write_failures;
+                return false;
+            }
+            aes_increment_counter(counter);
+            source += block_len;
+            dest += block_len;
+            len -= block_len;
+        }
+
+        std::copy(counter.begin(), counter.end(), m_regs.begin() + AES_CTR_0);
+        std::copy(mac_state.begin(), mac_state.end(),
+                  m_regs.begin() + AES_IV_1);
+        store32(AES_REMAINING_BYTES, 0);
+        store32(AES_BUSY, 0);
+        return true;
+    }
+
+    bool aes_gcm_xcrypt(uint64_t source, uint64_t dest, uint64_t len)
+    {
+        ++m_stats.aes_ctr_ops;
+        m_stats.aes_ctr_bytes += len;
+        const size_t key_len = aes_key_size_bytes();
+        const bool encrypt = m_engine == CC3XX_ENGINE_AES_TO_HASH_AND_DOUT;
+        std::array<uint8_t, 32> key{};
+        std::array<uint8_t, 16> counter{};
+        std::array<uint8_t, 16> stream{};
+        std::array<uint8_t, 16> input{};
+        std::array<uint8_t, 16> output{};
+        std::array<uint8_t, 16> hash_block{};
+
+        std::copy(m_regs.begin() + AES_KEY_0,
+                  m_regs.begin() + AES_KEY_0 + key_len, key.begin());
+        std::copy(m_regs.begin() + AES_CTR_0,
+                  m_regs.begin() + AES_CTR_0 + counter.size(), counter.begin());
+
+        while (len != 0) {
+            input.fill(0);
+            output.fill(0);
+            const auto block_len = static_cast<unsigned int>(
+                std::min<uint64_t>(len, input.size()));
+            ++m_stats.aes_ctr_chunks;
+            if (!mem_read(source, input.data(), block_len)) {
+                ++m_stats.aes_read_failures;
+                return false;
+            }
+            if (!aes_encrypt_block(key.data(), key_len, counter.data(),
+                                   stream.data())) {
+                return false;
+            }
+            for (unsigned int index = 0; index < block_len; ++index) {
+                output[index] = input[index] ^ stream[index];
+            }
+            hash_block = encrypt ? output : input;
+            ghash_update_block(hash_block.data());
+            if (!mem_write(dest, output.data(), block_len)) {
+                ++m_stats.aes_write_failures;
+                return false;
+            }
+            aes_increment_counter(counter);
+            source += block_len;
+            dest += block_len;
+            len -= block_len;
         }
 
         std::copy(counter.begin(), counter.end(), m_regs.begin() + AES_CTR_0);
@@ -1664,6 +1867,18 @@ private:
             remaining -= len;
         }
         timing_add(m_stats.cmac_dma_ns, timing);
+    }
+
+    void cbc_mac_dma_input(uint32_t trigger_offset)
+    {
+        if (m_engine != CC3XX_ENGINE_AES ||
+            aes_mode() != CC3XX_AES_MODE_CBC_MAC ||
+            trigger_offset != DIN_SRC_LLI_WORD1) {
+            return;
+        }
+
+        (void)aes_cbc_mac_update(load32(DIN_SRC_LLI_WORD0),
+                                 load32(DIN_SRC_LLI_WORD1), AES_IV_0, true);
     }
 
     void cmac_finish()
@@ -1849,7 +2064,8 @@ private:
 
     void hash_dma_input(uint32_t trigger_offset)
     {
-        if (trigger_offset != DIN_SRC_LLI_WORD1) {
+        if (trigger_offset != DIN_SRC_LLI_WORD1 ||
+            load32(HASH_SEL_AES_MAC) == 2) {
             return;
         }
 
@@ -1894,6 +2110,30 @@ private:
         timing_add(m_stats.hash_dma_ns, timing);
     }
 
+    void ghash_dma_input(uint32_t trigger_offset)
+    {
+        if (m_engine != CC3XX_ENGINE_HASH ||
+            load32(HASH_SEL_AES_MAC) != 2 ||
+            trigger_offset != DIN_SRC_LLI_WORD1) {
+            return;
+        }
+
+        uint64_t source = load32(DIN_SRC_LLI_WORD0);
+        uint64_t remaining = load32(DIN_SRC_LLI_WORD1);
+        std::array<uint8_t, 16> block{};
+        while (remaining != 0) {
+            block.fill(0);
+            const auto block_len = static_cast<unsigned int>(
+                std::min<uint64_t>(remaining, block.size()));
+            if (!mem_read(source, block.data(), block_len)) {
+                return;
+            }
+            ghash_update_block(block.data());
+            source += block_len;
+            remaining -= block_len;
+        }
+    }
+
     void aes_dma_output(uint32_t trigger_offset)
     {
         if (trigger_offset != DIN_SRC_LLI_WORD1) {
@@ -1928,7 +2168,15 @@ private:
             timing_add(m_stats.aes_dma_ns, timing);
             return;
         case CC3XX_AES_MODE_CTR:
-            (void)aes_ctr_xcrypt(source, dest, len);
+            if (load32(HASH_SEL_AES_MAC) == 2 &&
+                (m_engine == CC3XX_ENGINE_AES_AND_HASH ||
+                 m_engine == CC3XX_ENGINE_AES_TO_HASH_AND_DOUT)) {
+                (void)aes_gcm_xcrypt(source, dest, len);
+            } else if ((load32(AES_CONTROL) & (1u << 10)) != 0) {
+                (void)aes_ccm_tunnel_xcrypt(source, dest, len);
+            } else {
+                (void)aes_ctr_xcrypt(source, dest, len);
+            }
             timing_add(m_stats.aes_dma_ns, timing);
             return;
         default:
@@ -1959,8 +2207,10 @@ private:
         }
 
         hash_dma_input(trigger_offset);
+        ghash_dma_input(trigger_offset);
         aes_dma_output(trigger_offset);
         cmac_dma_input(trigger_offset);
+        cbc_mac_dma_input(trigger_offset);
 
         store32(HOST_RGF_IRR, load32(HOST_RGF_IRR) | interrupts);
         store32(DIN_MEM_DMA_BUSY, 0x00000000);
@@ -2024,6 +2274,14 @@ private:
             if (value & 0x1u) {
                 cmac_reset();
             }
+            break;
+        case GHASH_INIT:
+            store32(GHASH_INIT, value);
+            if ((value & 1u) != 0) {
+                std::fill(m_regs.begin() + GHASH_IV_0,
+                          m_regs.begin() + GHASH_IV_0 + 16, 0);
+            }
+            store32(GHASH_BUSY, 0);
             break;
         case AES_REMAINING_BYTES:
             store32(AES_REMAINING_BYTES, value);
