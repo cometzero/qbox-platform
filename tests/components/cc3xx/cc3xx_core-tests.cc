@@ -277,6 +277,37 @@ TEST(Cc3xxCoreTest, Sha224DmaMatchesKnownDigest)
     }
 }
 
+TEST(Cc3xxCoreTest, Sha224AcceptsStateBeforeControl)
+{
+    Cc3xxCore dut("cc3xx_sha224_preloaded");
+    TestMemory memory(0x100);
+    dut.set_memory(&memory);
+
+    const uint32_t initial[] = {
+        0xc1059ed8u, 0x367cd507u, 0x3070dd17u, 0xf70e5939u,
+        0xffc00b31u, 0x68581511u, 0x64f98fa7u, 0xbefa4fa4u,
+    };
+    const uint32_t expected[] = {
+        0xb1e46bb9u, 0xefe45af5u, 0x54363449u, 0xc6945a0du,
+        0x6169fc3au, 0x5a396a56u, 0xcb97cb57u,
+    };
+
+    memory.bytes[0x20] = 0xbd;
+    for (size_t index = 0; index < std::size(initial); ++index) {
+        write32(dut, HASH_H + index * sizeof(uint32_t), initial[index]);
+    }
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA256);
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
+    write32(dut, AUTO_HW_PADDING, 1);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x20);
+    write32(dut, DIN_SRC_LLI_WORD1, 1);
+
+    for (size_t index = 0; index < std::size(expected); ++index) {
+        EXPECT_EQ(read32(dut, HASH_H + index * sizeof(uint32_t)),
+                  expected[index]);
+    }
+}
+
 TEST(Cc3xxCoreTest, Sha224RestoresDriverOrderedMultipartState)
 {
     Cc3xxCore dut("cc3xx_sha224_multipart");

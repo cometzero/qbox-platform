@@ -1819,7 +1819,19 @@ private:
             store32(HASH_CONTROL, value);
             if ((value & 0xfu) == CC3XX_HASH_ALG_SHA256) {
                 const uint64_t restored_bytes = hash_current_len();
+                std::array<uint32_t, 8> programmed_state{};
+                bool state_programmed = false;
+                for (size_t index = 0; index < programmed_state.size(); ++index) {
+                    programmed_state[index] =
+                        load32(HASH_H + index * sizeof(uint32_t));
+                    state_programmed =
+                        state_programmed || programmed_state[index] != 0;
+                }
                 sha256_reset();
+                if (state_programmed) {
+                    m_sha256.h = programmed_state;
+                    store_sha256_h();
+                }
                 m_sha256.bytes = restored_bytes;
                 store_hash_current_len(restored_bytes);
             } else {
