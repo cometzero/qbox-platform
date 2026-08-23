@@ -181,6 +181,7 @@ private:
     static constexpr uint32_t CC3XX_ENGINE_HASH = 0x07;
     static constexpr uint32_t CC3XX_ENGINE_AES_TO_HASH_AND_DOUT = 0x0a;
     static constexpr uint32_t CC3XX_HASH_ALG_SHA256 = 0x02;
+    static constexpr uint32_t CC3XX_HASH_ALG_SHA224 = 0x0a;
     static constexpr uint32_t CC3XX_AES_MODE_ECB = 0x00;
     static constexpr uint32_t CC3XX_AES_MODE_CBC = 0x01;
     static constexpr uint32_t CC3XX_AES_MODE_CTR = 0x02;
@@ -1817,21 +1818,11 @@ private:
 
         if (offset == HASH_CONTROL) {
             store32(HASH_CONTROL, value);
-            if ((value & 0xfu) == CC3XX_HASH_ALG_SHA256) {
+            const uint32_t algorithm = value & 0xfu;
+            if (algorithm == CC3XX_HASH_ALG_SHA224 ||
+                algorithm == CC3XX_HASH_ALG_SHA256) {
                 const uint64_t restored_bytes = hash_current_len();
-                std::array<uint32_t, 8> programmed_state{};
-                bool state_programmed = false;
-                for (size_t index = 0; index < programmed_state.size(); ++index) {
-                    programmed_state[index] =
-                        load32(HASH_H + index * sizeof(uint32_t));
-                    state_programmed =
-                        state_programmed || programmed_state[index] != 0;
-                }
                 sha256_reset();
-                if (state_programmed) {
-                    m_sha256.h = programmed_state;
-                    store_sha256_h();
-                }
                 m_sha256.bytes = restored_bytes;
                 store_hash_current_len(restored_bytes);
             } else {
@@ -1857,16 +1848,16 @@ private:
 
     void hash_dma_input(uint32_t trigger_offset)
     {
-        if (m_engine != CC3XX_ENGINE_HASH || !m_sha256.active || m_sha256.finalized) {
-            return;
-        }
-
         if (trigger_offset != DIN_SRC_LLI_WORD1) {
             return;
         }
 
         uint64_t source = load32(DIN_SRC_LLI_WORD0);
         uint64_t remaining = load32(DIN_SRC_LLI_WORD1);
+        if (m_engine != CC3XX_ENGINE_HASH || !m_sha256.active ||
+            m_sha256.finalized) {
+            return;
+        }
         std::array<uint8_t, DMA_CHUNK_BYTES> chunk{};
         const uint64_t timing = timing_start();
 

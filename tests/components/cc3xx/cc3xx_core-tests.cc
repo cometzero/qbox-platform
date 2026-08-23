@@ -54,6 +54,7 @@ constexpr uint64_t LCS_REG = 0x1f14;
 constexpr uint32_t SYM_DMA_COMPLETED = 1u << 11;
 constexpr uint32_t DOUT_TO_MEM_INT = 1u << 7;
 constexpr uint32_t CC3XX_HASH_ALG_SHA256 = 0x02;
+constexpr uint32_t CC3XX_HASH_ALG_SHA224 = 0x0a;
 constexpr uint32_t CC3XX_ENGINE_AES = 0x01;
 constexpr uint32_t CC3XX_ENGINE_HASH = 0x07;
 constexpr uint32_t CC3XX_AES_MODE_ECB = 0x00;
@@ -251,38 +252,7 @@ TEST(Cc3xxCoreTest, Sha224DmaMatchesKnownDigest)
     TestMemory memory(0x100);
     dut.set_memory(&memory);
 
-    const uint8_t message[] = {0x61, 0x62, 0x63};
-    const uint32_t initial[] = {
-        0xc1059ed8u, 0x367cd507u, 0x3070dd17u, 0xf70e5939u,
-        0xffc00b31u, 0x68581511u, 0x64f98fa7u, 0xbefa4fa4u,
-    };
-    const uint32_t expected[] = {
-        0x23097d22u, 0x3405d822u, 0x8642a477u, 0xbda255b3u,
-        0x2aadbce4u, 0xbda0b3f7u, 0xe36c9da7u,
-    };
-
-    std::memcpy(memory.bytes.data() + 0x20, message, sizeof(message));
-    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA256);
-    for (size_t index = 0; index < std::size(initial); ++index) {
-        write32(dut, HASH_H + index * sizeof(uint32_t), initial[index]);
-    }
-    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
-    write32(dut, AUTO_HW_PADDING, 1);
-    write32(dut, DIN_SRC_LLI_WORD0, 0x20);
-    write32(dut, DIN_SRC_LLI_WORD1, sizeof(message));
-
-    for (size_t index = 0; index < std::size(expected); ++index) {
-        EXPECT_EQ(read32(dut, HASH_H + index * sizeof(uint32_t)),
-                  expected[index]);
-    }
-}
-
-TEST(Cc3xxCoreTest, Sha224AcceptsStateBeforeControl)
-{
-    Cc3xxCore dut("cc3xx_sha224_preloaded");
-    TestMemory memory(0x100);
-    dut.set_memory(&memory);
-
+    const uint8_t message[] = {0xbd};
     const uint32_t initial[] = {
         0xc1059ed8u, 0x367cd507u, 0x3070dd17u, 0xf70e5939u,
         0xffc00b31u, 0x68581511u, 0x64f98fa7u, 0xbefa4fa4u,
@@ -292,15 +262,15 @@ TEST(Cc3xxCoreTest, Sha224AcceptsStateBeforeControl)
         0x6169fc3au, 0x5a396a56u, 0xcb97cb57u,
     };
 
-    memory.bytes[0x20] = 0xbd;
+    std::memcpy(memory.bytes.data() + 0x20, message, sizeof(message));
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA224);
     for (size_t index = 0; index < std::size(initial); ++index) {
         write32(dut, HASH_H + index * sizeof(uint32_t), initial[index]);
     }
-    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA256);
     write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
     write32(dut, AUTO_HW_PADDING, 1);
     write32(dut, DIN_SRC_LLI_WORD0, 0x20);
-    write32(dut, DIN_SRC_LLI_WORD1, 1);
+    write32(dut, DIN_SRC_LLI_WORD1, sizeof(message));
 
     for (size_t index = 0; index < std::size(expected); ++index) {
         EXPECT_EQ(read32(dut, HASH_H + index * sizeof(uint32_t)),
@@ -330,7 +300,7 @@ TEST(Cc3xxCoreTest, Sha224RestoresDriverOrderedMultipartState)
     memory.bytes[0xa1] = 'b';
     memory.bytes[0xa2] = 'c';
 
-    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA256);
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA224);
     for (size_t index = 0; index < std::size(initial); ++index) {
         write32(dut, HASH_H + index * sizeof(uint32_t), initial[index]);
     }
@@ -347,7 +317,7 @@ TEST(Cc3xxCoreTest, Sha224RestoresDriverOrderedMultipartState)
     write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
     write32(dut, HASH_CUR_LEN0, saved_len);
     write32(dut, HASH_CUR_LEN1, 0);
-    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA256);
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA224);
     for (size_t index = 0; index < std::size(saved); ++index) {
         write32(dut, HASH_H + index * sizeof(uint32_t), saved[index]);
     }
