@@ -32,6 +32,7 @@ constexpr uint64_t AES_HW_FLAGS = 0x4c8;
 constexpr uint64_t AES_RBG_SEEDING_RDY = 0x4fc;
 constexpr uint64_t HASH_H = 0x640;
 constexpr uint64_t AUTO_HW_PADDING = 0x684;
+constexpr uint64_t HASH_XOR_DIN = 0x688;
 constexpr uint64_t HASH_CONTROL = 0x7c0;
 constexpr uint64_t HASH_PAD_CFG = 0x7c8;
 constexpr uint64_t HASH_CUR_LEN0 = 0x7cc;
@@ -324,6 +325,91 @@ TEST(Cc3xxCoreTest, Sha224RestoresDriverOrderedMultipartState)
     write32(dut, AUTO_HW_PADDING, 1);
     write32(dut, DIN_SRC_LLI_WORD0, 0xa0);
     write32(dut, DIN_SRC_LLI_WORD1, 3);
+
+    for (size_t index = 0; index < std::size(expected); ++index) {
+        EXPECT_EQ(read32(dut, HASH_H + index * sizeof(uint32_t)),
+                  expected[index]);
+    }
+}
+
+TEST(Cc3xxCoreTest, HmacSha224MatchesRfc4231Vector)
+{
+    Cc3xxCore dut("cc3xx_hmac_sha224");
+    TestMemory memory(0x300);
+    dut.set_memory(&memory);
+
+    const uint32_t initial[] = {
+        0xc1059ed8u, 0x367cd507u, 0x3070dd17u, 0xf70e5939u,
+        0xffc00b31u, 0x68581511u, 0x64f98fa7u, 0xbefa4fa4u,
+    };
+    const uint32_t expected[] = {
+        0x896fb112u, 0x8abbdf19u, 0x6832107cu, 0xd49df33fu,
+        0x47b4b116u, 0x9912ba4fu, 0x53684b22u,
+    };
+
+    std::fill_n(memory.bytes.begin() + 0x20, 20, 0x0b);
+    std::memcpy(memory.bytes.data() + 0x80, "Hi There", 8);
+    std::fill_n(memory.bytes.begin() + 0xc0, 20, 0x0b);
+
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA224);
+    for (size_t index = 0; index < std::size(initial); ++index) {
+        write32(dut, HASH_H + index * sizeof(uint32_t), initial[index]);
+    }
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
+    write32(dut, HASH_XOR_DIN, 0x36363636);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x20);
+    write32(dut, DIN_SRC_LLI_WORD1, 64);
+    uint32_t inner_state[8];
+    for (size_t index = 0; index < std::size(inner_state); ++index) {
+        inner_state[index] = read32(dut, HASH_H + index * sizeof(uint32_t));
+    }
+
+    write32(dut, HASH_CUR_LEN0, 64);
+    write32(dut, HASH_CUR_LEN1, 0);
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA224);
+    for (size_t index = 0; index < std::size(inner_state); ++index) {
+        write32(dut, HASH_H + index * sizeof(uint32_t), inner_state[index]);
+    }
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
+    write32(dut, HASH_XOR_DIN, 0);
+    write32(dut, AUTO_HW_PADDING, 1);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x80);
+    write32(dut, DIN_SRC_LLI_WORD1, 8);
+    for (size_t index = 0; index < 7; ++index) {
+        const uint32_t word = read32(dut, HASH_H + index * sizeof(uint32_t));
+        memory.bytes[0x100 + index * 4] = static_cast<uint8_t>(word >> 24);
+        memory.bytes[0x101 + index * 4] = static_cast<uint8_t>(word >> 16);
+        memory.bytes[0x102 + index * 4] = static_cast<uint8_t>(word >> 8);
+        memory.bytes[0x103 + index * 4] = static_cast<uint8_t>(word);
+    }
+
+    write32(dut, AUTO_HW_PADDING, 0);
+    write32(dut, HASH_CUR_LEN0, 0);
+    write32(dut, HASH_CUR_LEN1, 0);
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA224);
+    for (size_t index = 0; index < std::size(initial); ++index) {
+        write32(dut, HASH_H + index * sizeof(uint32_t), initial[index]);
+    }
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
+    write32(dut, HASH_XOR_DIN, 0x5c5c5c5c);
+    write32(dut, DIN_SRC_LLI_WORD0, 0xc0);
+    write32(dut, DIN_SRC_LLI_WORD1, 64);
+    uint32_t outer_state[8];
+    for (size_t index = 0; index < std::size(outer_state); ++index) {
+        outer_state[index] = read32(dut, HASH_H + index * sizeof(uint32_t));
+    }
+
+    write32(dut, HASH_CUR_LEN0, 64);
+    write32(dut, HASH_CUR_LEN1, 0);
+    write32(dut, HASH_CONTROL, CC3XX_HASH_ALG_SHA224);
+    for (size_t index = 0; index < std::size(outer_state); ++index) {
+        write32(dut, HASH_H + index * sizeof(uint32_t), outer_state[index]);
+    }
+    write32(dut, CRYPTO_CTL, CC3XX_ENGINE_HASH);
+    write32(dut, HASH_XOR_DIN, 0);
+    write32(dut, AUTO_HW_PADDING, 1);
+    write32(dut, DIN_SRC_LLI_WORD0, 0x100);
+    write32(dut, DIN_SRC_LLI_WORD1, 28);
 
     for (size_t index = 0; index < std::size(expected); ++index) {
         EXPECT_EQ(read32(dut, HASH_H + index * sizeof(uint32_t)),

@@ -130,6 +130,7 @@ private:
     static constexpr uint32_t AES_RBG_SEEDING_RDY = 0x4fc;
     static constexpr uint32_t HASH_H = 0x640;
     static constexpr uint32_t AUTO_HW_PADDING = 0x684;
+    static constexpr uint32_t HASH_XOR_DIN = 0x688;
     static constexpr uint32_t HASH_CONTROL = 0x7c0;
     static constexpr uint32_t HASH_PAD_CFG = 0x7c8;
     static constexpr uint32_t HASH_CUR_LEN0 = 0x7cc;
@@ -1860,6 +1861,8 @@ private:
         }
         std::array<uint8_t, DMA_CHUNK_BYTES> chunk{};
         const uint64_t timing = timing_start();
+        const uint32_t xor_mask = load32(HASH_XOR_DIN);
+        uint64_t stream_offset = 0;
 
         ++m_stats.hash_dma_triggers;
         m_stats.hash_dma_bytes += remaining;
@@ -1872,9 +1875,16 @@ private:
                 return;
             }
 
+            for (unsigned int index = 0; index < len; ++index) {
+                const unsigned int shift =
+                    static_cast<unsigned int>((stream_offset + index) % 4) * 8;
+                chunk[index] ^= static_cast<uint8_t>(xor_mask >> shift);
+            }
+
             sha256_update(chunk.data(), len);
             source += len;
             remaining -= len;
+            stream_offset += len;
         }
 
         if ((load32(AUTO_HW_PADDING) & 0x1u) != 0) {
