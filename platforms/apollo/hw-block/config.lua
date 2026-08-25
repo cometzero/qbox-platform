@@ -132,6 +132,8 @@ function apollo_system_reset_bind_targets()
         "&rse_mhu2_receiver_s.reset";
         "&host_rse_si_mhu_pbx.reset";
         "&host_rse_si_mhu_mbx.reset";
+        "&host_smd_gpio_cold_reset.reset";
+        "&host_smd_gpio.reset";
     }
 
     if rse_local_crypto then

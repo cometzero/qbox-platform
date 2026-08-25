@@ -49,6 +49,11 @@ local HOST_CSS_COUNTER_CONTROL_OFFSET = 0x00000000
 local HOST_CSS_COUNTER_READ_OFFSET = 0x00010000
 local HOST_CSS_COUNTER_SYNC_OFFSET = 0x00020000
 local HOST_CSS_COUNTER_FRAME_SIZE = 0x00010000
+local SMD_GPIO = {
+    phys_base = 0x20000D0310000;
+    size = 0x00001000;
+    ap_irq = 193;
+}
 local SYSTEM_RESET_REGISTER_SIZE = 0x00010000
 local HOST_SMD_SHARED_SRAM_PHYS_BASE = 0x2000060000000
 local HOST_SMD_SHARED_SRAM_SIZE = 0x00100000
@@ -105,9 +110,15 @@ system_mgmt.ownership = {
         "host_css_counters_timers_read";
         "host_css_counters_timers_sync";
     };
+    peripherals = {
+        "host_smd_gpio";
+    };
 }
 
 function system_mgmt.define(ctx, platform)
+    local smd_gpio_init_inputs = ctx.getenv_number_or(
+        "QBOX_APOLLO_SMD_GPIO_INIT_INPUTS", "0")
+
     platform.host_si_pik = {
         moduletype = "host_ppu";
         trace = host_ppu_trace;
@@ -418,6 +429,27 @@ function system_mgmt.define(ctx, platform)
             bind = "&smd_router.initiator_socket";
         };
         log_level = 0;
+    }
+
+    platform.host_smd_gpio = {
+        moduletype = "qemu_pl061";
+        args = {"&platform.qemu_inst"};
+        init_inputs = smd_gpio_init_inputs;
+        pullups = 0;
+        pulldowns = 0;
+        mem = {
+            address = SMD_GPIO.phys_base;
+            size = SMD_GPIO.size;
+            bind = "&smd_router.initiator_socket";
+        };
+        irq = enable_ap_cpus and {
+            bind = "&ap_gic.spi_in_"..SMD_GPIO.ap_irq;
+        } or nil;
+    }
+
+    platform.host_smd_gpio_cold_reset = {
+        moduletype = "qemu_device_cold_reset";
+        args = {"&platform.host_smd_gpio"};
     }
 
     platform.host_reset_ctrl = {

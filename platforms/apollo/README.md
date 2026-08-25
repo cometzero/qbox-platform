@@ -276,11 +276,27 @@ CSS FVP RoS peripheral table: AP-visible virtio block/net/rng and PL031 RTC.
 
 `hw-block/system_mgmt.lua` owns cross-domain system-management hardware:
 AP/SI/RSE MHU windows, AP/RSE logical aliases, reset/power integration, SMD
-shared memory, SCMI/PFDI messaging, ATU windows, and safety/control surfaces.
+shared memory, SMD GPIO, SCMI/PFDI messaging, ATU windows, and safety/control
+surfaces.
 RSE secure boot and RSE-local security peripherals remain in `hw-block/rse.lua`;
 AP firmware-chain and AP hardware construction live in `hw-block/ap_compute.lua`;
 SI host-visible SRAM/PPU windows live in `hw-block/si_cl0.lua` and
 `hw-block/si_cl1.lua`.
+
+## GPIO Topology
+
+Apollo GPIO controllers reuse QEMU's functional PL061 model through the QBox
+`qemu_pl061` wrapper. RSE GPIO0 and GPIO1 expose secure/non-secure aliases at
+`0x50100000`/`0x40100000` and `0x50101000`/`0x40101000`. Their accesses pass
+through the RSE PPCEXP0 filter and their interrupt outputs are ORed onto RSE
+NVIC IRQ 34.
+
+The SMD GPIO exists only at physical address `0x20000D0310000` on
+`smd_router`. AP software reaches it at logical `0x40750000` through the
+RSE-programmed `host_ap_atu`; there is no direct logical target that could
+bypass translation. Its interrupt drives AP GIC SPI 193. Set
+`QBOX_APOLLO_SMD_GPIO_INIT_INPUTS` to an eight-bit value for deterministic
+input stimulus. Controller reset re-applies the current input bitmap.
 
 The SI CL0 Cortex-R82 memory path crosses the primary NI-710AE protected
 socket. Before the selected APU is enabled, only the configured reset owner or

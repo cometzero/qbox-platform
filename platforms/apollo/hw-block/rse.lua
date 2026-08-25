@@ -57,6 +57,10 @@ local RSE_ADDRESS = {
     timer1_secure = 0x58001000;
     timer2_secure = 0x58002000;
     timer3_secure = 0x58003000;
+    gpio0_non_secure = 0x40100000;
+    gpio1_non_secure = 0x40101000;
+    gpio0_secure = 0x50100000;
+    gpio1_secure = 0x50101000;
     sysctrl_secure = 0x58021000;
     wdog_secure_control = 0x58040000;
     wdog_secure_refresh = 0x58041000;
@@ -95,6 +99,7 @@ local RSE_IRQ = {
     timer1 = 4;
     timer2 = 5;
     timer3 = 27;
+    gpio_combined = 34;
     cmu_mhu0_receiver = 41;
     cmu_mhu2_receiver = 45;
 }
@@ -204,6 +209,10 @@ function rse.define(ctx, platform)
         "&rse_cpu_pass.rse_timer_0.reset";
         "&rse_cpu_pass.rse_timer_1.reset";
         "&rse_cpu_pass.rse_timer_2.reset";
+        "&rse_gpio_0_cold_reset.reset";
+        "&rse_gpio_0.reset";
+        "&rse_gpio_1_cold_reset.reset";
+        "&rse_gpio_1.reset";
     }
     if rse_local_boot_flash and rse_flash_backend == "qemu-cfi-local" then
         rse_sys_rss_reset_targets[#rse_sys_rss_reset_targets + 1] =
@@ -240,6 +249,62 @@ function rse.define(ctx, platform)
             RSE_QEMU.time_sync_strategy_env,
             RSE_QEMU.time_sync_strategy);
         qemu_args = qemu_args;
+    }
+
+    local rse_gpio_secure_bases = {
+        RSE_ADDRESS.gpio0_secure;
+        RSE_ADDRESS.gpio1_secure;
+    }
+    local rse_gpio_non_secure_bases = {
+        RSE_ADDRESS.gpio0_non_secure;
+        RSE_ADDRESS.gpio1_non_secure;
+    }
+    for gpio=0,1 do
+        local gpio_name = "rse_gpio_"..gpio
+        platform[gpio_name] = {
+            moduletype = "qemu_pl061";
+            args = {"&platform.qemu_inst"};
+            init_inputs = ctx.getenv_number_or(
+                "QBOX_APOLLO_RSE_GPIO"..gpio.."_INIT_INPUTS", "0");
+            pullups = 0;
+            pulldowns = 0;
+            irq = {bind = "&rse_gpio_irq_or.signal_in_"..gpio};
+        }
+        platform[gpio_name.."_cold_reset"] = {
+            moduletype = "qemu_device_cold_reset";
+            args = {"&platform."..gpio_name};
+        }
+        platform[gpio_name.."_ppc"] = {
+            moduletype = "rse_ppc_filter";
+            args = {
+                "&platform.rse_sacfg_regs";
+                "&platform.rse_nsacfg_regs";
+            };
+            policy_mask = 2 ^ gpio;
+            ppc_register_offset = 0x10;
+            target_socket = {
+                address = rse_gpio_secure_bases[gpio + 1];
+                size = RSE_SIZE.register_window;
+                bind = "&rse_router.initiator_socket";
+                aliases = {
+                    ns = {
+                        address = rse_gpio_non_secure_bases[gpio + 1];
+                        size = RSE_SIZE.register_window;
+                    };
+                };
+            };
+            initiator_socket = {bind = "&"..gpio_name..".mem"};
+            log_level = 0;
+        }
+    end
+
+    platform.rse_gpio_irq_or = {
+        moduletype = "signal_or";
+        num_inputs = 2;
+        signal_out = {
+            bind = "&rse_cpu_pass.target_signal_socket_"..
+                RSE_IRQ.gpio_combined;
+        };
     }
 
     platform.rse_sys_rss_reset_fanout = {

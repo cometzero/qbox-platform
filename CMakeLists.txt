@@ -199,6 +199,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     mmu720ae
     reset_gpio
     pl031
+    qemu_pl061
     sbsa_gwdt
     cpu_arm_cortexM55
     nvic_armv7m
@@ -241,6 +242,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     host_smcf_mgi
     host_system_pll
     signal_fanout
+    signal_or
     reset_fanout
     rse_sysctrl
 )
