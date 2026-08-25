@@ -1198,6 +1198,11 @@ public:
         return true;
     }
 
+    uint32_t runtime_spi_owner(uint32_t intid) const
+    {
+        return owner_for_intid(intid);
+    }
+
     void b_transport_view1_redists(tlm::tlm_generic_payload& trans,
                                     sc_core::sc_time& delay)
     {

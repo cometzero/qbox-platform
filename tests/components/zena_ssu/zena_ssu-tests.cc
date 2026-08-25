@@ -198,6 +198,21 @@ TEST(ZenaSsuTest, SysCtrlFollowsSafetyStateTransitions)
     EXPECT_EQ(read32(dut, SYS_CTRL), 0u);
 }
 
+TEST(ZenaSsuTest, TypedFaultInjectionUsesOwnerState)
+{
+    zena_ssu dut("ssu_typed_fault");
+
+    dut.before_end_of_elaboration();
+
+    EXPECT_FALSE(dut.inject_fault(false));
+    EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_TEST);
+
+    write32_keyed(dut, ERR_IMPDEF, 0x73u);
+    EXPECT_TRUE(dut.inject_fault(false));
+    EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_ERRN);
+    EXPECT_NE(read32(dut, ERR_STATUS) & STATUS_V, 0u);
+}
+
 TEST(ZenaSsuTest, FaultInputsSetStatusAndSafetyOutput)
 {
     zena_ssu dut("ssu_fault");

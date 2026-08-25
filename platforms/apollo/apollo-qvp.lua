@@ -51,10 +51,30 @@ si_cl1.define(ctx, platform)
 si_cl0.enable(ctx, platform)
 si_cl1.enable(ctx, platform)
 
+if ctx.config.runtime_injection.enabled then
+    platform.apollo_runtime_injection = {
+        moduletype = "apollo_runtime_injection";
+        args = {
+            "&platform.si_gic_multiview";
+            "&platform.si_cl0_gic";
+            "&platform.si_cl1_gic";
+            "&platform.si_cl0_ssu";
+            "&platform.css_system_counter";
+            "&platform.host_smd_gpio";
+            "&platform.rse_gpio_0";
+            "&platform.rse_gpio_1";
+        };
+    }
+end
+
 if ctx.config.monitor.enabled then
     platform.qbox_monitor = {
         moduletype = "monitor";
+        bind_address = ctx.config.monitor.bind_address;
         server_port = ctx.config.monitor.port;
+        runtime_mutation = ctx.config.runtime_injection.enabled;
+        injection_service = ctx.config.runtime_injection.enabled and
+            "platform.apollo_runtime_injection" or "";
         use_html_presentation = true;
     }
     print("QBox monitor dashboard: http://127.0.0.1:"..

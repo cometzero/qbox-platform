@@ -110,6 +110,7 @@ if(BUILD_TESTING)
     endmacro()
     set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS
         arm_system_counter
+        apollo_runtime_injection
         apollo_cpu_ras
         cc3xx
         dma350
@@ -215,6 +216,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     qemu_hexagon_qtimer
     mhu320ae
     gicx00_multiview
+    apollo_runtime_injection
     gic720ae_messreg
     apollo_cpu_ras
     apollo_sbist

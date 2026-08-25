@@ -108,23 +108,24 @@ class zena_ssu : public sc_core::sc_module
         update_output();
     }
 
-    void set_fault(bool critical)
+    bool set_fault(bool critical)
     {
         if ((m_err_ctrl & ERR_CTRL_ED) == 0) {
-            return;
+            return false;
         }
 
         if (critical && (m_err_impdef & IMPDEF_CR_EN) == 0) {
-            return;
+            return false;
         }
 
         if (!critical && (m_err_impdef & IMPDEF_NCR_EN) == 0) {
-            return;
+            return false;
         }
 
         m_err_status |= ERR_STATUS_V | ERR_STATUS_IERR_ERR_IN | ERR_STATUS_SERR_SW;
         m_sys_status = critical ? SYS_STATUS_ERRC : SYS_STATUS_ERRN;
         update_output();
+        return true;
     }
 
     void write_status(uint32_t value)
@@ -359,6 +360,19 @@ public:
     TargetSignalSocket<bool> critical_in;
     TargetSignalSocket<bool> non_critical_in;
     InitiatorSignalSocket<bool> safety_status;
+
+    bool inject_fault(bool critical)
+    {
+        return set_fault(critical);
+    }
+
+    bool runtime_fault_active() const
+    {
+        return m_sys_status == SYS_STATUS_ERRC ||
+               m_sys_status == SYS_STATUS_ERRN;
+    }
+
+    uint32_t runtime_system_status() const { return m_sys_status; }
 
     explicit zena_ssu(sc_core::sc_module_name name)
         : sc_core::sc_module(name)

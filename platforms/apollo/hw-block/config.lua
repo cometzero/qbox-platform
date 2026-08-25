@@ -183,6 +183,10 @@ function apollo_system_reset_bind_targets()
     targets[#targets + 1] = "&si_cl0_pfdi_mhu_pbx.reset"
     targets[#targets + 1] = "&si_cl0_pfdi_mhu_mbx.reset"
 
+    if getenv_bool_or("QBOX_APOLLO_RUNTIME_INJECTION", false) then
+        targets[#targets + 1] = "&apollo_runtime_injection.reset"
+    end
+
     return table.concat(targets, ";")
 end
 
@@ -435,11 +439,19 @@ rse_dma_boot_en = getenv_number_or(
     "QBOX_RDASPEN_RSE_DMA_BOOT_EN",
     "0x00000001")
 local monitor_enabled = getenv_bool_or("QBOX_APOLLO_MONITOR", false)
+local monitor_bind_address = getenv_or(
+    "QBOX_APOLLO_MONITOR_BIND_ADDRESS",
+    "127.0.0.1")
 local monitor_port = getenv_number_or(
     "QBOX_APOLLO_MONITOR_PORT",
     MONITOR_DEFAULT_PORT)
 assert(monitor_port >= 1 and monitor_port <= 65535 and monitor_port % 1 == 0,
        "QBOX_APOLLO_MONITOR_PORT must be an integer in range 1..65535")
+local runtime_injection_enabled = getenv_bool_or(
+    "QBOX_APOLLO_RUNTIME_INJECTION",
+    false)
+assert(not runtime_injection_enabled or monitor_enabled,
+       "QBOX_APOLLO_RUNTIME_INJECTION requires QBOX_APOLLO_MONITOR")
 
 local config = {}
 
@@ -469,7 +481,12 @@ function config.create(apollo_dir)
             system_mgmt = {};
             si_cl0 = {};
             si_cl1 = {};
-            monitor = {enabled = monitor_enabled; port = monitor_port};
+            monitor = {
+                enabled = monitor_enabled;
+                bind_address = monitor_bind_address;
+                port = monitor_port;
+            };
+            runtime_injection = {enabled = runtime_injection_enabled};
         };
     }
 end

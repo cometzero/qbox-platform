@@ -175,6 +175,60 @@ FMUs. Device faults use the configured System FMU parent bank and record, so
 the normal SCP-firmware root-first discovery and acknowledgement path is
 preserved.
 
+## Runtime actions
+
+Apollo runtime actions are disabled by default. Enable them only with the
+loopback Monitor endpoint:
+
+```bash
+QBOX_APOLLO_MONITOR=true \
+QBOX_APOLLO_RUNTIME_INJECTION=true \
+./run_qbox_local.sh
+```
+
+`QBOX_APOLLO_MONITOR_BIND_ADDRESS` defaults to `127.0.0.1`. The Monitor
+rejects runtime mutation on a non-loopback address. When runtime actions are
+disabled, `platform.apollo_runtime_injection` is absent and the Monitor has no
+mutation service path.
+
+The allow-list contains the SI GIC multiview SPI pulse target, the SI0 SSU
+typed fault event, CSS system-counter control, and all eight pins on each of
+`platform.host_smd_gpio`, `platform.rse_gpio_0`, and
+`platform.rse_gpio_1`. GPIO direction and data come from live PL061 register
+readback. Input pins support drive, simulation-time pulse, and release to the
+configured initial level. Output pins support side-effect-free observation
+and PL061 data-register writes. Output forcing is not exported because the
+current Apollo graph has no verified one-to-one downstream fault proxy.
+
+Apollo's multiview extension windows own the IVIEWR state, but its `spi_out`
+signals are not interposed on the two existing QEMU GIC graphs. Runtime SPI
+actions therefore validate the requested owner against `gicx00_multiview` and
+drive the selected `arm_gicv3` input through its typed runtime helper. The
+qualified P0 scenario uses View1 architectural INTID 105; a raw INTID 128 FMU
+interrupt is not safe because it has no corresponding error record.
+
+All mutations run in the SystemC context selected by the Monitor. Delayed
+requests and pulse widths use simulation time. Reset cancels scheduled and
+active requests, restores GPIO input defaults, and advances the manager
+generation. P0/P0.1 accepts only `clear_on_reset=true`.
+
+Run the checked-in scenarios through the canonical full-system runner with:
+
+```bash
+python3 scripts/test/run_qbox_runtime_injection.py \
+  qa-tests/qbox-runtime-injection/gpio-rse0-pin0-input.json \
+  qa-tests/qbox-runtime-injection/gpio-rse0-pin1-output.json \
+  qa-tests/qbox-runtime-injection/system-counter-control.json \
+  qa-tests/qbox-runtime-injection/pulse-spi.json \
+  qa-tests/qbox-runtime-injection/si-cl0-ssu-critical-event.json \
+  --runner-arg=--no-post-login-probe \
+  --out-dir build/qbox-apollo-qvp/runtime-actions
+```
+
+The harness records capabilities and pre/post/release snapshots, rejects new
+post-boot fatal console patterns, and terminates only process groups carrying
+its current-UID per-run token.
+
 The profile boots the canonical Yocto QBox provider, checks the same four-CPU
 prerequisite, service, CLI, OnL, monitoring, force-error, FMU, SBISTC, and
 PFDI-monitor failure evidence as the FVP OEQA profile, and writes its result

@@ -1,4 +1,5 @@
 add_subdirectory(gicx00_multiview)
+add_subdirectory(apollo_runtime_injection)
 add_subdirectory(gic720ae_messreg)
 add_subdirectory(apollo_sbist)
 add_subdirectory(apollo_cpu_ras)
