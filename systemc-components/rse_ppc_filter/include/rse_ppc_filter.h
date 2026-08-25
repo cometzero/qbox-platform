@@ -51,16 +51,20 @@ class rse_ppc_filter : public sc_core::sc_module
         }
 
         const uint32_t mask = p_policy_mask.get_value();
+        const uint32_t register_offset = p_ppc_register_offset.get_value();
         if (context.secure) {
             return context.privileged ||
-                   m_sacfg.policy_allows(PERIPHSPPPC0, mask);
+                   m_sacfg.policy_allows(
+                       PERIPHSPPPC0 + register_offset, mask);
         }
 
-        if (!m_sacfg.policy_allows(PERIPHNSPPC0, mask)) {
+        if (!m_sacfg.policy_allows(
+                PERIPHNSPPC0 + register_offset, mask)) {
             return false;
         }
         return context.privileged ||
-               m_nsacfg.policy_allows(PERIPHNSPPPC0, mask);
+               m_nsacfg.policy_allows(
+                   PERIPHNSPPPC0 + register_offset, mask);
     }
 
     void deny(tlm::tlm_generic_payload& trans) const
@@ -71,6 +75,7 @@ class rse_ppc_filter : public sc_core::sc_module
 
 public:
     cci::cci_param<uint32_t> p_policy_mask;
+    cci::cci_param<uint32_t> p_ppc_register_offset;
     tlm_utils::simple_target_socket<rse_ppc_filter, DEFAULT_TLM_BUSWIDTH>
         target_socket;
     tlm_utils::simple_initiator_socket<rse_ppc_filter, DEFAULT_TLM_BUSWIDTH>
@@ -82,6 +87,7 @@ public:
         , m_sacfg(require_ctrl(sacfg))
         , m_nsacfg(require_ctrl(nsacfg))
         , p_policy_mask("policy_mask", 0)
+        , p_ppc_register_offset("ppc_register_offset", 0)
         , target_socket("target_socket")
         , initiator_socket("initiator_socket")
     {

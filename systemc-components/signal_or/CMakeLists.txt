@@ -1,0 +1,2 @@
+gs_create_dymod(signal_or)
+target_compile_definitions(signal_or PUBLIC SC_ALLOW_DEPRECATED_IEEE_API)

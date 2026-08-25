@@ -127,6 +127,7 @@ if(BUILD_TESTING)
         mmu720ae
         ras_ffh_stub
         reset_fanout
+        signal_or
         rse_atu
         rse_integrity_checker
         rse_kmu

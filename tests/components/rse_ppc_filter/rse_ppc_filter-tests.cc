@@ -19,6 +19,8 @@ namespace {
 constexpr uint64_t PERIPHNSPPC0 = 0x070;
 constexpr uint64_t PERIPHSPPPC0 = 0x0b0;
 constexpr uint64_t PERIPHNSPPPC0 = 0x0b0;
+constexpr uint64_t PERIPHNSPPCEXP0 = 0x080;
+constexpr uint64_t PERIPHNSPPPCEXP0 = 0x0c0;
 constexpr uint32_t TIMER0_MASK = 1u;
 
 class downstream : public sc_core::sc_module
@@ -166,6 +168,26 @@ TEST(RsePpcFilterTest, NonSecureUnprivilegedAccessRequiresBothPolicies)
     EXPECT_EQ(access(filter, false, false), tlm::TLM_OK_RESPONSE);
 }
 
+TEST(RsePpcFilterTest, PpcExp0OffsetSelectsExpansionPolicyRegisters)
+{
+    rse_protection_ctrl sacfg("exp0_sacfg");
+    rse_protection_ctrl nsacfg("exp0_nsacfg");
+    rse_ppc_filter filter("exp0_filter", &sacfg, &nsacfg);
+    downstream sink("exp0_sink");
+    filter.initiator_socket.bind(sink.target_socket);
+
+    write_policy(sacfg, PERIPHNSPPC0, TIMER0_MASK);
+    write_policy(nsacfg, PERIPHNSPPPC0, TIMER0_MASK);
+    EXPECT_EQ(access(filter, false, false),
+              tlm::TLM_ADDRESS_ERROR_RESPONSE);
+
+    write_policy(sacfg, PERIPHNSPPCEXP0, TIMER0_MASK);
+    EXPECT_EQ(access(filter, false, false),
+              tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    write_policy(nsacfg, PERIPHNSPPPCEXP0, TIMER0_MASK);
+    EXPECT_EQ(access(filter, false, false), tlm::TLM_OK_RESPONSE);
+}
+
 TEST(RsePpcFilterTest, QemuUserAttributeMapsToUnprivilegedContext)
 {
     ::MemTxAttrs raw_attrs {};
@@ -213,6 +235,10 @@ int sc_main(int argc, char* argv[])
         "nonsecure_priv_filter.policy_mask", cci::cci_value(TIMER0_MASK));
     global_broker.set_preset_cci_value(
         "nonsecure_user_filter.policy_mask", cci::cci_value(TIMER0_MASK));
+    global_broker.set_preset_cci_value(
+        "exp0_filter.policy_mask", cci::cci_value(TIMER0_MASK));
+    global_broker.set_preset_cci_value(
+        "exp0_filter.ppc_register_offset", cci::cci_value(0x10u));
 
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
