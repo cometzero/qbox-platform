@@ -386,37 +386,80 @@ paths.
 The Apollo PCIe interrupt endpoint is opt-in. Set
 `QBOX_APOLLO_PCIE_IRQ_TEST=true` to instantiate one `virtio-net-pci` endpoint
 at `0000:00:01.0`. Its fixed test identity is PCI requester/ITS DeviceID
-`0x0008`, SMMU SID `0x0040`, EventID base `0`, and ITS translator
-`0x20850040`. The endpoint-only `iommu-map` avoids assigning the host bridge
-RID to the same SID.
+`0x0008`, SMMU SID `0x0040`, EventID base `0`, ITS translator `0x20850040`,
+and ITS collection-entry size 2. The endpoint-only `iommu-map` avoids
+assigning the host bridge RID to the same SID.
 
-Prepare the generated DT/initramfs test profile and run both modes with the
-top-level helpers:
+Profile generation is admitted only by the immutable Apollo FVP reference
+gate. The gate records that the packaged FVP applies its PCIe/ITS
+configuration but cannot enumerate the endpoint because its first AP-visible
+ECAM access at `0x10040000000` raises an EL3 SError
+(`ESR_EL3=0x00000000be000211`, `ELR_EL3=0xffff8000807d08f0`). It does not
+claim FVP physical ITS delivery or QBox equivalence. The current gate artifact is
+`.omo/evidence/apollo-gic-its/final/F2/cycle2/integration-current/fvp-reference-gate-current.json`
+with SHA256
+`5ceb377244eb0e4fddd6e4346a701fa1a75185d0dc689d2e396c917cb3549a82`.
+Downloaded Fast Models 11.31.25 components/configuration exist; this gate is
+PASS while FVP PCIe/ITS qualification is `UNSUPPORTED`.
+
+Prepare gate-bound A/B UKI disks with the shared endpoint-bound guest probe,
+then run both modes with the top-level helpers:
 
 ```bash
-python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py
+python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py \
+  --fvp-reference-gate \
+    .omo/evidence/apollo-gic-its/final/F2/cycle2/integration-current/fvp-reference-gate-current.json \
+  --base-disk build/local-apollo-qvp/deploy/boot/apollo-qvp-local-disk.img \
+  --base-dtb build/local-apollo-qvp/deploy/boot/apollo-qvp.dtb \
+  --base-initramfs build/local-apollo-qvp/deploy/boot/initramfs.cpio.gz \
+  --output-dir build/qbox-apollo-qvp/pcie-irq-profile
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
   --skip-build --timeout 600 \
-  --rootfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-msix-disk.img \
+  --rootfs build/qbox-apollo-qvp/pcie-irq-profile/apollo-qvp-pcie-msix-disk.img \
   --rootfs-bootargs-profile none \
   --out-dir <msix-output>
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
 python3 scripts/run/run_qbox_apollo_fvp_full.py \
   --skip-build --timeout 600 \
-  --rootfs build/qbox-apollo-fvp/pcie-irq-profile-i4/apollo-qvp-pcie-intx-disk.img \
+  --rootfs build/qbox-apollo-qvp/pcie-irq-profile/apollo-qvp-pcie-intx-disk.img \
   --rootfs-bootargs-profile none \
   --out-dir <intx-output>
 python3 scripts/test/validate_qbox_apollo_pcie_irq_runtime.py \
+  --profile-manifest build/qbox-apollo-qvp/pcie-irq-profile/manifest.json \
   --msix-log <msix-output>/qbox-primary-console.log \
   --intx-log <intx-output>/qbox-primary-console.log \
-  --output build/qbox-apollo-fvp/i4-pcie-irq-runtime-validation.json
+  --output build/qbox-apollo-qvp/pcie-irq-runtime-validation.json
 ```
 
-The generated MSI-X disk is used for the first run. The INTx disk carries
-`pci=nomsi` in its U-Boot script. Linux reports the legacy GIC SPI input 301
-as architectural INTID 333. Both full-system tests use four CPUs and pin the
-selected interrupt affinity to CPU0 before generating network traffic.
+The profile rejects a copied, stale, non-PASS, or hash-mismatched FVP gate and
+stale base UKI inputs before creating output. It hashes every base/source and
+generated artifact, builds independent MSI-X and INTx UKIs and disks, and
+records the exact builder command line. Only the INTx UKI carries `pci=nomsi`.
+The shared guest probe discovers the endpoint and workload target through
+sysfs, proves the IRQ-domain chain, CPU0/CPU1 affinity, CPU1 hotplug fallback,
+replay, and cleanup, and fails closed on workload or affinity errors. Linux
+reports GPEX SPI input 301 as architectural INTID 333. The platform keeps the
+Apollo ITS collection entry size at two bytes.
+
+Current bounded evidence is the F3 r5 result
+`.omo/evidence/apollo-gic-its/final/F3/cycle2/run-current-r5/result.json`
+SHA256
+`db8e74ebdc13c27eb9ba61bde2b2f3d0e2ae181cd93f94c5f477e763817ff8e5` and
+Task10 boundary comparison
+`.omo/evidence/apollo-gic-its/final/F3/cycle2/run-current-r5/boundary-comparison.json`
+SHA256
+`131f94749f1aa39243e19d8605c6b32b019a0e65cf5348a3f261754bf0cf676f`.
+Task10 records 24 semantic rows: four FVP `UNSUPPORTED` rows, twenty QBox
+`PASS` rows, and `device_equivalence=NOT_COMPARABLE`; r5 did not start FVP.
+The known risk is one r3 freerunning RSE/SCP readiness ordering failure. Quiet
+same-input r4 and current-source r5 pass without a retry wrapper, fixed sleep,
+or source synchronization change; the supported cause is not causal proof.
+
+Allowed wording: QBox opt-in PCIe IRQ profile PASS for MSI-X→ITS physical LPI,
+INTx, SPI control, affinity/offline/replay, and cleanup. Forbidden wording:
+FVP PCIe/ITS success, QBox/FVP parity, vLPI proof, full GIC-720AE parity, or
+default-deploy endpoint contamination.
 
 ## Fault Event Test Profile
 
