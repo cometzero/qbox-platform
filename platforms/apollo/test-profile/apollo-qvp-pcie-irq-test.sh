@@ -1,63 +1,48 @@
 #!/bin/sh
 
+set -eu
+
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 export PATH
 
-cmdline="$(cat /proc/cmdline 2>/dev/null)"
-mode=msix
-case " ${cmdline} " in
-    *" pci=nomsi "*) mode=intx ;;
+manifest=/usr/share/apollo-pcie-its/input-manifest.json
+mode_file=/etc/apollo-pcie-its-mode
+probe=/usr/bin/apollo-pcie-its-guest
+
+[ -r "$manifest" ]
+[ -r "$mode_file" ]
+[ -x "$probe" ]
+
+mode=$(cat "$mode_file")
+cmdline=$(cat /proc/cmdline)
+case "$mode" in
+    msix)
+        case " $cmdline " in
+            *" pci=nomsi "*) exit 64 ;;
+        esac
+        ;;
+    intx)
+        case " $cmdline " in
+            *" pci=nomsi "*) ;;
+            *) exit 65 ;;
+        esac
+        ;;
+    *) exit 66 ;;
 esac
 
-echo "__QBOX_PCIE_IRQ_TEST_BEGIN__:${mode}"
-echo "__QBOX_PCIE_BDF__:0000:00:01.0"
-echo "__QBOX_PCIE_CMDLINE__:${cmdline}"
-
-lspci -nn -s 00:01.0 2>/dev/null
-echo "__QBOX_PCIE_LSPCI_RC__:$?"
-lspci -vv -s 00:01.0 2>/dev/null |
-    sed -n '/MSI-X:/s/^/__QBOX_PCIE_MSIX__:/p'
-
-iface=
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    for path in /sys/class/net/*; do
-        [ -r "${path}/address" ] || continue
-        address="$(cat "${path}/address" 2>/dev/null)"
-        if [ "${address}" = "52:54:00:12:34:56" ]; then
-            iface="${path##*/}"
-            break
-        fi
-    done
-    [ -z "${iface}" ] || break
-    sleep 1
-done
-
-echo "__QBOX_PCIE_IFACE__:${iface}"
-if [ -n "${iface}" ]; then
-    ip link set "${iface}" up
-    echo "__QBOX_PCIE_LINK_UP_RC__:$?"
-fi
-
-awk '/virtio/ { irq=$1; gsub(/:/, "", irq); print irq }' /proc/interrupts |
-while read -r irq; do
-    case "${irq}" in
-        ""|*[!0-9]*) continue ;;
+endpoint=/sys/bus/pci/devices/0000:00:01.0
+[ -d "$endpoint" ]
+endpoint_real=$(readlink -f "$endpoint")
+target=
+for net in /sys/class/net/*; do
+    case "$(readlink -f "$net/device")" in
+        "$endpoint_real"/*) target=${net##*/}; break ;;
     esac
-    echo 1 > "/proc/irq/${irq}/smp_affinity" 2>/dev/null || true
 done
+[ -n "$target" ]
+ip link set "$target" up
+timeout 15 udhcpc -n -q -t 3 -T 1 -i "$target"
 
-echo "__QBOX_PCIE_IRQ_BEFORE__"
-cat /proc/interrupts
-echo "__QBOX_PCIE_IRQ_BEFORE_END__"
-
-if [ -n "${iface}" ]; then
-    udhcpc -n -q -t 3 -T 1 -i "${iface}"
-    echo "__QBOX_PCIE_UDHCPC_RC__:$?"
-    ping -c 2 -W 2 10.0.2.2
-    echo "__QBOX_PCIE_PING_RC__:$?"
-fi
-
-echo "__QBOX_PCIE_IRQ_AFTER__"
-cat /proc/interrupts
-echo "__QBOX_PCIE_IRQ_AFTER_END__"
-echo "__QBOX_PCIE_IRQ_TEST_DONE__:${mode}"
+input_sha256=$(sha256sum "$manifest")
+input_sha256=${input_sha256%% *}
+exec "$probe" qbox "$mode" "$input_sha256"
