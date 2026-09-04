@@ -268,7 +268,7 @@ function si_cl1.enable(ctx, platform)
 
     local si_cl1_image = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL1_IMAGE",
-        ctx.apollo_root.."build/local-apollo-fvp/deploy/firmware/zephyr-demos-cl1.bin")
+        ctx.apollo_root.."build/tmp_baremetal/deploy/images/apollo-qvp/zephyr-demos-cl1.bin")
     local si_cl1_log = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL1_LOG",
         ctx.apollo_root.."build/qbox-apollo-fvp/full-system/qbox-safety-island-cl1.log")

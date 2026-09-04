@@ -990,7 +990,7 @@ function si_cl0.enable(ctx, platform)
 
     local si_cl0_image = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL0_IMAGE",
-        ctx.apollo_root.."build/local-apollo-fvp/deploy/firmware/si0_ramfw.bin")
+        ctx.apollo_root.."build/tmp_baremetal/deploy/images/apollo-qvp/si0_ramfw.bin")
     local si_cl0_log = ctx.getenv_or(
         "QBOX_APOLLO_FULL_SI_CL0_LOG",
         ctx.getenv_or(

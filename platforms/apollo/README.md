@@ -183,7 +183,7 @@ loopback Monitor endpoint:
 ```bash
 QBOX_APOLLO_MONITOR=true \
 QBOX_APOLLO_RUNTIME_INJECTION=true \
-./run_qbox_local.sh
+./run_qbox_yocto.sh
 ```
 
 `QBOX_APOLLO_MONITOR_BIND_ADDRESS` defaults to `127.0.0.1`. The Monitor
@@ -314,8 +314,6 @@ Enable the QBox web monitor for an interactive full-system boot with
 `--monitor-port` also enables the monitor:
 
 ```bash
-./run_qbox_local.sh --monitor
-./run_qbox_local.sh --monitor-port 19090
 ./run_qbox_yocto.sh --monitor --monitor-port 19090
 ```
 
@@ -409,19 +407,17 @@ then run both modes with the top-level helpers:
 python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py \
   --fvp-reference-gate \
     .omo/evidence/apollo-gic-its/final/F2/cycle2/integration-current/fvp-reference-gate-current.json \
-  --base-disk build/local-apollo-qvp/deploy/boot/apollo-qvp-local-disk.img \
-  --base-dtb build/local-apollo-qvp/deploy/boot/apollo-qvp.dtb \
-  --base-initramfs build/local-apollo-qvp/deploy/boot/initramfs.cpio.gz \
+  --base-disk build/tmp_baremetal/deploy/images/apollo-qvp/nexios-bsp-initramfs-apollo-qvp.wic \
+  --base-dtb build/tmp_baremetal/deploy/images/apollo-qvp/apollo-qvp.dtb \
+  --base-initramfs build/tmp_baremetal/deploy/images/apollo-qvp/nexios-bsp-initramfs-apollo-qvp.cpio.gz \
   --output-dir build/qbox-apollo-qvp/pcie-irq-profile
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
-python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --skip-build --timeout 600 \
+./run_qbox_yocto.sh --headless --exit-after-pass --timeout 600 \
   --rootfs build/qbox-apollo-qvp/pcie-irq-profile/apollo-qvp-pcie-msix-disk.img \
   --rootfs-bootargs-profile none \
   --out-dir <msix-output>
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
-python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --skip-build --timeout 600 \
+./run_qbox_yocto.sh --headless --exit-after-pass --timeout 600 \
   --rootfs build/qbox-apollo-qvp/pcie-irq-profile/apollo-qvp-pcie-intx-disk.img \
   --rootfs-bootargs-profile none \
   --out-dir <intx-output>
@@ -472,9 +468,7 @@ observer. Set `QBOX_APOLLO_FAULT_EVENT_LOG` to write the ordered event JSON.
 QBOX_APOLLO_NUM_CPUS=4 \
 QBOX_APOLLO_FAULT_EVENT_TEST=true \
 QBOX_APOLLO_FAULT_EVENT_LOG="$PWD/build/qbox-apollo-qvp/fault-events.json" \
-python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --skip-build \
-  --local-build-dir build/local-apollo-qvp \
+./run_qbox_yocto.sh --headless --exit-after-pass \
   --timeout 600 \
   --rootfs-bootargs-profile none \
   --out-dir build/qbox-apollo-qvp/fault-event-construction
@@ -487,23 +481,21 @@ boot only validates construction when no SMMU fault occurs. The observer is
 QBox test instrumentation and does not assert an undocumented physical
 SMMU-to-NI-710AE-FMU route in Zena CSS.
 
-## Build Local Artifacts
+## Build Yocto Artifacts
 
 ```bash
-./local_build.sh build
+./yocto_build.sh --bsp
+./yocto_build.sh
 ```
 
-Local source-build artifacts follow `build/local-${MACHINE}`. The helper reads
-the active Yocto machine and currently resolves to `apollo-qvp`; an explicit
-`MACHINE` overrides it. `apollo-fvp` is the built-in fallback only when no
-active machine is available or Yocto-variable loading is disabled. The
-full-system runner consumes the local deploy artifacts, including the rootfs,
-RSE ROM/flash/OTP, AP flash, SI CL0 firmware, and SI CL1 Zephyr images.
+The launcher consumes the deployed Yocto rootfs, RSE ROM/flash/OTP, AP flash,
+SI CL0 firmware, SI CL1 Zephyr image, QBox provider, and generated
+`.qboxconf`.
 
 ## Build QBox Targets
 
 ```bash
-./local_build.sh qbox
+./yocto_build.sh qbox-apollo-qvp-native -c compile
 ```
 
 ## Full-System RSE-First Boot
@@ -530,11 +522,11 @@ Use the persistent-state reset option for a fresh PS/ITS state and bounded
 U-Boot FWU Regular-State check:
 
 ```bash
-./run_qbox_local.sh --uboot-only --reset-rse-state
+./run_qbox_yocto.sh --uboot-only --reset-rse-state
 ```
 
 ```bash
-./run_qbox_local.sh
+./run_qbox_yocto.sh
 ```
 
 For a bounded headless active-QVP command, use:
@@ -543,16 +535,12 @@ For a bounded headless active-QVP command, use:
 ./run_qbox_yocto.sh --headless --exit-after-pass --timeout 900
 ```
 
-For an explicit local-source full-system run, use:
+For an explicit headless full-system run, use:
 
 ```bash
-python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --skip-build \
+./run_qbox_yocto.sh --headless --exit-after-pass \
   --timeout 2400 \
   --rootfs-bootargs-profile quiet-console \
-  --cc3xx-qemu-native-backend \
-  --rse-lms-accel \
-  --rse-fast-boot-sram-dmi \
   --out-dir build/qbox-apollo-qvp/full-system-sram-dmi
 ```
 
@@ -589,7 +577,7 @@ The command should print nothing. Use the legacy file-backed SRAM aliases only
 for explicit debug or compatibility rollback:
 
 ```bash
-./run_qbox_local.sh --legacy-file-backed-sram
+./run_qbox_yocto.sh --legacy-file-backed-sram
 ```
 
 For private RSE runtime debugging, the legacy equivalent is:
@@ -612,16 +600,15 @@ The 2026-07-16 baseline completed the SMD/ATU policy-routing migration and the
 reset-held CPU quantum-keeper fix. Reproduce the narrow build/test gate first:
 
 ```bash
-./local_build.sh qbox --qbox-unit-tests
+./yocto_build.sh qbox-apollo-qvp-native -c compile
 python3 scripts/test/validate_qbox_apollo_fvp_full_map.py
 python3 scripts/test/audit_qbox_core_boundary.py
 ```
 
-Then run the local-source full-system image and audit its result:
+Then run the Yocto full-system image and audit its result:
 
 ```bash
-python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --timeout 600 \
+./run_qbox_yocto.sh --headless --exit-after-pass --timeout 600 \
   --out-dir build/qbox-apollo-fvp/<run-id>
 python3 scripts/test/audit_qbox_apollo_fvp_full_coverage.py \
   --result-json build/qbox-apollo-fvp/<run-id>/result.json \
@@ -724,10 +711,8 @@ Full-system AP PC tracing uses the RSE-runner controls
 ## Long-Running Full-System Boot
 
 ```bash
-python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --skip-build \
+./run_qbox_yocto.sh --headless \
   --keep-running-after-pass \
   --timeout "${QBOX_APOLLO_TIMEOUT:-2400}" \
-  --local-build-dir build/local-${MACHINE} \
   --out-dir build/qbox-apollo-qvp/long-running
 ```

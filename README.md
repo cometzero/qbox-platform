@@ -63,26 +63,17 @@ From the Arm Auto Solutions workspace root, build the Apollo QBox platform
 dependencies with:
 
 ```bash
-./local_build.sh qbox
+./yocto_build.sh --bsp
 ```
 
-The workspace helper configures this overlay as the CMake source tree and
-passes the core and QEMU source paths explicitly:
+The `qbox-apollo-qvp-native` recipe configures this overlay as the CMake
+source tree and passes the core and QEMU source paths explicitly.
 
 ```text
-QBOX_CORE_DIR=hsoc-stack/tools/qbox
-QBOX_PLATFORM_DIR=hsoc-stack/tools/qbox-platform
-QBOX_PLATFORM_BUILD_DIR=build/local-${MACHINE}/work/qbox-platform
-QBOX_QEMU_DIR=hsoc-stack/tools/qemu
+HSOC_APOLLO_QBOX_SRC=hsoc-stack/tools/qbox
+HSOC_APOLLO_QBOX_PLATFORM_SRC=hsoc-stack/tools/qbox-platform
+HSOC_APOLLO_QEMU_SRC=hsoc-stack/tools/qemu
 ```
-
-The local build reads the active machine from `build/conf/local.conf` and
-currently uses `apollo-qvp`. An explicit `MACHINE` overrides it; `apollo-fvp`
-is only the built-in fallback when no active machine is available or
-Yocto-variable loading is intentionally disabled.
-
-`QBOX_BUILD_DIR` is accepted only as a compatibility alias for
-`QBOX_PLATFORM_BUILD_DIR`.
 
 The default aggregate target is:
 
@@ -90,36 +81,13 @@ The default aggregate target is:
 apollo_fvp_full_system
 ```
 
-## Manual Configure
-
-When debugging CMake directly from the workspace root:
-
-```bash
-MACHINE="${MACHINE:-apollo-qvp}"
-cmake \
-  -S hsoc-stack/tools/qbox-platform \
-  -B build/local-${MACHINE}/work/qbox-platform \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DQBOX_CORE_SOURCE_DIR="${PWD}/hsoc-stack/tools/qbox" \
-  -DQBOX_QEMU_SOURCE_DIR="${PWD}/hsoc-stack/tools/qemu" \
-  -DLIBQEMU_GIT="file://${PWD}/hsoc-stack/tools/qemu" \
-  -DFETCHCONTENT_SOURCE_DIR_LIBQEMU="${PWD}/hsoc-stack/tools/qemu"
-
-cmake --build build/local-${MACHINE}/work/qbox-platform \
-  --target apollo_fvp_full_system \
-  --parallel 8
-```
-
-For focused iteration, replace `apollo_fvp_full_system` with a component or
-test target, for example `mhu320ae-tests`, `mmu720ae`, or `platforms-vp`.
-
 ## Run
 
-After local build artifacts exist, launch the Apollo full-system QBox demo from
-the workspace root:
+After Yocto artifacts exist, launch the Apollo full-system QBox demo from the
+workspace root:
 
 ```bash
-./run_qbox_local.sh
+./run_qbox_yocto.sh
 ```
 
 For bounded headless validation of the active QVP deploy image:
@@ -128,28 +96,8 @@ For bounded headless validation of the active QVP deploy image:
 ./run_qbox_yocto.sh --headless --exit-after-pass --timeout 900
 ```
 
-For explicit FVP local-source comparison:
-
-```bash
-python3 scripts/run/run_qbox_apollo_fvp_full.py \
-  --skip-build \
-  --timeout 900
-```
-
-The explicit FVP runner writes `build/qbox-apollo-fvp/`. Yocto-built Apollo QVP
-runs use `build/qbox-apollo-qvp/` and require the generated QVP `.qboxconf`
-plus native sysroot provider.
-
-## Packaging
-
-To package existing local-build outputs into a QBox-runnable image set:
-
-```bash
-export MACHINE="${MACHINE:-apollo-qvp}"
-./local_build.sh --package
-./run_qbox_local.sh \
-  --local-build-dir build/local-${MACHINE}/package/qbox/local-build
-```
+Yocto-built Apollo QVP runs use `build/qbox-apollo-qvp/` and require the
+generated QVP `.qboxconf` plus native sysroot provider.
 
 ## Related Docs
 
