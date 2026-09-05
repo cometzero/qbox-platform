@@ -26,6 +26,32 @@ local ROS_RTC_SPI = 268
 local ROS_RTC_INTID = 300
 local ROS_UART_BASES = {0x300E0000; 0x300F0000}
 local ROS_UART_INTIDS = {301; 302}
+local ROS_DW_I2C_BASES = {
+    0x30100000;
+    0x30110000;
+    0x30120000;
+    0x30130000;
+    0x30140000;
+    0x30150000;
+}
+local ROS_DW_I2C_SPIS = {320; 321; 322; 323; 324; 325}
+local ROS_DW_I2C_INTIDS = {352; 353; 354; 355; 356; 357}
+local ROS_DW_SSI_BASES = {
+    0x30160000;
+    0x30170000;
+    0x30180000;
+    0x30190000;
+}
+local ROS_DW_SSI_SPIS = {326; 327; 328; 329}
+local ROS_DW_SSI_INTIDS = {358; 359; 360; 361}
+local ROS_DW_UART_BASES = {
+    0x301A0000;
+    0x301B0000;
+    0x301C0000;
+    0x301D0000;
+}
+local ROS_DW_UART_SPIS = {330; 331; 332; 333}
+local ROS_DW_UART_INTIDS = {362; 363; 364; 365}
 
 function ros.define(ctx, platform)
     platform.ap_virtioblk_0 = enable_ap_cpus and {
@@ -141,6 +167,66 @@ function ros.define(ctx, platform)
         irq_out = {bind = "&ap_gic.spi_in_"..ROS_RTC_SPI};
     } or nil
 
+    for i=0,5 do
+        local controller = "ap_dw_i2c_"..i
+        local eeprom = controller.."_eeprom"
+        platform[controller] = enable_ap_cpus and {
+            moduletype = "dw_apb_i2c";
+            dylib_path = "dw-apb-i2c";
+            target_socket = {
+                address = ROS_DW_I2C_BASES[i + 1];
+                size = ROS_MMIO_SIZE;
+                bind = "&host_router.initiator_socket";
+            };
+            i2c_socket = {bind = "&"..eeprom..".i2c_socket"};
+            irq = {bind = "&ap_gic.spi_in_"..ROS_DW_I2C_SPIS[i + 1]};
+        } or nil
+        platform[eeprom] = enable_ap_cpus and {
+            moduletype = "dw_i2c_eeprom";
+            dylib_path = "dw-apb-i2c";
+            address = 0x50;
+            size = 256;
+            address_width = 8;
+            page_size = 8;
+        } or nil
+    end
+
+    for i=0,3 do
+        platform["ap_dw_ssi_"..i] = enable_ap_cpus and {
+            moduletype = "dw_apb_ssi";
+            dylib_path = "dw-apb-ssi";
+            clock_frequency_hz = 24000000;
+            fifo_depth = 16;
+            num_chip_selects = 1;
+            target_socket = {
+                address = ROS_DW_SSI_BASES[i + 1];
+                size = ROS_MMIO_SIZE;
+                bind = "&host_router.initiator_socket";
+            };
+            irq = {bind = "&ap_gic.spi_in_"..ROS_DW_SSI_SPIS[i + 1]};
+        } or nil
+    end
+
+    for i=0,3 do
+        local uart = "ap_dw_uart_"..i
+        platform[uart] = enable_ap_cpus and {
+            moduletype = "dw_apb_uart";
+            dylib_path = "dw-apb-uart";
+            clock_frequency_hz = 24000000;
+            target_socket = {
+                address = ROS_DW_UART_BASES[i + 1];
+                size = ROS_MMIO_SIZE;
+                bind = "&host_router.initiator_socket";
+            };
+            irq = {bind = "&ap_gic.spi_in_"..ROS_DW_UART_SPIS[i + 1]};
+        } or nil
+        if i == 0 or i == 2 then
+            platform[uart].backend_socket = {
+                bind = "&ap_dw_uart_"..(i + 1)..".backend_socket";
+            }
+        end
+    end
+
 end
 
 ros.peripherals = {
@@ -182,7 +268,48 @@ ros.peripherals = {
             {base = ROS_UART_BASES[2]; size = ROS_MMIO_SIZE; irq = ROS_UART_INTIDS[2]; modeled = false};
         };
     };
+    dwc = {
+        i2c = {
+            {name = "ap_dw_i2c_0"; base = ROS_DW_I2C_BASES[1]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2C_INTIDS[1]; modeled = true};
+            {name = "ap_dw_i2c_1"; base = ROS_DW_I2C_BASES[2]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2C_INTIDS[2]; modeled = true};
+            {name = "ap_dw_i2c_2"; base = ROS_DW_I2C_BASES[3]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2C_INTIDS[3]; modeled = true};
+            {name = "ap_dw_i2c_3"; base = ROS_DW_I2C_BASES[4]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2C_INTIDS[4]; modeled = true};
+            {name = "ap_dw_i2c_4"; base = ROS_DW_I2C_BASES[5]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2C_INTIDS[5]; modeled = true};
+            {name = "ap_dw_i2c_5"; base = ROS_DW_I2C_BASES[6]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2C_INTIDS[6]; modeled = true};
+        };
+        ssi = {
+            {name = "ap_dw_ssi_0"; base = ROS_DW_SSI_BASES[1]; size = ROS_MMIO_SIZE; irq = ROS_DW_SSI_INTIDS[1]; modeled = true};
+            {name = "ap_dw_ssi_1"; base = ROS_DW_SSI_BASES[2]; size = ROS_MMIO_SIZE; irq = ROS_DW_SSI_INTIDS[2]; modeled = true};
+            {name = "ap_dw_ssi_2"; base = ROS_DW_SSI_BASES[3]; size = ROS_MMIO_SIZE; irq = ROS_DW_SSI_INTIDS[3]; modeled = true};
+            {name = "ap_dw_ssi_3"; base = ROS_DW_SSI_BASES[4]; size = ROS_MMIO_SIZE; irq = ROS_DW_SSI_INTIDS[4]; modeled = true};
+        };
+        uart = {
+            {name = "ap_dw_uart_0"; base = ROS_DW_UART_BASES[1]; size = ROS_MMIO_SIZE; irq = ROS_DW_UART_INTIDS[1]; modeled = true};
+            {name = "ap_dw_uart_1"; base = ROS_DW_UART_BASES[2]; size = ROS_MMIO_SIZE; irq = ROS_DW_UART_INTIDS[2]; modeled = true};
+            {name = "ap_dw_uart_2"; base = ROS_DW_UART_BASES[3]; size = ROS_MMIO_SIZE; irq = ROS_DW_UART_INTIDS[3]; modeled = true};
+            {name = "ap_dw_uart_3"; base = ROS_DW_UART_BASES[4]; size = ROS_MMIO_SIZE; irq = ROS_DW_UART_INTIDS[4]; modeled = true};
+        };
+    };
 }
+
+local function visit_dwc_targets(platform, visitor)
+    for i=0,5 do
+        local device = platform["ap_dw_i2c_"..i]
+        if device ~= nil then
+            visitor(device.target_socket)
+        end
+    end
+    for i=0,3 do
+        local ssi = platform["ap_dw_ssi_"..i]
+        local uart = platform["ap_dw_uart_"..i]
+        if ssi ~= nil then
+            visitor(ssi.target_socket)
+        end
+        if uart ~= nil then
+            visitor(uart.target_socket)
+        end
+    end
+end
 
 function ros.bind_ap_view_targets(platform, bind_ap_target)
     for i=0,(ROS_BLOCK_DEVICE_COUNT-1) do
@@ -201,6 +328,7 @@ function ros.bind_ap_view_targets(platform, bind_ap_target)
     if platform.ap_rtc_0 ~= nil and platform.ap_rtc_0.mem ~= nil then
         bind_ap_target(platform.ap_rtc_0.mem)
     end
+    visit_dwc_targets(platform, bind_ap_target)
 end
 
 function ros.lower_decode_priorities(platform, lower_decode_priority, priority)
@@ -220,6 +348,9 @@ function ros.lower_decode_priorities(platform, lower_decode_priority, priority)
     if platform.ap_rtc_0 ~= nil and platform.ap_rtc_0.mem ~= nil then
         lower_decode_priority(platform.ap_rtc_0.mem, priority)
     end
+    visit_dwc_targets(platform, function(target)
+        lower_decode_priority(target, priority)
+    end)
 end
 
 return ros

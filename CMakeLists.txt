@@ -184,6 +184,9 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     loader
     char_backend_file
     char_backend_stdio
+    dw-apb-i2c
+    dw-apb-ssi
+    dw-apb-uart
     uart-pl011
     global_peripheral_initiator
     cpu_arm_cortexA720AE

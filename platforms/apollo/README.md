@@ -324,7 +324,30 @@ port to all host interfaces. Use host firewall rules or an isolated network on
 shared systems when the dashboard must remain local-only.
 
 `hw-block/ros.lua` tracks the modeled Rest of System subset from the Arm Zena
-CSS FVP RoS peripheral table: AP-visible virtio block/net/rng and PL031 RTC.
+CSS FVP RoS peripheral table: AP-visible virtio block/net/rng, PL031 RTC, and
+QVP-only DesignWare APB peripheral validation targets.
+
+## DesignWare APB Peripherals
+
+Apollo QVP exposes a bounded DesignWare APB validation island in the AP RoS
+expansion window. The models are Linux-driver compatibility models, not full
+Synopsys RTL configuration replicas.
+
+| Block | Instances | AP base range | AP GIC SPI range | Guest validation |
+| --- | ---: | --- | --- | --- |
+| `dw_apb_i2c` + `dw_i2c_eeprom` | 6 | `0x30100000`-`0x3015ffff` | 320-325 | AT24 EEPROM read/write/compare at `0x50` |
+| `dw_apb_ssi` | 4 | `0x30160000`-`0x3019ffff` | 326-329 | `spi-loopback-test` with `SPI_LOOP` |
+| `dw_apb_uart` | 4 | `0x301a0000`-`0x301dffff` | 330-333 | `ttyS0` <-> `ttyS1`, `ttyS2` <-> `ttyS3` |
+
+Run the opt-in guest probe through the normal QBox launcher:
+
+```bash
+./run_qbox_yocto.sh --headless --exit-after-pass --dwc-peripheral-probe
+```
+
+The probe records `dwc_peripheral_probe` in `result.json`. It is a pass only
+when all six EEPROM comparisons, all four SPI loopback bindings, and both UART
+pairs complete with zero return codes.
 
 `hw-block/system_mgmt.lua` owns cross-domain system-management hardware:
 AP/SI/RSE MHU windows, AP/RSE logical aliases, reset/power integration, SMD

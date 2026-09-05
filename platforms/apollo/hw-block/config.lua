@@ -104,6 +104,15 @@ function ap_cold_reset_bind_targets()
         targets[#targets + 1] = "&ap_smmu_0.reset"
     end
 
+    for i=0,5 do
+        targets[#targets + 1] = "&ap_dw_i2c_"..i..".reset"
+        targets[#targets + 1] = "&ap_dw_i2c_"..i.."_eeprom.reset"
+    end
+    for i=0,3 do
+        targets[#targets + 1] = "&ap_dw_ssi_"..i..".reset"
+        targets[#targets + 1] = "&ap_dw_uart_"..i..".reset"
+    end
+
     return table.concat(targets, ";")
 end
 
