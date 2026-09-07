@@ -185,6 +185,8 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     char_backend_file
     char_backend_stdio
     dw-apb-i2c
+    i2c-bus
+    pca9539
     dw-apb-ssi
     dw-apb-uart
     uart-pl011

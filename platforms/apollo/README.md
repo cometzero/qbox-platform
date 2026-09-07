@@ -733,6 +733,27 @@ Full-system AP PC tracing uses the RSE-runner controls
 
 ## Long-Running Full-System Boot
 
+### PCA9539 board demo
+
+`board/pca9539.lua` connects PCA9539 at address `0x74` alongside the existing
+I2C0 EEPROM (`0x50`). SMD PL061 GPIO0 drives RESET_N and GPIO1 receives INT_N;
+both have board pull-ups. PCA lines 0→1 and 8→9 provide two-bank loopbacks.
+The kernel uses the existing `gpio-pca953x` driver, not a platform-specific driver.
+After building and booting the Yocto BSP, run from the workspace root:
+
+```bash
+ssh -p 8022 root@127.0.0.1 'sh -s' < scripts/test/verify_qbox_pca9539.sh
+```
+
+The test temporarily unbinds the driver to exercise PL061-controlled reset,
+then checks GPIO readback, edge events, and the serving PL061 GPIO1 IRQ counter.
+The upstream GIC route is INTID 225; its chained counter is not exposed in
+`/proc/interrupts` on this kernel.
+Use an isolated test guest: the test owns these GPIO lines and resets the expander.
+See workspace `doc/board/pca9539.md` for wiring, model limitations, and results.
+
+### Keep the guest running
+
 ```bash
 ./run_qbox_yocto.sh --headless \
   --keep-running-after-pass \
