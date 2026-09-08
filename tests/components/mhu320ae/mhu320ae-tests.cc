@@ -863,6 +863,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     ResetSink bridge_rse_mbx_irq("bridge_rse_mbx_irq");
     SignalSource reset_test_pbx_reset("reset_test_pbx_reset");
     SignalSource reset_test_mbx_reset("reset_test_mbx_reset");
+    SignalSource bridge_ap_pbx_reset("bridge_ap_pbx_reset");
+    SignalSource bridge_rse_mbx_reset("bridge_rse_mbx_reset");
     ResetSink reset_test_requester_hold("reset_test_requester_hold");
     ResetSink bridge_ap_requester0_hold("bridge_ap_requester0_hold");
     ResetSink bridge_ap_requester1_hold("bridge_ap_requester1_hold");
@@ -938,6 +940,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     bridge_rse_mbx.irq.bind(bridge_rse_mbx_irq.reset);
     reset_test_pbx_reset.signal.bind(reset_test_pbx.reset);
     reset_test_mbx_reset.signal.bind(reset_test_mbx.reset);
+    bridge_ap_pbx_reset.signal.bind(bridge_ap_pbx.reset);
+    bridge_rse_mbx_reset.signal.bind(bridge_rse_mbx.reset);
     reset_test_pbx.requester_hold[0].bind(reset_test_requester_hold.reset);
     bridge_ap_pbx.requester_hold[0].bind(bridge_ap_requester0_hold.reset);
     bridge_ap_pbx.requester_hold[1].bind(bridge_ap_requester1_hold.reset);
@@ -1530,6 +1534,49 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
 
     const uint32_t bridge_notify_channel = read32(bridge_ap_pbx_bus, DBCH_CFG0);
     const uint64_t bridge_notify_base = 0x1000 + (bridge_notify_channel * DBCW_STRIDE);
+
+    EXPECT_FALSE(bridge_rse_mbx.runtime_drop_next_doorbell(0));
+    EXPECT_FALSE(bridge_ap_pbx.runtime_drop_next_doorbell(
+        read32(bridge_ap_pbx_bus, DBCH_CFG0) + 1u));
+    EXPECT_TRUE(bridge_ap_pbx.runtime_drop_next_doorbell(1));
+    bridge_ap_pbx.runtime_clear_doorbell_fault();
+    EXPECT_FALSE(bridge_ap_pbx.runtime_doorbell_fault_snapshot().armed);
+    EXPECT_TRUE(bridge_ap_pbx.runtime_drop_next_doorbell(2));
+    write32(bridge_ap_pbx_bus, DBCW_SET + (2 * DBCW_STRIDE), 0x20u);
+    auto doorbell_fault = bridge_ap_pbx.runtime_doorbell_fault_snapshot();
+    EXPECT_FALSE(doorbell_fault.armed);
+    EXPECT_EQ(doorbell_fault.channel, 2u);
+    EXPECT_EQ(doorbell_fault.match_count, 1u);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, DBCW_ST + (2 * DBCW_STRIDE)),
+              0x20u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_ST + (2 * DBCW_STRIDE)), 0u);
+
+    bridge_ap_pbx_reset.write(true);
+    bridge_rse_mbx_reset.write(true);
+    bridge_ap_pbx_reset.write(false);
+    bridge_rse_mbx_reset.write(false);
+    write32(bridge_ap_pbx_bus, DBCW_SET + (2 * DBCW_STRIDE), 0x40u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_ST + (2 * DBCW_STRIDE)),
+              0x40u);
+    write32(bridge_rse_mbx_bus, DBCW_CLR + (2 * DBCW_STRIDE), 0xffffffffu);
+
+    EXPECT_TRUE(bridge_ap_pbx.runtime_drop_next_doorbell(3));
+    bridge_ap_pbx_reset.write(true);
+    doorbell_fault = bridge_ap_pbx.runtime_doorbell_fault_snapshot();
+    EXPECT_FALSE(doorbell_fault.armed);
+    EXPECT_EQ(doorbell_fault.match_count, 1u);
+    bridge_ap_pbx_reset.write(false);
+    write32(bridge_ap_pbx_bus, DBCW_SET + (3 * DBCW_STRIDE), 0x80u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_ST + (3 * DBCW_STRIDE)),
+              0x80u);
+    write32(bridge_rse_mbx_bus, DBCW_CLR + (3 * DBCW_STRIDE), 0xffffffffu);
+    bridge_ap_pbx_reset.write(true);
+    bridge_rse_mbx_reset.write(true);
+    bridge_ap_pbx_reset.write(false);
+    bridge_rse_mbx_reset.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
+
     const auto bridge_irq_write_count = bridge_rse_mbx_irq.write_count;
 
     bridge_ap_pbx_unused.write32(40 + SCMI_STATUS, 0x55aau);

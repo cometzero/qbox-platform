@@ -159,6 +159,12 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint16_t RPMSG_HDR_SIZE = 16;
 
 public:
+    struct runtime_doorbell_fault_state {
+        bool armed = false;
+        unsigned int channel = 0;
+        uint64_t match_count = 0;
+    };
+
     class mhu320ae_frame_model
     {
         std::array<uint8_t, REG_SPACE_SIZE> m_regs {};
@@ -554,6 +560,7 @@ private:
     std::unordered_map<uint64_t, ps_entry> m_ps_store;
     std::array<measurement_entry, TFM_MEASUREMENT_SLOT_COUNT> m_measurements {};
     bool m_reset_asserted = false;
+    runtime_doorbell_fault_state m_runtime_doorbell_fault;
 
     bool is_mbx() const { return p_frame.get_value() == "mbx"; }
 
@@ -946,6 +953,8 @@ private:
             trace_event("reset-deasserted");
             return;
         }
+
+        m_runtime_doorbell_fault.armed = false;
 
         m_frame.configure(is_mbx(), channel_count(), p_feat_spt0.get_value(),
                           p_feat_spt1.get_value(), p_iidr.get_value(),
@@ -2146,7 +2155,18 @@ private:
         }
 
         if (p_protocol.get_value() != "doorbell") {
-            if (auto mbx = paired_mbx()) {
+            const bool drop = m_runtime_doorbell_fault.armed &&
+                              m_runtime_doorbell_fault.channel == channel;
+            if (drop) {
+                m_runtime_doorbell_fault.armed = false;
+                ++m_runtime_doorbell_fault.match_count;
+
+                std::ostringstream fault_detail;
+                fault_detail << "channel=" << channel
+                             << " match_count="
+                             << m_runtime_doorbell_fault.match_count;
+                trace_event("runtime-doorbell-dropped", fault_detail.str());
+            } else if (auto mbx = paired_mbx()) {
                 mbx->signal_doorbell_channel(channel, value);
             }
             schedule_requester_hold(channel, requester);
@@ -2958,6 +2978,32 @@ protected:
 
 public:
     SC_HAS_PROCESS(mhu320ae);
+
+    bool runtime_drop_next_doorbell(unsigned int channel)
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        if (m_reset_asserted || is_mbx() ||
+            p_protocol.get_value() != "doorbell-bridge" ||
+            channel >= channel_count()) {
+            return false;
+        }
+
+        m_runtime_doorbell_fault.armed = true;
+        m_runtime_doorbell_fault.channel = channel;
+        return true;
+    }
+
+    void runtime_clear_doorbell_fault()
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        m_runtime_doorbell_fault.armed = false;
+    }
+
+    runtime_doorbell_fault_state runtime_doorbell_fault_snapshot() const
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        return m_runtime_doorbell_fault;
+    }
 
     tlm_utils::simple_target_socket<mhu320ae, DEFAULT_TLM_BUSWIDTH> target_socket;
     tlm_utils::simple_initiator_socket<mhu320ae, DEFAULT_TLM_BUSWIDTH> initiator_socket;
