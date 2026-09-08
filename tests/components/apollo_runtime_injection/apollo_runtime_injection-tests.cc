@@ -2,6 +2,7 @@
 
 #include <apollo_runtime_injection.h>
 
+#include <limits>
 #include <qemu-instance.h>
 #include <test/test.h>
 #include <tlm_utils/simple_initiator_socket.h>
@@ -51,6 +52,17 @@ bool snapshot_bool(const gs::RuntimeTargetSnapshotReply& reply,
     return found->second.boolean();
 }
 
+uint64_t snapshot_u64(const gs::RuntimeTargetSnapshotReply& reply,
+                      const std::string& name)
+{
+    TEST_ASSERT(reply.ok());
+    const auto found = reply.value.values.find(name);
+    TEST_ASSERT(found != reply.value.values.end());
+    TEST_ASSERT(found->second.type() ==
+                RuntimeActionValue::Type::UNSIGNED_INTEGER);
+    return found->second.unsigned_integer();
+}
+
 class ApolloRuntimeInjectionTest : public TestBench
 {
     QemuInstanceManager m_inst_manager;
@@ -65,18 +77,21 @@ class ApolloRuntimeInjectionTest : public TestBench
     tlm_utils::simple_initiator_socket<
         ApolloRuntimeInjectionTest, DEFAULT_TLM_BUSWIDTH> m_ssu_access;
     TargetSignalSocket<bool> m_gic_spi;
+    TargetSignalSocket<bool> m_system_reset;
+    TargetSignalSocket<bool> m_board_gpio;
 
     void run_test()
     {
         wait(sc_core::SC_ZERO_TIME);
 
         const auto capabilities = m_service.capabilities();
-        TEST_ASSERT(capabilities.size() == 27);
+        TEST_ASSERT(capabilities.size() == 28);
         TEST_ASSERT(capabilities[0].resource_type ==
                     RuntimeResourceType::INTERRUPT);
         TEST_ASSERT(capabilities[1].resource_type == RuntimeResourceType::EVENT);
         TEST_ASSERT(capabilities[2].resource_type ==
                     RuntimeResourceType::CONTROL);
+        TEST_ASSERT(capabilities[3].target == "apollo.control.system-reset");
 
         auto no_reset = request("apollo.gpio.rse0.pin0", "drive-high");
         no_reset.clear_on_reset = false;
@@ -94,6 +109,11 @@ class ApolloRuntimeInjectionTest : public TestBench
         const auto scheduled = m_service.submit(delayed);
         TEST_ASSERT(scheduled.ok());
         TEST_ASSERT(scheduled.value.state == RuntimeActionState::SCHEDULED);
+        TEST_ASSERT(scheduled.value.has_requested_sim_time_ns);
+        TEST_ASSERT(scheduled.value.requested_sim_time_ns ==
+                    static_cast<uint64_t>(sc_core::sc_time_stamp() /
+                                          sc_core::sc_time(1, sc_core::SC_NS)) +
+                        100);
 
         const auto duplicate = m_service.submit(delayed);
         TEST_ASSERT(!duplicate.ok());
@@ -118,6 +138,38 @@ class ApolloRuntimeInjectionTest : public TestBench
         TEST_ASSERT(!snapshot_bool(
             m_service.target_snapshot("apollo.gpio.rse0.pin0"), "level"));
         m_service.reset->write(false);
+
+        auto stale = request("apollo.gpio.rse0.pin0", "read");
+        stale.has_expected_generation = true;
+        stale.expected_generation = 0;
+        const auto stale_result = m_service.submit(stale);
+        TEST_ASSERT(!stale_result.ok());
+        TEST_ASSERT(stale_result.error_code == "stale-generation");
+
+        auto absolute = request("apollo.gpio.rse0.pin0", "read");
+        absolute.trigger.type =
+            RuntimeActionTrigger::Type::ABSOLUTE_SIMULATION_TIME;
+        absolute.trigger.time_ns =
+            static_cast<uint64_t>(sc_core::sc_time_stamp() /
+                                  sc_core::sc_time(1, sc_core::SC_NS)) +
+            20;
+        const auto absolute_result = m_service.submit(absolute);
+        TEST_ASSERT(absolute_result.ok());
+        TEST_ASSERT(absolute_result.value.state ==
+                    RuntimeActionState::SCHEDULED);
+        wait(sc_core::sc_time(10, sc_core::SC_NS));
+        TEST_ASSERT(m_service.status(absolute_result.value.id).value.state ==
+                    RuntimeActionState::SCHEDULED);
+        wait(sc_core::sc_time(15, sc_core::SC_NS));
+        TEST_ASSERT(m_service.status(absolute_result.value.id).value.state ==
+                    RuntimeActionState::COMPLETED);
+
+        auto overflow = request("apollo.gpio.rse0.pin0", "read");
+        overflow.trigger.type =
+            RuntimeActionTrigger::Type::RELATIVE_SIMULATION_TIME;
+        overflow.trigger.delay_ns = std::numeric_limits<uint64_t>::max();
+        TEST_ASSERT(m_service.submit(overflow).error_code ==
+                    "simulation-time-overflow");
 
         auto drive = request("apollo.gpio.rse0.pin0", "drive-high");
         const auto driven = m_service.submit(drive);
@@ -161,6 +213,17 @@ class ApolloRuntimeInjectionTest : public TestBench
             m_service.target_snapshot("apollo.gpio.rse0.pin1");
         TEST_ASSERT(snapshot_bool(output_snapshot, "level"));
         TEST_ASSERT(snapshot_bool(output_snapshot, "observed_output_level"));
+
+        auto board_output = request(
+            "apollo.gpio.host_smd.pin0", "set-direction");
+        set_string(board_output, "direction", "output");
+        TEST_ASSERT(m_service.submit(board_output).ok());
+        TEST_ASSERT(m_service.submit(request(
+            "apollo.gpio.host_smd.pin0", "write-output-high")).ok());
+        wait(sc_core::SC_ZERO_TIME);
+        TEST_ASSERT(m_board_gpio.read());
+        TEST_ASSERT(snapshot_bool(m_service.target_snapshot(
+            "apollo.gpio.host_smd.pin0"), "observed_output_level"));
 
         auto control = request(
             "apollo.control.css-system-counter", "set-control");
@@ -219,6 +282,54 @@ class ApolloRuntimeInjectionTest : public TestBench
         TEST_ASSERT(!gic_result.ok());
         TEST_ASSERT(gic_result.value.state == RuntimeActionState::FAILED);
 
+        auto system_reset = request("apollo.control.system-reset", "pulse");
+        system_reset.reset_domain = "system";
+        set_u64(system_reset, "duration_ns", 10);
+        const auto reset_pulse = m_service.submit(system_reset);
+        TEST_ASSERT(reset_pulse.ok());
+        TEST_ASSERT(reset_pulse.value.state == RuntimeActionState::COMPLETED);
+        TEST_ASSERT(m_system_reset.read());
+        wait(sc_core::sc_time(15, sc_core::SC_NS));
+        TEST_ASSERT(!m_system_reset.read());
+
+        const auto generation_before_duplicate = snapshot_u64(
+            m_service.target_snapshot("apollo.control.system-reset"),
+            "generation");
+        m_service.reset->write(true);
+        const auto generation_after_assert = snapshot_u64(
+            m_service.target_snapshot("apollo.control.system-reset"),
+            "generation");
+        m_service.reset->write(true);
+        TEST_ASSERT(snapshot_u64(
+            m_service.target_snapshot("apollo.control.system-reset"),
+            "generation") == generation_after_assert);
+        TEST_ASSERT(generation_after_assert ==
+                    generation_before_duplicate + 1);
+        m_service.reset->write(false);
+
+        for (std::size_t i = 0; i < 128; ++i) {
+            auto pending = request("apollo.gpio.rse0.pin2", "read");
+            pending.trigger.type =
+                RuntimeActionTrigger::Type::RELATIVE_SIMULATION_TIME;
+            pending.trigger.delay_ns = 1000000 + i;
+            TEST_ASSERT(m_service.submit(pending).ok());
+        }
+        auto saturated = request("apollo.gpio.rse0.pin3", "read");
+        saturated.trigger.type =
+            RuntimeActionTrigger::Type::RELATIVE_SIMULATION_TIME;
+        saturated.trigger.delay_ns = 2000000;
+        TEST_ASSERT(m_service.submit(saturated).error_code ==
+                    "request-history-full");
+        m_service.reset->write(true);
+        m_service.reset->write(false);
+        TEST_ASSERT(m_service.submit(
+            request("apollo.gpio.rse0.pin3", "read")).ok());
+
+        m_service.end_of_simulation();
+        TEST_ASSERT(m_service.submit(
+            request("apollo.gpio.rse0.pin3", "read")).error_code ==
+                    "simulation-unavailable");
+
         sc_core::sc_stop();
     }
 
@@ -236,9 +347,13 @@ public:
                     &m_host_gpio, &m_rse_gpio_0, &m_rse_gpio_1)
         , m_ssu_access("ssu_access")
         , m_gic_spi("gic_spi")
+        , m_system_reset("system_reset")
+        , m_board_gpio("board_gpio")
     {
         m_ssu_access.bind(m_ssu.target_socket);
         m_gic.spi_out[0].bind(m_gic_spi);
+        m_service.system_reset.bind(m_system_reset);
+        m_host_gpio.gpio_out[0].bind(m_board_gpio);
         SC_THREAD(run_test);
     }
 };

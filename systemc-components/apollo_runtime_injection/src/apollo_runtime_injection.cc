@@ -3,6 +3,8 @@
 #include "apollo_runtime_injection.h"
 
 #include <algorithm>
+#include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -14,6 +16,53 @@ using gs::RuntimeActionState;
 using gs::RuntimeActionValue;
 using gs::RuntimeResourceType;
 using gs::RuntimeTargetCapability;
+
+const char* state_name(RuntimeActionState state)
+{
+    switch (state) {
+    case RuntimeActionState::ACCEPTED:
+        return "accepted";
+    case RuntimeActionState::SCHEDULED:
+        return "scheduled";
+    case RuntimeActionState::ACTIVE:
+        return "active";
+    case RuntimeActionState::COMPLETED:
+        return "completed";
+    case RuntimeActionState::CANCELLED:
+        return "cancelled";
+    case RuntimeActionState::FAILED:
+        return "failed";
+    }
+    return "failed";
+}
+
+std::string json_string(const std::string& value)
+{
+    std::ostringstream result;
+    for (const char c : value) {
+        switch (c) {
+        case '\\':
+            result << "\\\\";
+            break;
+        case '"':
+            result << "\\\"";
+            break;
+        case '\n':
+            result << "\\n";
+            break;
+        case '\r':
+            result << "\\r";
+            break;
+        case '\t':
+            result << "\\t";
+            break;
+        default:
+            result << c;
+            break;
+        }
+    }
+    return result.str();
+}
 
 const RuntimeActionValue* parameter(
     const gs::RuntimeActionRequest& request, const std::string& name)
@@ -129,7 +178,32 @@ qemu_pl061& apollo_runtime_injection::require_gpio(sc_core::sc_object* object)
 uint64_t apollo_runtime_injection::simulation_time_ns(
     const sc_core::sc_time& time)
 {
-    return static_cast<uint64_t>(time.to_seconds() * 1000000000.0);
+    const auto ticks_per_ns = sc_core::sc_time(1, sc_core::SC_NS).value();
+    return ticks_per_ns == 0 ? 0 : time.value() / ticks_per_ns;
+}
+
+bool apollo_runtime_injection::simulation_time_from_ns(
+    uint64_t value, sc_core::sc_time& time)
+{
+    const auto ticks_per_ns = sc_core::sc_time(1, sc_core::SC_NS).value();
+    if (ticks_per_ns == 0 ||
+        value > std::numeric_limits<uint64_t>::max() / ticks_per_ns) {
+        return false;
+    }
+    time = sc_core::sc_time::from_value(value * ticks_per_ns);
+    return true;
+}
+
+bool apollo_runtime_injection::add_simulation_time_ns(
+    const sc_core::sc_time& base, uint64_t value, sc_core::sc_time& time)
+{
+    sc_core::sc_time delta;
+    if (!simulation_time_from_ns(value, delta) ||
+        base.value() > std::numeric_limits<uint64_t>::max() - delta.value()) {
+        return false;
+    }
+    time = sc_core::sc_time::from_value(base.value() + delta.value());
+    return true;
 }
 
 bool apollo_runtime_injection::is_terminal(RuntimeActionState state)
@@ -144,7 +218,10 @@ bool apollo_runtime_injection::reserves_target(ActionKind kind)
     return kind == ActionKind::GIC_PULSE ||
            kind == ActionKind::COUNTER_CONTROL ||
            kind == ActionKind::GPIO_DRIVE ||
-           kind == ActionKind::GPIO_PULSE;
+           kind == ActionKind::GPIO_PULSE ||
+           kind == ActionKind::MHU_DROP_DOORBELL ||
+           kind == ActionKind::SIGNAL_FAULT ||
+           kind == ActionKind::SYSTEM_RESET_PULSE;
 }
 
 gs::RuntimeActionStatusReply apollo_runtime_injection::error_reply(
@@ -179,7 +256,10 @@ apollo_runtime_injection::apollo_runtime_injection(
           [](const char* socket_name, std::size_t) {
               return new TargetSignalSocket<bool>(socket_name);
           })
+    , p_mhu_target("mhu_target", std::string(""))
+    , p_signal_target("signal_target", std::string(""))
     , reset("reset")
+    , system_reset("system_reset")
 {
     const std::array<std::string, 3> ids = {
         { "host_smd", "rse0", "rse1" }
@@ -188,7 +268,6 @@ apollo_runtime_injection::apollo_runtime_injection(
         { "platform.host_smd_gpio", "platform.rse_gpio_0",
           "platform.rse_gpio_1" }
     };
-    std::size_t observer = 0;
     for (std::size_t controller = 0;
          controller < m_gpio_controllers.size(); ++controller) {
         for (std::size_t pin = 0; pin < 8; ++pin) {
@@ -199,14 +278,13 @@ apollo_runtime_injection::apollo_runtime_injection(
             target.controller = m_gpio_controllers[controller];
             target.pin = pin;
             m_gpio_targets.push_back(target);
-            target.controller->gpio_out[pin].bind(
-                m_gpio_output_observers[observer++]);
         }
     }
 
     reset.register_value_changed_cb(
         [this](bool asserted) { reset_changed(asserted); });
     SC_THREAD(schedule_thread);
+    SC_THREAD(reset_release_thread);
 }
 
 apollo_runtime_injection::apollo_runtime_injection(
@@ -218,6 +296,37 @@ apollo_runtime_injection::apollo_runtime_injection(
           name, gic, nullptr, nullptr, ssu, counter, host_smd_gpio,
           rse_gpio_0, rse_gpio_1)
 {
+}
+
+void apollo_runtime_injection::before_end_of_elaboration()
+{
+    std::size_t observer = 0;
+    for (auto* controller : m_gpio_controllers) {
+        for (std::size_t pin = 0; pin < 8; ++pin, ++observer) {
+            if (controller->gpio_out[pin].bind_count() == 0) {
+                controller->gpio_out[pin].bind(
+                    m_gpio_output_observers[observer]);
+            }
+        }
+    }
+}
+
+void apollo_runtime_injection::end_of_elaboration()
+{
+    if (!p_mhu_target.get_value().empty()) {
+        m_mhu = dynamic_cast<mhu320ae*>(
+            sc_core::sc_find_object(p_mhu_target.get_value().c_str()));
+        if (m_mhu == nullptr) {
+            SC_REPORT_FATAL(name(), "configured MHU runtime target is invalid");
+        }
+    }
+    if (!p_signal_target.get_value().empty()) {
+        m_signal_fault = dynamic_cast<gs::signal_fault_injector*>(
+            sc_core::sc_find_object(p_signal_target.get_value().c_str()));
+        if (m_signal_fault == nullptr) {
+            SC_REPORT_FATAL(name(), "configured signal fault target is invalid");
+        }
+    }
 }
 
 const apollo_runtime_injection::GpioTarget*
@@ -240,6 +349,56 @@ apollo_runtime_injection::find_active(const std::string& target)
     return request == m_requests.end() ? nullptr : &request->second;
 }
 
+gs::RuntimeActionStatus apollo_runtime_injection::effective_status(
+    const RequestRecord& record) const
+{
+    auto status = record.status;
+    if (status.state != RuntimeActionState::ACTIVE) {
+        return status;
+    }
+    if (record.kind == ActionKind::MHU_DROP_DOORBELL && m_mhu != nullptr) {
+        const auto state = m_mhu->runtime_doorbell_fault_snapshot();
+        if (!state.armed && state.match_count > record.match_count) {
+            status.state = RuntimeActionState::COMPLETED;
+            status.result = "consumed";
+            status.has_cleared_sim_time_ns = true;
+            status.cleared_sim_time_ns =
+                simulation_time_ns(sc_core::sc_time_stamp());
+        }
+    } else if (record.kind == ActionKind::SIGNAL_FAULT &&
+               m_signal_fault != nullptr) {
+        const auto state = m_signal_fault->snapshot();
+        const bool consumed =
+            record.request.action == "drop-next-assert" &&
+            !state.drop_pending && state.match_count > record.match_count;
+        const bool expired = record.request.action == "pulse" &&
+                             !state.pulse_active;
+        if (consumed || expired) {
+            status.state = RuntimeActionState::COMPLETED;
+            status.result = consumed ? "consumed" : "ok";
+            status.has_cleared_sim_time_ns = true;
+            status.cleared_sim_time_ns =
+                simulation_time_ns(sc_core::sc_time_stamp());
+        }
+    }
+    return status;
+}
+
+void apollo_runtime_injection::refresh_external_requests()
+{
+    for (auto& item : m_requests) {
+        auto& record = item.second;
+        const auto refreshed = effective_status(record);
+        if (record.status.state == RuntimeActionState::ACTIVE &&
+            refreshed.state == RuntimeActionState::COMPLETED) {
+            record.status = refreshed;
+            release_target(record);
+            audit(record, "injection_cleared");
+            audit(record, "injection_completed");
+        }
+    }
+}
+
 void apollo_runtime_injection::release_target(RequestRecord& record)
 {
     const auto active = m_active_targets.find(record.request.target);
@@ -255,9 +414,10 @@ void apollo_runtime_injection::cancel_scheduled(
     release_target(record);
     record.status.state = RuntimeActionState::CANCELLED;
     record.status.result = result;
+    audit(record, "injection_cancelled");
 }
 
-void apollo_runtime_injection::prune_history()
+bool apollo_runtime_injection::prune_history()
 {
     while (m_requests.size() >= MAX_REQUEST_HISTORY) {
         const auto terminal = std::find_if(
@@ -266,10 +426,50 @@ void apollo_runtime_injection::prune_history()
                 return is_terminal(request.second.status.state);
             });
         if (terminal == m_requests.end()) {
-            return;
+            return false;
         }
         m_requests.erase(terminal);
     }
+    return true;
+}
+
+void apollo_runtime_injection::audit(
+    const RequestRecord& record, const char* event) const
+{
+    std::ostringstream message;
+    message << "{\"schema\":\"qbox-injection-trace/v1\""
+            << ",\"event\":\"" << event << "\""
+            << ",\"id\":" << record.status.id
+            << ",\"target\":\"" << json_string(record.status.target) << "\""
+            << ",\"action\":\"" << json_string(record.status.action) << "\""
+            << ",\"state\":\"" << state_name(record.status.state) << "\""
+            << ",\"generation\":" << record.status.generation;
+    if (record.status.has_requested_sim_time_ns) {
+        message << ",\"requested_sim_time_ns\":"
+                << record.status.requested_sim_time_ns;
+    }
+    if (record.status.has_applied_sim_time_ns) {
+        message << ",\"applied_sim_time_ns\":"
+                << record.status.applied_sim_time_ns;
+    }
+    if (record.status.has_cleared_sim_time_ns) {
+        message << ",\"cleared_sim_time_ns\":"
+                << record.status.cleared_sim_time_ns;
+    }
+    message << ",\"result\":\"" << json_string(record.status.result)
+            << "\"}";
+    SC_REPORT_INFO(name(), message.str().c_str());
+}
+
+void apollo_runtime_injection::audit_reset() const
+{
+    std::ostringstream message;
+    message << "{\"schema\":\"qbox-injection-trace/v1\""
+            << ",\"event\":\"reset_generation_changed\""
+            << ",\"generation\":" << m_generation
+            << ",\"sim_time_ns\":"
+            << simulation_time_ns(sc_core::sc_time_stamp()) << "}";
+    SC_REPORT_INFO(name(), message.str().c_str());
 }
 
 std::vector<RuntimeTargetCapability>
@@ -298,6 +498,42 @@ apollo_runtime_injection::capabilities() const
         schema("clear")
     };
     result.push_back(counter);
+
+    RuntimeTargetCapability system_reset_capability;
+    system_reset_capability.target = "apollo.control.system-reset";
+    system_reset_capability.resource_type = RuntimeResourceType::CONTROL;
+    system_reset_capability.actions = {
+        schema("pulse", { "duration_ns" })
+    };
+    system_reset_capability.attributes.emplace(
+        "reset_domain", RuntimeActionValue(std::string("system")));
+    result.push_back(system_reset_capability);
+
+    if (m_mhu != nullptr) {
+        RuntimeTargetCapability mhu;
+        mhu.target = p_mhu_target.get_value();
+        mhu.resource_type = RuntimeResourceType::EVENT;
+        mhu.actions = {
+            schema("drop-next-doorbell", { "channel" })
+        };
+        mhu.attributes.emplace(
+            "reset_domain", RuntimeActionValue(std::string("ap")));
+        result.push_back(std::move(mhu));
+    }
+
+    if (m_signal_fault != nullptr) {
+        RuntimeTargetCapability signal;
+        signal.target = "apollo.irq.i2c5";
+        signal.resource_type = RuntimeResourceType::INTERRUPT;
+        signal.actions = {
+            schema("pass"), schema("drop-next-assert"),
+            schema("force-high"), schema("force-low"),
+            schema("pulse", { "duration_ns" })
+        };
+        signal.attributes.emplace(
+            "reset_domain", RuntimeActionValue(std::string("ap")));
+        result.push_back(std::move(signal));
+    }
 
     for (const auto& gpio : m_gpio_targets) {
         RuntimeTargetCapability pin;
@@ -360,6 +596,45 @@ gs::RuntimeTargetSnapshotReply apollo_runtime_injection::target_snapshot(
             "generation", RuntimeActionValue(state.generation));
         return reply;
     }
+    if (target == "apollo.control.system-reset") {
+        reply.value.resource_type = RuntimeResourceType::CONTROL;
+        reply.value.values.emplace(
+            "asserted", RuntimeActionValue(m_reset_pulse_active));
+        reply.value.values.emplace(
+            "generation", RuntimeActionValue(m_generation));
+        return reply;
+    }
+    if (m_mhu != nullptr && target == p_mhu_target.get_value()) {
+        const auto state = m_mhu->runtime_doorbell_fault_snapshot();
+        reply.value.resource_type = RuntimeResourceType::EVENT;
+        reply.value.values.emplace("armed", RuntimeActionValue(state.armed));
+        reply.value.values.emplace(
+            "channel", RuntimeActionValue(static_cast<uint64_t>(state.channel)));
+        reply.value.values.emplace(
+            "match_count", RuntimeActionValue(state.match_count));
+        reply.value.values.emplace(
+            "generation", RuntimeActionValue(m_generation));
+        return reply;
+    }
+    if (m_signal_fault != nullptr && target == "apollo.irq.i2c5") {
+        const auto state = m_signal_fault->snapshot();
+        reply.value.resource_type = RuntimeResourceType::INTERRUPT;
+        reply.value.values.emplace(
+            "action", RuntimeActionValue(state.action));
+        reply.value.values.emplace(
+            "source_level", RuntimeActionValue(state.source_level));
+        reply.value.values.emplace(
+            "output_level", RuntimeActionValue(state.output_level));
+        reply.value.values.emplace(
+            "drop_pending", RuntimeActionValue(state.drop_pending));
+        reply.value.values.emplace(
+            "pulse_active", RuntimeActionValue(state.pulse_active));
+        reply.value.values.emplace(
+            "match_count", RuntimeActionValue(state.match_count));
+        reply.value.values.emplace(
+            "generation", RuntimeActionValue(m_generation));
+        return reply;
+    }
 
     const auto* gpio = find_gpio(target);
     if (gpio == nullptr) {
@@ -378,8 +653,6 @@ gs::RuntimeTargetSnapshotReply apollo_runtime_injection::target_snapshot(
         unavailable.error_message = "PL061 runtime state is not ready";
         return unavailable;
     }
-    const std::size_t observer =
-        static_cast<std::size_t>(gpio - m_gpio_targets.data());
     reply.value.resource_type = RuntimeResourceType::GPIO_PIN;
     reply.value.values.emplace(
         "controller", RuntimeActionValue(gpio->controller_name));
@@ -398,7 +671,8 @@ gs::RuntimeTargetSnapshotReply apollo_runtime_injection::target_snapshot(
         "output_level", RuntimeActionValue(state.data_level));
     reply.value.values.emplace(
         "observed_output_level",
-        RuntimeActionValue(m_gpio_output_observers[observer].read()));
+        RuntimeActionValue(
+            gpio->controller->gpio_out[gpio->pin]->read()));
     reply.value.values.emplace(
         "reset_default", RuntimeActionValue(state.initial_input_level));
     reply.value.values.emplace(
@@ -419,6 +693,11 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::validate_request(
     if (!request.clear_on_reset) {
         return error_reply(400, "unsupported-reset-policy",
                            "clear_on_reset must be true");
+    }
+    if (request.has_expected_generation &&
+        request.expected_generation != m_generation) {
+        return error_reply(409, "stale-generation",
+                           "expected_generation does not match reset state");
     }
 
     if (request.target == "platform.si_gic_multiview") {
@@ -459,6 +738,61 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::validate_request(
                 "set-control requires enabled and halt_on_debug");
         }
         record.kind = ActionKind::COUNTER_CONTROL;
+        return {};
+    }
+
+    if (request.target == "apollo.control.system-reset") {
+        if ((!request.reset_domain.empty() &&
+             request.reset_domain != "system") ||
+            request.action != "pulse" ||
+            !unsigned_parameter(
+                request, "duration_ns", record.duration_ns) ||
+            record.duration_ns == 0) {
+            return error_reply(
+                400, "invalid-request",
+                "system reset pulse requires reset_domain system and duration_ns");
+        }
+        record.kind = ActionKind::SYSTEM_RESET_PULSE;
+        return {};
+    }
+
+    if (m_mhu != nullptr && request.target == p_mhu_target.get_value()) {
+        if ((!request.reset_domain.empty() && request.reset_domain != "ap") ||
+            request.action != "drop-next-doorbell" ||
+            !unsigned_parameter(request, "channel", record.channel) ||
+            record.channel > std::numeric_limits<unsigned int>::max()) {
+            return error_reply(
+                400, "invalid-request",
+                "drop-next-doorbell requires reset_domain ap and channel");
+        }
+        record.kind = ActionKind::MHU_DROP_DOORBELL;
+        return {};
+    }
+
+    if (m_signal_fault != nullptr && request.target == "apollo.irq.i2c5") {
+        if (!request.reset_domain.empty() && request.reset_domain != "ap") {
+            return error_reply(400, "invalid-request",
+                               "I2C5 IRQ target uses reset_domain ap");
+        }
+        if (request.action == "pass") {
+            record.kind = ActionKind::SIGNAL_CLEAR;
+            return {};
+        }
+        if (request.action == "pulse" &&
+            (!unsigned_parameter(
+                 request, "duration_ns", record.duration_ns) ||
+             record.duration_ns == 0)) {
+            return error_reply(400, "invalid-request",
+                               "signal pulse requires duration_ns");
+        }
+        if (request.action != "drop-next-assert" &&
+            request.action != "force-high" &&
+            request.action != "force-low" &&
+            request.action != "pulse") {
+            return error_reply(400, "unsupported-action",
+                               "I2C5 IRQ action is not supported");
+        }
+        record.kind = ActionKind::SIGNAL_FAULT;
         return {};
     }
 
@@ -534,6 +868,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
         record.status.state = RuntimeActionState::FAILED;
         record.status.result = "target-in-reset";
         release_target(record);
+        audit(record, "injection_failed");
         auto reply = error_reply(409, "target-in-reset",
                                  "runtime target is in reset");
         reply.value = record.status;
@@ -545,10 +880,22 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
     record.status.applied_sim_time_ns = simulation_time_ns(now);
 
     if (record.kind == ActionKind::GIC_PULSE) {
+        if (!add_simulation_time_ns(now, record.duration_ns, record.due)) {
+            record.status.state = RuntimeActionState::FAILED;
+            record.status.result = "simulation-time-overflow";
+            release_target(record);
+            audit(record, "injection_failed");
+            auto reply = error_reply(
+                400, "simulation-time-overflow",
+                "SPI pulse exceeds simulation time range");
+            reply.value = record.status;
+            return reply;
+        }
         if (!drive_gic(record, true, true)) {
             record.status.state = RuntimeActionState::FAILED;
             record.status.result = "target-not-owner";
             release_target(record);
+            audit(record, "injection_failed");
             auto reply = error_reply(
                 409, "target-not-owner",
                 "SPI view is not the active owner or is not connected");
@@ -557,14 +904,13 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
         }
         record.status.state = RuntimeActionState::ACTIVE;
         record.status.result = "active";
-        record.due = now + sc_core::sc_time(
-            static_cast<double>(record.duration_ns), sc_core::SC_NS);
         m_active_targets[record.request.target] = record.status.id;
         m_schedule_changed.notify(sc_core::SC_ZERO_TIME);
     } else if (record.kind == ActionKind::SSU_FAULT) {
         if (!m_ssu.inject_fault(record.bool_value)) {
             record.status.state = RuntimeActionState::FAILED;
             record.status.result = "fault-disabled";
+            audit(record, "injection_failed");
             auto reply = error_reply(
                 409, "fault-disabled",
                 "SSU error detection or requested fault class is disabled");
@@ -586,6 +932,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
         if (active == nullptr || !m_counter_override) {
             record.status.state = RuntimeActionState::FAILED;
             record.status.result = "no-active-action";
+            audit(record, "injection_failed");
             auto reply = error_reply(409, "no-active-action",
                                      "counter control has no active override");
             reply.value = record.status;
@@ -594,6 +941,75 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
         clear(*active, "cleared", RuntimeActionState::COMPLETED);
         record.status.state = RuntimeActionState::COMPLETED;
         record.status.result = "ok";
+    } else if (record.kind == ActionKind::MHU_DROP_DOORBELL) {
+        const auto state = m_mhu->runtime_doorbell_fault_snapshot();
+        record.match_count = state.match_count;
+        if (!m_mhu->runtime_drop_next_doorbell(
+                static_cast<unsigned int>(record.channel))) {
+            record.status.state = RuntimeActionState::FAILED;
+            record.status.result = "target-unavailable";
+            release_target(record);
+            audit(record, "injection_failed");
+            auto reply = error_reply(
+                409, "target-unavailable",
+                "MHU doorbell fault cannot be armed in the current state");
+            reply.value = record.status;
+            return reply;
+        }
+        record.status.state = RuntimeActionState::ACTIVE;
+        record.status.result = "active";
+        m_active_targets[record.request.target] = record.status.id;
+    } else if (record.kind == ActionKind::SIGNAL_FAULT) {
+        const auto state = m_signal_fault->snapshot();
+        record.match_count = state.match_count;
+        if (!m_signal_fault->arm(record.request.action,
+                                 record.duration_ns)) {
+            record.status.state = RuntimeActionState::FAILED;
+            record.status.result = "apply-failed";
+            release_target(record);
+            audit(record, "injection_failed");
+            auto reply = error_reply(409, "apply-failed",
+                                     "signal fault could not be armed");
+            reply.value = record.status;
+            return reply;
+        }
+        record.status.state = RuntimeActionState::ACTIVE;
+        record.status.result = "active";
+        m_active_targets[record.request.target] = record.status.id;
+    } else if (record.kind == ActionKind::SIGNAL_CLEAR) {
+        auto* active = find_active(record.request.target);
+        if (active != nullptr) {
+            clear(*active, "cleared", RuntimeActionState::COMPLETED);
+        } else {
+            m_signal_fault->clear();
+        }
+        record.status.state = RuntimeActionState::COMPLETED;
+        record.status.result = "ok";
+    } else if (record.kind == ActionKind::SYSTEM_RESET_PULSE) {
+        if (m_reset_pulse_active ||
+            !add_simulation_time_ns(
+                now, record.duration_ns, m_reset_release_due)) {
+            record.status.state = RuntimeActionState::FAILED;
+            record.status.result = m_reset_pulse_active ?
+                                       "target-busy" :
+                                       "simulation-time-overflow";
+            release_target(record);
+            audit(record, "injection_failed");
+            auto reply = error_reply(
+                m_reset_pulse_active ? 409 : 400,
+                record.status.result,
+                m_reset_pulse_active ?
+                    "system reset pulse is already active" :
+                    "reset pulse exceeds simulation time range");
+            reply.value = record.status;
+            return reply;
+        }
+        record.status.state = RuntimeActionState::COMPLETED;
+        record.status.result = "ok";
+        release_target(record);
+        m_reset_pulse_active = true;
+        m_reset_release_event.notify(sc_core::SC_ZERO_TIME);
+        system_reset->write(true);
     } else {
         const auto* gpio = find_gpio(record.request.target);
         qemu_pl061::RuntimePinSnapshot state;
@@ -602,6 +1018,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
             record.status.state = RuntimeActionState::FAILED;
             record.status.result = "target-unavailable";
             release_target(record);
+            audit(record, "injection_failed");
             auto reply = error_reply(503, "target-unavailable",
                                      "PL061 runtime state is not ready");
             reply.value = record.status;
@@ -613,10 +1030,24 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
             record.status.result = "ok";
         } else if (record.kind == ActionKind::GPIO_DRIVE ||
                    record.kind == ActionKind::GPIO_PULSE) {
+            if (record.kind == ActionKind::GPIO_PULSE &&
+                !add_simulation_time_ns(
+                    now, record.duration_ns, record.due)) {
+                record.status.state = RuntimeActionState::FAILED;
+                record.status.result = "simulation-time-overflow";
+                release_target(record);
+                audit(record, "injection_failed");
+                auto reply = error_reply(
+                    400, "simulation-time-overflow",
+                    "GPIO pulse exceeds simulation time range");
+                reply.value = record.status;
+                return reply;
+            }
             if (state.direction_output) {
                 record.status.state = RuntimeActionState::FAILED;
                 record.status.result = "direction-mismatch";
                 release_target(record);
+                audit(record, "injection_failed");
                 auto reply = error_reply(
                     409, "direction-mismatch",
                     "input drive requires PL061 input direction");
@@ -628,6 +1059,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
                 record.status.state = RuntimeActionState::FAILED;
                 record.status.result = "apply-failed";
                 release_target(record);
+                audit(record, "injection_failed");
                 auto reply = error_reply(500, "apply-failed",
                                          "PL061 input drive failed");
                 reply.value = record.status;
@@ -637,8 +1069,6 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
             record.status.result = "active";
             m_active_targets[record.request.target] = record.status.id;
             if (record.kind == ActionKind::GPIO_PULSE) {
-                record.due = now + sc_core::sc_time(
-                    static_cast<double>(record.duration_ns), sc_core::SC_NS);
                 m_schedule_changed.notify(sc_core::SC_ZERO_TIME);
             }
         } else if (record.kind == ActionKind::GPIO_RELEASE) {
@@ -646,6 +1076,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
             if (active == nullptr) {
                 record.status.state = RuntimeActionState::FAILED;
                 record.status.result = "no-active-action";
+                audit(record, "injection_failed");
                 auto reply = error_reply(409, "no-active-action",
                                          "GPIO pin has no active drive");
                 reply.value = record.status;
@@ -659,6 +1090,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
                     gpio->pin, record.bool_value)) {
                 record.status.state = RuntimeActionState::FAILED;
                 record.status.result = "apply-failed";
+                audit(record, "injection_failed");
                 auto reply = error_reply(500, "apply-failed",
                                          "PL061 direction update failed");
                 reply.value = record.status;
@@ -670,6 +1102,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
             if (!state.direction_output) {
                 record.status.state = RuntimeActionState::FAILED;
                 record.status.result = "direction-mismatch";
+                audit(record, "injection_failed");
                 auto reply = error_reply(
                     409, "direction-mismatch",
                     "output write requires PL061 output direction");
@@ -680,6 +1113,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
                     gpio->pin, record.bool_value)) {
                 record.status.state = RuntimeActionState::FAILED;
                 record.status.result = "apply-failed";
+                audit(record, "injection_failed");
                 auto reply = error_reply(500, "apply-failed",
                                          "PL061 output update failed");
                 reply.value = record.status;
@@ -693,6 +1127,10 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
     gs::RuntimeActionStatusReply reply;
     reply.http_status = 202;
     reply.value = record.status;
+    audit(record, "injection_applied");
+    if (record.status.state == RuntimeActionState::COMPLETED) {
+        audit(record, "injection_completed");
+    }
     return reply;
 }
 
@@ -708,6 +1146,14 @@ void apollo_runtime_injection::clear(RequestRecord& record,
             m_counter.restore_state_at(m_counter_baseline, now);
             m_counter_override = false;
         }
+    } else if (record.kind == ActionKind::MHU_DROP_DOORBELL) {
+        if (m_mhu != nullptr) {
+            m_mhu->runtime_clear_doorbell_fault();
+        }
+    } else if (record.kind == ActionKind::SIGNAL_FAULT) {
+        if (m_signal_fault != nullptr) {
+            m_signal_fault->clear();
+        }
     } else if (record.kind == ActionKind::GPIO_DRIVE ||
                record.kind == ActionKind::GPIO_PULSE) {
         const auto* gpio = find_gpio(record.request.target);
@@ -720,11 +1166,22 @@ void apollo_runtime_injection::clear(RequestRecord& record,
     record.status.cleared_sim_time_ns = simulation_time_ns(now);
     record.status.state = state;
     record.status.result = result;
+    audit(record, "injection_cleared");
+    audit(record, state == RuntimeActionState::CANCELLED ?
+                      "injection_cancelled" :
+                      "injection_completed");
 }
 
 gs::RuntimeActionStatusReply apollo_runtime_injection::submit(
     const gs::RuntimeActionRequest& request)
 {
+    if (m_stopping) {
+        return error_reply(503, "simulation-unavailable",
+                           "runtime injection is shutting down");
+    }
+
+    refresh_external_requests();
+
     RequestRecord record;
     record.request = request;
     auto validation = validate_request(request, record);
@@ -733,36 +1190,72 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::submit(
     }
 
     if (reserves_target(record.kind) &&
-        m_active_targets.count(request.target) != 0) {
+        (m_active_targets.count(request.target) != 0 ||
+         (record.kind == ActionKind::SYSTEM_RESET_PULSE &&
+          m_reset_pulse_active))) {
         return error_reply(409, "target-busy",
                            "runtime target already has an active action");
     }
 
     const auto now = sc_core::sc_time_stamp();
-    record.status.id = m_next_id++;
     record.status.state = RuntimeActionState::ACCEPTED;
     record.status.target = request.target;
     record.status.action = request.action;
     record.status.generation = m_generation;
+    record.status.has_requested_sim_time_ns = true;
     record.due = now;
-    if (request.trigger.type ==
-        gs::RuntimeActionTrigger::Type::RELATIVE_SIMULATION_TIME) {
-        record.due += sc_core::sc_time(
-            static_cast<double>(request.trigger.delay_ns), sc_core::SC_NS);
+    switch (request.trigger.type) {
+    case gs::RuntimeActionTrigger::Type::IMMEDIATE:
+        break;
+    case gs::RuntimeActionTrigger::Type::ABSOLUTE_SIMULATION_TIME:
+        if (!simulation_time_from_ns(request.trigger.time_ns, record.due)) {
+            return error_reply(400, "simulation-time-overflow",
+                               "absolute simulation time is not representable");
+        }
+        if (record.due < now) {
+            return error_reply(400, "trigger-in-past",
+                               "absolute simulation time is in the past");
+        }
         record.status.state = RuntimeActionState::SCHEDULED;
-        record.status.has_requested_sim_time_ns = true;
-        record.status.requested_sim_time_ns = simulation_time_ns(record.due);
+        break;
+    case gs::RuntimeActionTrigger::Type::RELATIVE_SIMULATION_TIME:
+        if (!add_simulation_time_ns(
+                now, request.trigger.delay_ns, record.due)) {
+            return error_reply(400, "simulation-time-overflow",
+                               "relative simulation time is not representable");
+        }
+        record.status.state = RuntimeActionState::SCHEDULED;
+        break;
+    default:
+        return error_reply(400, "invalid-request",
+                           "unsupported runtime action trigger");
+    }
+    record.status.requested_sim_time_ns = simulation_time_ns(record.due);
+
+    if (record.duration_ns != 0) {
+        sc_core::sc_time clear_due;
+        if (!add_simulation_time_ns(record.due, record.duration_ns,
+                                    clear_due)) {
+            return error_reply(400, "simulation-time-overflow",
+                               "action duration exceeds simulation time range");
+        }
+    }
+    if (!prune_history()) {
+        return error_reply(503, "request-history-full",
+                           "runtime request history has no terminal entry");
     }
 
+    record.status.id = m_next_id++;
     const uint64_t id = record.status.id;
-    prune_history();
     m_requests.emplace(id, std::move(record));
     auto& stored = m_requests.at(id);
+    audit(stored, "injection_received");
     if (stored.status.state == RuntimeActionState::SCHEDULED) {
         if (reserves_target(stored.kind)) {
             m_active_targets[stored.request.target] = id;
         }
         m_schedule_changed.notify(sc_core::SC_ZERO_TIME);
+        audit(stored, "injection_scheduled");
         gs::RuntimeActionStatusReply reply;
         reply.http_status = 202;
         reply.value = stored.status;
@@ -776,7 +1269,7 @@ std::vector<gs::RuntimeActionStatus> apollo_runtime_injection::list() const
     std::vector<gs::RuntimeActionStatus> result;
     result.reserve(m_requests.size());
     for (const auto& request : m_requests) {
-        result.push_back(request.second.status);
+        result.push_back(effective_status(request.second));
     }
     return result;
 }
@@ -790,12 +1283,13 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::status(
                            "runtime action request does not exist");
     }
     gs::RuntimeActionStatusReply reply;
-    reply.value = found->second.status;
+    reply.value = effective_status(found->second);
     return reply;
 }
 
 gs::RuntimeActionStatusReply apollo_runtime_injection::cancel(uint64_t id)
 {
+    refresh_external_requests();
     const auto found = m_requests.find(id);
     if (found == m_requests.end()) {
         return error_reply(404, "request-not-found",
@@ -820,7 +1314,7 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::cancel(uint64_t id)
 
 void apollo_runtime_injection::schedule_thread()
 {
-    for (;;) {
+    while (!m_stopping) {
         RequestRecord* next = nullptr;
         for (auto& request : m_requests) {
             auto& record = request.second;
@@ -859,13 +1353,35 @@ void apollo_runtime_injection::schedule_thread()
     }
 }
 
+void apollo_runtime_injection::reset_release_thread()
+{
+    while (!m_stopping) {
+        sc_core::wait(m_reset_release_event);
+        if (m_stopping) {
+            break;
+        }
+        const auto now = sc_core::sc_time_stamp();
+        if (m_reset_release_due > now) {
+            sc_core::wait(m_reset_release_due - now);
+        }
+        if (m_reset_pulse_active) {
+            system_reset->write(false);
+            m_reset_pulse_active = false;
+        }
+    }
+}
+
 void apollo_runtime_injection::reset_changed(bool asserted)
 {
+    if (asserted == m_reset_asserted) {
+        return;
+    }
     m_reset_asserted = asserted;
     if (!asserted) {
         return;
     }
     ++m_generation;
+    audit_reset();
     for (auto& request : m_requests) {
         auto& record = request.second;
         if (!is_terminal(record.status.state) &&
@@ -879,6 +1395,11 @@ void apollo_runtime_injection::reset_changed(bool asserted)
         }
     }
     m_schedule_changed.notify(sc_core::SC_ZERO_TIME);
+}
+
+void apollo_runtime_injection::end_of_simulation()
+{
+    m_stopping = true;
 }
 
 extern "C" void module_register()

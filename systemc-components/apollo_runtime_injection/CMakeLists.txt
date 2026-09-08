@@ -9,7 +9,9 @@ target_link_libraries(
         arm_system_counter
         arm_gicv3
         gicx00_multiview
+        mhu320ae
         qemu_pl061
         runtime_action_service
+        signal_fault_injector
         zena_ssu
 )

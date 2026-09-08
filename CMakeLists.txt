@@ -157,10 +157,15 @@ if(BUILD_TESTING)
         list(APPEND QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS ${component_test_targets})
     endforeach()
     set(qbox_platform_label_systemc_component_tests FALSE)
+    add_subdirectory("${QBOX_CORE_SOURCE_DIR}/tests/components/monitor"
+        "tests/core/monitor")
+    add_subdirectory("${QBOX_CORE_SOURCE_DIR}/tests/components/signal-fault-injector"
+        "tests/core/signal-fault-injector")
     if(QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS)
         add_custom_target(
             qbox_platform_systemc_component_tests
             DEPENDS ${QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS}
+                signal_fault_injector-tests monitor-runtime-api-tests monitor-runtime-config-tests
         )
     endif()
     add_subdirectory(tests/components/uart)
@@ -225,6 +230,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     mhu320ae
     gicx00_multiview
     apollo_runtime_injection
+    signal_fault_injector
     gic720ae_messreg
     apollo_cpu_ras
     apollo_sbist

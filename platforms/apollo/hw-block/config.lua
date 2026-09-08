@@ -115,6 +115,10 @@ function ap_cold_reset_bind_targets()
         targets[#targets + 1] = "&ap_dw_uart_"..i..".reset"
     end
 
+    if getenv_bool_or("QBOX_APOLLO_RUNTIME_INJECTION", false) then
+        targets[#targets + 1] = "&ap_i2c5_irq_fault.reset"
+    end
+
     return table.concat(targets, ";")
 end
 
@@ -197,6 +201,7 @@ function apollo_system_reset_bind_targets()
     if getenv_bool_or("QBOX_APOLLO_RUNTIME_INJECTION", false) then
         targets[#targets + 1] = "&apollo_runtime_injection.reset"
     end
+
 
     return table.concat(targets, ";")
 end

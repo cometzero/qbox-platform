@@ -12,11 +12,14 @@
 #include <arm_system_counter.h>
 #include <arm_gicv3.h>
 #include <gicx00_multiview.h>
+#include <mhu320ae.h>
 #include <qemu_pl061.h>
 #include <runtime-action-service.h>
+#include <signal-fault-injector.h>
 #include <zena_ssu.h>
 
 #include <module_factory_registery.h>
+#include <ports/initiator-signal-socket.h>
 #include <ports/target-signal-socket.h>
 #include <systemc>
 
@@ -36,6 +39,10 @@ class apollo_runtime_injection : public sc_core::sc_module,
         GPIO_RELEASE,
         GPIO_SET_DIRECTION,
         GPIO_WRITE_OUTPUT,
+        MHU_DROP_DOORBELL,
+        SIGNAL_FAULT,
+        SIGNAL_CLEAR,
+        SYSTEM_RESET_PULSE,
     };
 
     struct RequestRecord {
@@ -47,7 +54,9 @@ class apollo_runtime_injection : public sc_core::sc_module,
         bool secondary_bool_value = false;
         uint64_t view = 0;
         uint64_t intid = 0;
+        uint64_t channel = 0;
         uint64_t duration_ns = 0;
+        uint64_t match_count = 0;
     };
 
     struct GpioTarget {
@@ -62,6 +71,8 @@ class apollo_runtime_injection : public sc_core::sc_module,
     zena_ssu& m_ssu;
     gs::arm_system_counter& m_counter;
     std::array<qemu_pl061*, 3> m_gpio_controllers;
+    mhu320ae* m_mhu = nullptr;
+    gs::signal_fault_injector* m_signal_fault = nullptr;
     std::vector<GpioTarget> m_gpio_targets;
     std::map<uint64_t, RequestRecord> m_requests;
     std::map<std::string, uint64_t> m_active_targets;
@@ -71,7 +82,14 @@ class apollo_runtime_injection : public sc_core::sc_module,
     uint64_t m_next_id = 1;
     uint64_t m_generation = 0;
     bool m_reset_asserted = false;
+    bool m_reset_pulse_active = false;
+    bool m_stopping = false;
+    sc_core::sc_time m_reset_release_due = sc_core::SC_ZERO_TIME;
     sc_core::sc_event m_schedule_changed;
+    sc_core::sc_event m_reset_release_event;
+
+    cci::cci_param<std::string> p_mhu_target;
+    cci::cci_param<std::string> p_signal_target;
 
     static gicx00_multiview& require_gic(sc_core::sc_object* object);
     static arm_gicv3* optional_gic_backend(sc_core::sc_object* object);
@@ -81,6 +99,11 @@ class apollo_runtime_injection : public sc_core::sc_module,
     static qemu_pl061& require_gpio(sc_core::sc_object* object);
 
     static uint64_t simulation_time_ns(const sc_core::sc_time& time);
+    static bool simulation_time_from_ns(uint64_t value,
+                                        sc_core::sc_time& time);
+    static bool add_simulation_time_ns(const sc_core::sc_time& base,
+                                       uint64_t value,
+                                       sc_core::sc_time& time);
     static bool is_terminal(gs::RuntimeActionState state);
     static bool reserves_target(ActionKind kind);
     static gs::RuntimeActionStatusReply error_reply(
@@ -88,9 +111,14 @@ class apollo_runtime_injection : public sc_core::sc_module,
 
     const GpioTarget* find_gpio(const std::string& target) const;
     RequestRecord* find_active(const std::string& target);
+    gs::RuntimeActionStatus effective_status(
+        const RequestRecord& record) const;
+    void refresh_external_requests();
     void release_target(RequestRecord& record);
     void cancel_scheduled(RequestRecord& record, const std::string& result);
-    void prune_history();
+    bool prune_history();
+    void audit(const RequestRecord& record, const char* event) const;
+    void audit_reset() const;
     gs::RuntimeActionStatusReply validate_request(
         const gs::RuntimeActionRequest& request, RequestRecord& record) const;
     gs::RuntimeActionStatusReply apply(RequestRecord& record);
@@ -99,12 +127,14 @@ class apollo_runtime_injection : public sc_core::sc_module,
     void clear(RequestRecord& record, const std::string& result,
                gs::RuntimeActionState state);
     void schedule_thread();
+    void reset_release_thread();
     void reset_changed(bool asserted);
 
 public:
     SC_HAS_PROCESS(apollo_runtime_injection);
 
     TargetSignalSocket<bool> reset;
+    InitiatorSignalSocket<bool> system_reset;
 
     apollo_runtime_injection(sc_core::sc_module_name name,
                              sc_core::sc_object* gic,
@@ -132,6 +162,9 @@ public:
     std::vector<gs::RuntimeActionStatus> list() const override;
     gs::RuntimeActionStatusReply status(uint64_t id) const override;
     gs::RuntimeActionStatusReply cancel(uint64_t id) override;
+    void before_end_of_elaboration() override;
+    void end_of_elaboration() override;
+    void end_of_simulation() override;
 };
 
 extern "C" void module_register();

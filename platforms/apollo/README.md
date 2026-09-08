@@ -186,6 +186,12 @@ QBOX_APOLLO_RUNTIME_INJECTION=true \
 ./run_qbox_yocto.sh
 ```
 
+The opt-in configuration also interposes `ap_i2c5_irq_fault` on the I2C5
+IRQ and exposes the AP-to-SI1 HIPC postbox one-shot drop plus the existing full
+system reset fanout. Absolute simulation-time requests, expected-generation
+checks, and structured lifecycle logs are supported. See the workspace
+`doc/qbox-event-injection.md` for CLI examples, reset semantics and evidence.
+
 `QBOX_APOLLO_MONITOR_BIND_ADDRESS` defaults to `127.0.0.1`. The Monitor
 rejects runtime mutation on a non-loopback address. When runtime actions are
 disabled, `platform.apollo_runtime_injection` is absent and the Monitor has no
