@@ -187,6 +187,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     dw-apb-i2c
     i2c-bus
     pca9539
+    tps6594
     dw-apb-ssi
     dw-apb-uart
     uart-pl011

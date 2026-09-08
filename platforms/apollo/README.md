@@ -752,6 +752,23 @@ The upstream GIC route is INTID 225; its chained counter is not exposed in
 Use an isolated test guest: the test owns these GPIO lines and resets the expander.
 See workspace `doc/board/pca9539.md` for wiring, model limitations, and results.
 
+### TPS6594 PMIC board demo
+
+`board/tps6594.lua` adds a TPS6594-Q1 on I2C0 at base address `0x48`
+(page aliases `0x49` through `0x4c`). Its active-low interrupt connects to
+SMD PL061 GPIO2. GPIO offsets 0→1 and 8→9 are board loopbacks.
+Linux uses the existing TPS6594 MFD, regulator, pinctrl/GPIO, and RTC drivers.
+Two `regulator-output` consumers exercise BUCK1 (900 mV) and LDO1 (1.8 V).
+From the workspace root after BSP boot:
+
+```bash
+./scripts/run/ssh_run.sh scripts/test/verify_qbox_tps6594.sh
+```
+
+The script exercises regulator on/off, GPIO loopbacks, RTC time, and alarm
+interrupts. See workspace `doc/board/tps6594.md` for the NVM profile,
+functional modeling limits, and recorded results.
+
 ### Keep the guest running
 
 ```bash
