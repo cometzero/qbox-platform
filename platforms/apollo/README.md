@@ -769,6 +769,32 @@ The script exercises regulator on/off, GPIO loopbacks, RTC time, and alarm
 interrupts. See workspace `doc/board/tps6594.md` for the NVM profile,
 functional modeling limits, and recorded results.
 
+### HSOC PERI0/PERI1 pinctrl
+
+`hw-block/pinctrl.lua` adds `pinctrl_peri0` at `0x301e0000` with 14 bank
+IRQs (GIC SPIs 334–347). Banks 0–5 contain eight pins; banks 6–13 contain
+one each. Bank register pages are spaced by `0x1000`, starting at offset
+`0x1000`. GPIO loopbacks are composed in `board/peri0-loopback.lua`.
+Linux enumerates banks and DWC default states from `pinctrl.dtsi`.
+
+`pinctrl_peri1` at `0x301f0000` has eight bank IRQs (GIC SPIs 348–355).
+Banks 0–3 contain eight pins and banks 4–7 contain one pin (36 total),
+with the same `0x1000` bank stride. SPI2/3 use bank0 and UART2/3 use
+bank1; I2C0–5, SPI0/1 and UART0/1 remain on PERI0. Consumer pinctrl
+properties are declared directly in the device nodes in `apollo-qvp.dts`.
+
+After a fresh BSP boot, run from the workspace root:
+
+```bash
+./scripts/run/ssh_run.sh scripts/test/verify_qbox_hsoc_pinctrl.sh
+./scripts/run/ssh_run.sh scripts/test/verify_qbox_hsoc_peripherals.sh
+```
+
+The first script changes I2C5 mux temporarily and restores it. The second
+uses four short SPI loopback tests and both UART pairs. Use a dedicated
+test guest; these scripts own the selected pins and peripheral endpoints.
+See `doc/board/hsoc-pinctrl.md` for the ABI and digital modeling limits.
+
 ### Keep the guest running
 
 ```bash

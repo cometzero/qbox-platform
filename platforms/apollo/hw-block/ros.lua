@@ -329,6 +329,12 @@ function ros.bind_ap_view_targets(platform, bind_ap_target)
         bind_ap_target(platform.ap_rtc_0.mem)
     end
     visit_dwc_targets(platform, bind_ap_target)
+    if platform.pinctrl_peri0 then
+        bind_ap_target(platform.pinctrl_peri0.target_socket)
+    end
+    if platform.pinctrl_peri1 then
+        bind_ap_target(platform.pinctrl_peri1.target_socket)
+    end
 end
 
 function ros.lower_decode_priorities(platform, lower_decode_priority, priority)
@@ -351,6 +357,12 @@ function ros.lower_decode_priorities(platform, lower_decode_priority, priority)
     visit_dwc_targets(platform, function(target)
         lower_decode_priority(target, priority)
     end)
+    if platform.pinctrl_peri0 then
+        lower_decode_priority(platform.pinctrl_peri0.target_socket, priority)
+    end
+    if platform.pinctrl_peri1 then
+        lower_decode_priority(platform.pinctrl_peri1.target_socket, priority)
+    end
 end
 
 return ros

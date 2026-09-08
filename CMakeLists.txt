@@ -124,6 +124,7 @@ if(BUILD_TESTING)
         host_scr
         host_smcf_mgi
         host_system_pll
+        hsoc_pinctrl
         mhu320ae
         mmu720ae
         ras_ffh_stub
@@ -188,6 +189,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     i2c-bus
     pca9539
     tps6594
+    hsoc_pinctrl
     dw-apb-ssi
     dw-apb-uart
     uart-pl011

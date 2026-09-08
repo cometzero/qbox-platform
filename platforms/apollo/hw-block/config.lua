@@ -85,6 +85,8 @@ end
 
 function ap_cold_reset_bind_targets()
     local targets = {
+        "&pinctrl_peri0.reset";
+        "&pinctrl_peri1.reset";
         "&ap_bl2_reset_loader.reset";
         "&host_ap_bl2_header_sram.reset";
         "&ap_reset_gpio.reset_in";
