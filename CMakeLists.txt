@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 project(qbox_platform VERSION 0.1)
 include(CTest)
 option(QBOX_USE_SYSTEM_LIBQEMU "Use an installed libqemu CMake package" OFF)
+set(
+    QBOX_CORE_TEST_DIRS
+    "components;sync;utils;qbox"
+    CACHE STRING
+    "QBox core test directories to build, relative to qbox/tests"
+)
+set(QBOX_CPU_TEST_ARCHS "aarch64" CACHE STRING "QBox CPU test architectures")
 
 get_filename_component(_qbox_platform_source_dir "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 get_filename_component(_qbox_platform_tools_dir "${_qbox_platform_source_dir}/.." ABSOLUTE)
@@ -157,19 +164,38 @@ if(BUILD_TESTING)
         list(APPEND QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS ${component_test_targets})
     endforeach()
     set(qbox_platform_label_systemc_component_tests FALSE)
-    add_subdirectory("${QBOX_CORE_SOURCE_DIR}/tests/components/monitor"
-        "tests/core/monitor")
-    add_subdirectory("${QBOX_CORE_SOURCE_DIR}/tests/components/signal-fault-injector"
-        "tests/core/signal-fault-injector")
     if(QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS)
         add_custom_target(
             qbox_platform_systemc_component_tests
             DEPENDS ${QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS}
-                signal_fault_injector-tests monitor-runtime-api-tests monitor-runtime-config-tests
         )
     endif()
+    add_subdirectory(tests/core)
     add_subdirectory(tests/components/uart)
     add_subdirectory(tests/platforms)
+    add_test(
+        NAME qbox-core-selection-smoke
+        COMMAND "${CMAKE_COMMAND}" "-DQBOX_CORE_SOURCE_DIR=${QBOX_CORE_SOURCE_DIR}" -P
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/qbox-core-selection-smoke.cmake"
+    )
+    set_tests_properties(qbox-core-selection-smoke PROPERTIES
+        LABELS "qbox-platform-cmake" TIMEOUT 60)
+
+    qbox_collect_test_executables(
+        "${CMAKE_CURRENT_BINARY_DIR}/tests/components/uart"
+        qbox_platform_uart_test_targets
+    )
+    qbox_collect_test_executables(
+        "${CMAKE_CURRENT_BINARY_DIR}/tests/platforms"
+        qbox_platform_platform_test_targets
+    )
+    add_custom_target(
+        qbox_platform_unit_tests
+        DEPENDS
+            ${QBOX_PLATFORM_SYSTEMC_COMPONENT_TEST_TARGETS}
+            ${qbox_platform_uart_test_targets}
+            ${qbox_platform_platform_test_targets}
+    )
 endif()
 
 set(

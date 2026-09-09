@@ -1,5 +1,97 @@
 # QBox Apollo Platform
 
+## Yocto unit tests
+
+The native provider enables tests by default. Its `do_check` task builds and
+runs platform tests and selected core tests after `do_compile`, before
+`do_install`; compilation errors and test failures stop the recipe.
+
+```bash
+./yocto_build.sh --keep-conf qbox-apollo-qvp-native
+./yocto_build.sh --keep-conf qbox-apollo-qvp-native -c check
+```
+
+Platform coverage includes the registered SystemC component, UART,
+four-CPU timer, and core-selection configuration tests. The legacy
+`tests/components/CMakeLists.txt` also names old core-test copies; those
+are not added alongside the authoritative core suites. Platform-owned
+tests use the root CMake list, including the renamed `apollo-*` UART tests.
+Core defaults are
+`components`, `sync`, `utils`, and `qbox`, with CPU tests restricted to
+`aarch64`. Existing feature/platform gates still apply: Python binder is
+disabled, DMI-reset firmware and display tests are macOS-only, and the
+legacy synchronization `checker` executable has no registered CTest.
+
+The Yocto CPU matrix defaults to `multithread-freerunning`, 1/2/4 CPUs, and
+`quantum_keeper` (`QBOX_ENABLE_MCIPS_TESTS = "OFF"`). Individually registered
+CPU regression tests retain their own scheduling parameters. Standalone QBox
+keeps its original multi-architecture/multi-policy defaults. To select suites
+and test names, set these recipe-scoped values in `build/conf/local.conf`:
+
+```bitbake
+QBOX_CORE_TEST_DIRS:pn-qbox-apollo-qvp-native = "components/i2c components/spi"
+QBOX_CORE_TEST_REGEX:pn-qbox-apollo-qvp-native = "^(dw-apb-i2c-tests|dw-apb-ssi-tests)$"
+```
+
+For component coverage plus AArch64 CPU tests, including different CPU counts:
+
+```bitbake
+QBOX_CORE_TEST_DIRS:pn-qbox-apollo-qvp-native = "components sync utils qbox"
+QBOX_CPU_TEST_ARCHS:pn-qbox-apollo-qvp-native = "aarch64"
+QBOX_CPU_TEST_SYNC_POLICY_COMBINATION:pn-qbox-apollo-qvp-native = "multithread-freerunning"
+QBOX_CPU_TEST_NUM_CPU_COMBINATION:pn-qbox-apollo-qvp-native = "1 2 4"
+QBOX_ENABLE_MCIPS_TESTS:pn-qbox-apollo-qvp-native = "OFF"
+QBOX_CORE_TEST_REGEX:pn-qbox-apollo-qvp-native = ".*"
+```
+
+These are space-separated BitBake lists (semicolon-separated for direct
+CMake configuration). Adding synchronization policies or enabling MCIPS
+expands the CPU matrix; it is not covered by the default-profile result.
+
+The native recipe excludes cases measured at **5 seconds or longer** in the
+default profile. The initial 2026-09-09 timing measurement excluded 26 slow
+core cases (the router cache benchmark and 25 CPU cases). Subsequent repeat
+testing also quarantined `aarch64-managed-uart-fifo-closed-writer` and
+`aarch64-managed-timer-wfi-timer-wake` for intermittent post-simulation hangs.
+The default selection is now 55 platform and 60 core tests, including 11
+AArch64 CPU cases. The 28 excluded cases remain configured and compiled;
+exclusion is not a fix or a PASS. PL061's asynchronous-reset test race was
+fixed and that test remains enabled.
+
+`QBOX_CORE_TEST_SLOW_REGEX` and `QBOX_CORE_TEST_UNSTABLE_REGEX` separately
+record slow and unstable cases. `QBOX_CORE_TEST_EXCLUDE_REGEX` combines both
+by default and can explicitly override the entire exclusion policy;
+`QBOX_APOLLO_UNIT_TEST_EXCLUDE_REGEX` is available for platform exclusions
+(empty by default). The recipe records matching cases in
+`qbox-core-unit-tests.excluded.list`. To deliberately include all core tests
+for diagnosis:
+
+```bitbake
+QBOX_CORE_TEST_EXCLUDE_REGEX:pn-qbox-apollo-qvp-native = ""
+```
+
+Timing is host/profile-dependent, so changed configurations need a new
+measurement. `QBOX_APOLLO_UNIT_TEST_TIMEOUT` defaults to 5 seconds for tests
+without an explicit CTest `TIMEOUT`; it is not a replacement for the
+measured exclusion list, nor an override of per-test timeouts.
+Long-timeout repeat diagnostics and quarantine evidence are documented in
+the workspace's `doc/qbox/unit-test-stability-2026-09-09.md`.
+
+Directories are relative to `qbox/tests/` and control configuration and
+compilation. The CTest regular expression controls execution only within
+those directories; it does not filter platform tests. Invalid directories
+or a regex matching no tests fail the build. An empty directory list
+explicitly disables core tests. `QBOX_APOLLO_RUN_UNIT_TESTS = "0"` disables
+all provider unit tests.
+
+The task writes separate `qbox-platform-unit-tests` and
+`qbox-core-unit-tests` `.list`, `.log`, and JUnit `.xml` files into the recipe
+`temp/` directory alongside `log.do_check`. A stamped task may be skipped;
+to force a repeat, initialize the build environment and run
+`bitbake qbox-apollo-qvp-native -c check -f`.
+
+## Runtime
+
 This platform supports the full RSE-first Apollo QVP. Its sole runtime
 entrypoint is:
 
