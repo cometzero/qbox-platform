@@ -11,7 +11,7 @@ function pinctrl.define(platform)
         return
     end
     platform.pinctrl_peri0 = {
-        moduletype = "hsoc_pinctrl";
+        moduletype = "hsoc_gpio";
         bank_sizes = "8,8,8,8,8,8,1,1,1,1,1,1,1,1";
         peripheral_routes = "0:0:0:2;1:0:2:2;2:0:4:2;3:0:6:2;4:1:0:2;5:1:2:2;6:2:0:4;7:2:4:4;10:4:0:2;11:4:2:2";
         target_socket = {
@@ -33,7 +33,7 @@ function pinctrl.define(platform)
     end
 
     platform.pinctrl_peri1 = {
-        moduletype = "hsoc_pinctrl";
+        moduletype = "hsoc_gpio";
         bank_sizes = "8,8,8,8,1,1,1,1";
         peripheral_routes = "8:0:0:4;9:0:4:4;12:1:0:2;13:1:2:2";
         target_socket = {

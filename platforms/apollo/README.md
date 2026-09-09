@@ -775,13 +775,15 @@ The script exercises regulator on/off, GPIO loopbacks, RTC time, and alarm
 interrupts. See workspace `doc/board/tps6594.md` for the NVM profile,
 functional modeling limits, and recorded results.
 
-### HSOC PERI0/PERI1 pinctrl
+### HSOC GPIO / PERI0-PERI1 pinctrl
 
 `hw-block/pinctrl.lua` adds `pinctrl_peri0` at `0x301e0000` with 14 bank
 IRQs (GIC SPIs 334–347). Banks 0–5 contain eight pins; banks 6–13 contain
-one each. Bank register pages are spaced by `0x1000`, starting at offset
-`0x1000`. GPIO loopbacks are composed in `board/peri0-loopback.lua`.
-Linux enumerates banks and DWC default states from `pinctrl.dtsi`.
+one each. Both instances use the `hsoc_gpio` model. Bank register pages
+are spaced by `0x1000`, starting at offset zero. There are no topology
+registers: the model uses CCI `bank_sizes`, and Linux uses the explicit
+bank declarations in `pinctrl.dtsi`. GPIO loopbacks are composed in
+`board/peri0-loopback.lua`.
 
 `pinctrl_peri1` at `0x301f0000` has eight bank IRQs (GIC SPIs 348–355).
 Banks 0–3 contain eight pins and banks 4–7 contain one pin (36 total),
@@ -799,7 +801,9 @@ After a fresh BSP boot, run from the workspace root:
 The first script changes I2C5 mux temporarily and restores it. The second
 uses four short SPI loopback tests and both UART pairs. Use a dedicated
 test guest; these scripts own the selected pins and peripheral endpoints.
-See `doc/board/hsoc-pinctrl.md` for the ABI and digital modeling limits.
+The current ABI uses packed SEL/DAT/PS/PE/DS/IS/IE registers and
+INTR_CON/PEND/MIRR_PEND/MASK/FLT_TYP/FLT_DEPTH. See
+`doc/board/hsoc-gpio.md` for bit packing, reset and digital modeling limits.
 
 ### Keep the guest running
 

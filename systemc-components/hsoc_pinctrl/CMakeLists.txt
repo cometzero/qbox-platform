@@ -1,1 +1,0 @@
-gs_create_dymod(hsoc_pinctrl)
