@@ -52,8 +52,45 @@ local ROS_DW_UART_BASES = {
 }
 local ROS_DW_UART_SPIS = {330; 331; 332; 333}
 local ROS_DW_UART_INTIDS = {362; 363; 364; 365}
+local ROS_DMA350_BASE = 0x31000000
+local ROS_DMA350_CHANNELS = 8
+local ROS_DMA350_TRIGGERS = 8
+local ROS_DMA350_FIRST_SPI = 271
+
+-- Each wired peripheral request has a dedicated channel with the same ID:
+-- SPI0 TX/RX 0/1, SPI1 TX/RX 2/3, UART0 TX/RX 4/5, UART1 TX/RX 6/7.
+-- The DMA-350 channel selector remains programmable; Linux preserves this
+-- one-to-one board wiring when it allocates peripheral channels.
+local function bind_dma_requests(platform, device, name, tx_id)
+    device.dma_tx_req = {bind = "&ap_dma350.trig_in_"..tx_id}
+    device.dma_rx_req = {bind = "&ap_dma350.trig_in_"..(tx_id + 1)}
+    platform.ap_dma350["trig_ack_"..tx_id] = {bind = "&"..name..".dma_tx_ack"}
+    platform.ap_dma350["trig_ack_"..(tx_id + 1)] = {bind = "&"..name..".dma_rx_ack"}
+end
 
 function ros.define(ctx, platform)
+    platform.ap_dma350 = enable_ap_cpus and {
+        moduletype = "dma350";
+        channel_count = ROS_DMA350_CHANNELS;
+        trigger_count = ROS_DMA350_TRIGGERS;
+        trace = dma350_trace;
+        trace_limit = dma350_trace_limit;
+        trace_filter = dma350_trace_filter;
+        target_socket = {
+            address = ROS_DMA350_BASE;
+            size = ROS_MMIO_SIZE;
+            bind = "&host_router.initiator_socket";
+        };
+        initiator_socket = {bind = "&host_router.target_socket"};
+    } or nil
+    if platform.ap_dma350 then
+        for channel=0,ROS_DMA350_CHANNELS-1 do
+            platform.ap_dma350["irq_"..channel] = {
+                bind = "&ap_gic.spi_in_"..(ROS_DMA350_FIRST_SPI + channel);
+            }
+        end
+    end
+
     platform.ap_virtioblk_0 = enable_ap_cpus and {
         moduletype = "virtio_mmio_blk";
         args = {"&platform.ap_qemu_inst"};
@@ -205,6 +242,9 @@ function ros.define(ctx, platform)
             };
             irq = {bind = "&ap_gic.spi_in_"..ROS_DW_SSI_SPIS[i + 1]};
         } or nil
+        if platform["ap_dw_ssi_"..i] and i < 2 then
+            bind_dma_requests(platform, platform["ap_dw_ssi_"..i], "ap_dw_ssi_"..i, 2 * i)
+        end
     end
 
     for i=0,3 do
@@ -220,6 +260,9 @@ function ros.define(ctx, platform)
             };
             irq = {bind = "&ap_gic.spi_in_"..ROS_DW_UART_SPIS[i + 1]};
         } or nil
+        if platform[uart] and i < 2 then
+            bind_dma_requests(platform, platform[uart], uart, 4 + 2 * i)
+        end
         if i == 0 or i == 2 then
             platform[uart].backend_socket = {
                 bind = "&ap_dw_uart_"..(i + 1)..".backend_socket";
@@ -230,6 +273,16 @@ function ros.define(ctx, platform)
 end
 
 ros.peripherals = {
+    dma = {
+        name = "ap_dma350";
+        base = ROS_DMA350_BASE;
+        size = ROS_MMIO_SIZE;
+        channels = ROS_DMA350_CHANNELS;
+        trigger_inputs = ROS_DMA350_TRIGGERS;
+        dedicated_channel_requests = true;
+        first_irq = ROS_DMA350_FIRST_SPI + 32;
+        modeled = true;
+    };
     system = {
         registers = {
             base = ROS_SYSTEM_REGISTERS_BASE;
@@ -312,6 +365,10 @@ local function visit_dwc_targets(platform, visitor)
 end
 
 function ros.bind_ap_view_targets(platform, bind_ap_target)
+    if platform.ap_dma350 then
+        bind_ap_target(platform.ap_dma350.target_socket)
+        platform.ap_dma350.initiator_socket = {bind = "&ap_router.target_socket"}
+    end
     for i=0,(ROS_BLOCK_DEVICE_COUNT-1) do
         local virtio = platform["ap_virtioblk_"..i]
         if virtio ~= nil and virtio.mem ~= nil then
@@ -338,6 +395,9 @@ function ros.bind_ap_view_targets(platform, bind_ap_target)
 end
 
 function ros.lower_decode_priorities(platform, lower_decode_priority, priority)
+    if platform.ap_dma350 then
+        lower_decode_priority(platform.ap_dma350.target_socket, priority)
+    end
     for i=0,(ROS_BLOCK_DEVICE_COUNT-1) do
         local virtio = platform["ap_virtioblk_"..i]
         if virtio ~= nil and virtio.mem ~= nil then

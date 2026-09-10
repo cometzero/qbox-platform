@@ -85,6 +85,7 @@ end
 
 function ap_cold_reset_bind_targets()
     local targets = {
+        "&ap_dma350.reset";
         "&pinctrl_peri0.reset";
         "&pinctrl_peri1.reset";
         "&ap_bl2_reset_loader.reset";
