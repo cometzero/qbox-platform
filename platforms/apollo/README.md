@@ -92,6 +92,32 @@ to force a repeat, initialize the build environment and run
 
 ## Runtime
 
+### DW_apb_i2s audio pair
+
+I2S0 at `0x30200000` (SPI 356) and I2S1 at `0x30210000` (SPI 357)
+both support TX and RX, connected in both directions. PERI0 bank3 pins
+0–3 serve I2S0 and 4–7 serve I2S1, using function 2.
+Both `dma350_0` (existing SPI/UART) and `dma350_1` (I2S) have eight channels.
+The latter uses `0x31010000`/SPI 358; channels 0/1 serve I2S0 TX/RX,
+2/3 serve I2S1 TX/RX, and 4–7 are unconnected.
+The BSP includes the existing Linux DesignWare ASoC driver and the
+`i2s-loopback` ALSA test. From the workspace root after BSP boot:
+
+```sh
+timeout 420 ./scripts/run/ssh_run.sh scripts/test/verify_qbox_i2s.sh
+```
+
+Both Apollo I2S instances explicitly enable `functional_pacing`: transfers
+wait for TX data and available RX FIFO space without an extra audio queue.
+This is transaction-level functional validation, not physical I2S clock or
+FIFO deadline validation. The standalone model defaults to timed operation
+(`functional_pacing=false`), with idle-zero and overflow unit coverage.
+The current four-CPU freerunning profile is not qualified for timed audio.
+See the workspace's `doc/dwc/dw-apb-i2s.md` for PIO-before-DMA evidence,
+cyclic software rearm, commands, and limitations.
+
+### Full-system boot
+
 This platform supports the full RSE-first Apollo QVP. Its sole runtime
 entrypoint is:
 
