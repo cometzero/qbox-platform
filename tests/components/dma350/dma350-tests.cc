@@ -1,95 +1,122 @@
-/*
- * SPDX-License-Identifier: BSD-3-Clause
- */
+/* SPDX-License-Identifier: BSD-3-Clause */
 
 #include <cstdint>
 #include <cstring>
-#include <iostream>
-#include <sstream>
-#include <string>
+#include <limits>
+#include <unordered_map>
 #include <vector>
 
+#include <cci/utils/broker.h>
+#include <dma350.h>
 #include <gtest/gtest.h>
 #include <systemc>
 #include <tlm>
 #include <tlm_utils/simple_target_socket.h>
-#include <cci/utils/broker.h>
-
-#include <dma350.h>
 
 namespace {
-
-constexpr uint64_t DMASECINFO = 0xfb0;
+constexpr uint64_t DMA_BUILDCFG0 = 0xfb0;
+constexpr uint64_t DMA_BUILDCFG1 = 0xfb4;
 constexpr uint64_t DMAINFO_IIDR = 0xfc8;
-constexpr uint64_t DMAINFO_AIDR = 0xfcc;
-constexpr uint64_t CH0_CMD = 0x1000;
-constexpr uint64_t CH0_STATUS = 0x1004;
-constexpr uint64_t CH0_CTRL = 0x100c;
-constexpr uint64_t CH0_SRCADDR = 0x1010;
-constexpr uint64_t CH0_DESADDR = 0x1018;
-constexpr uint64_t CH0_XSIZE = 0x1020;
-constexpr uint64_t CH0_XSIZEHI = 0x1024;
-constexpr uint64_t CH0_DESTRANSCFG = 0x102c;
-constexpr uint64_t CH0_XADDRINC = 0x1030;
-constexpr uint64_t CH0_FILLVAL = 0x1038;
-constexpr uint32_t CH_STATUS_STAT_DONE = 1u << 16;
+constexpr uint64_t CH0 = 0x1000;
+constexpr uint64_t CH_CMD = 0x00;
+constexpr uint64_t CH_STATUS = 0x04;
+constexpr uint64_t CH_INTREN = 0x08;
+constexpr uint64_t CH_CTRL = 0x0c;
+constexpr uint64_t CH_SRCADDR = 0x10;
+constexpr uint64_t CH_SRCADDRHI = 0x14;
+constexpr uint64_t CH_DESADDR = 0x18;
+constexpr uint64_t CH_DESADDRHI = 0x1c;
+constexpr uint64_t CH_XSIZE = 0x20;
+constexpr uint64_t CH_XSIZEHI = 0x24;
+constexpr uint64_t CH_XADDRINC = 0x30;
+constexpr uint64_t CH_FILLVAL = 0x38;
+constexpr uint64_t CH_DESTRIGINCFG = 0x50;
+constexpr uint64_t CH_ERRINFO = 0x90;
+constexpr uint64_t CH_BUILDCFG1 = 0xfc;
+constexpr uint32_t STAT_DONE = 1u << 16;
+constexpr uint32_t STAT_ERR = 1u << 17;
+constexpr uint32_t STAT_STOPPED = 1u << 19;
+constexpr uint32_t STAT_PAUSED = 1u << 20;
+constexpr uint32_t STAT_RESUMEWAIT = 1u << 21;
+constexpr uint32_t INTR_DONE = 1u << 0;
+constexpr uint32_t INTR_ERR = 1u << 1;
+constexpr uint32_t TRIGGER_ACTIVE = 1u << 2;
+constexpr uint32_t ACK_LAST_OKAY = 2u;
 
 class TestMemory : public sc_core::sc_module
 {
 public:
     tlm_utils::simple_target_socket<TestMemory, DEFAULT_TLM_BUSWIDTH> target_socket;
-    std::vector<uint8_t> bytes;
+    std::unordered_map<uint64_t, uint8_t> bytes;
+    std::vector<std::vector<uint8_t>> fifo_writes;
+    uint64_t fifo_address = std::numeric_limits<uint64_t>::max();
+    uint64_t fail_read_address = std::numeric_limits<uint64_t>::max();
+    uint64_t fail_write_address = std::numeric_limits<uint64_t>::max();
 
-    TestMemory(sc_core::sc_module_name name, size_t size)
-        : sc_core::sc_module(name)
-        , target_socket("target_socket")
-        , bytes(size, 0)
+    explicit TestMemory(sc_core::sc_module_name name)
+        : sc_core::sc_module(name), target_socket("target_socket")
     {
         target_socket.register_b_transport(this, &TestMemory::b_transport);
     }
 
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
     {
-        (void)delay;
-
-        const auto address = trans.get_address();
-        const auto len = trans.get_data_length();
-        auto* data = trans.get_data_ptr();
-
-        if (data == nullptr || address + len > bytes.size()) {
-            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+        const uint64_t address = trans.get_address();
+        const unsigned int len = trans.get_data_length();
+        uint8_t* data = trans.get_data_ptr();
+        if (!data) {
+            trans.set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
             return;
         }
-
         if (trans.get_command() == tlm::TLM_READ_COMMAND) {
-            std::memcpy(data, bytes.data() + address, len);
+            if (address == fail_read_address) {
+                trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+                return;
+            }
+            for (unsigned int i = 0; i < len; ++i) data[i] = bytes[address + i];
         } else if (trans.get_command() == tlm::TLM_WRITE_COMMAND) {
-            std::memcpy(bytes.data() + address, data, len);
+            if (address == fail_write_address) {
+                trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+                return;
+            }
+            if (address == fifo_address)
+                fifo_writes.emplace_back(data, data + len);
+            else
+                for (unsigned int i = 0; i < len; ++i) bytes[address + i] = data[i];
         } else {
             trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
             return;
         }
-
+        delay += sc_core::sc_time(100, sc_core::SC_PS);
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
     }
 };
 
-uint32_t access32(dma350& dut, uint64_t offset, tlm::tlm_command command, uint32_t value = 0)
+class MmioInitiator : public sc_core::sc_module
+{
+public:
+    tlm_utils::simple_initiator_socket<MmioInitiator, DEFAULT_TLM_BUSWIDTH> socket;
+
+    explicit MmioInitiator(sc_core::sc_module_name name)
+        : sc_core::sc_module(name), socket("socket")
+    {
+    }
+};
+
+uint32_t access32(dma350& dut, uint64_t offset, tlm::tlm_command command,
+                  uint32_t value = 0)
 {
     tlm::tlm_generic_payload trans;
-    auto data = value;
-
     trans.set_address(offset);
     trans.set_command(command);
-    trans.set_data_length(sizeof(data));
-    trans.set_streaming_width(sizeof(data));
-    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&data));
-
+    trans.set_data_length(sizeof(value));
+    trans.set_streaming_width(sizeof(value));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+    trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
     sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
     dut.b_transport(trans, delay);
-
     EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
-    return data;
+    return value;
 }
 
 uint32_t read32(dma350& dut, uint64_t offset)
@@ -102,201 +129,185 @@ void write32(dma350& dut, uint64_t offset, uint32_t value)
     (void)access32(dut, offset, tlm::TLM_WRITE_COMMAND, value);
 }
 
+void write64_address(dma350& dut, uint64_t low_register, uint64_t address)
+{
+    write32(dut, low_register, static_cast<uint32_t>(address));
+    write32(dut, low_register + 4, static_cast<uint32_t>(address >> 32));
+}
+
+void configure_copy(dma350& dut, uint64_t source, uint64_t dest,
+                    uint32_t count, unsigned int transfer_log2 = 0,
+                    int16_t source_inc = 1, int16_t dest_inc = 1,
+                    uint32_t extra_ctrl = 0)
+{
+    write64_address(dut, CH0 + CH_SRCADDR, source);
+    write64_address(dut, CH0 + CH_DESADDR, dest);
+    write32(dut, CH0 + CH_XSIZE,
+            (count & 0xffffu) | ((count & 0xffffu) << 16));
+    write32(dut, CH0 + CH_XSIZEHI,
+            (count >> 16) | ((count >> 16) << 16));
+    write32(dut, CH0 + CH_XADDRINC,
+            static_cast<uint16_t>(source_inc) |
+                (static_cast<uint32_t>(static_cast<uint16_t>(dest_inc)) << 16));
+    write32(dut, CH0 + CH_CTRL,
+            transfer_log2 | (1u << 9) | (1u << 21) | extra_ctrl);
+}
+
+template <typename T>
+void drive(TargetSignalSocket<T>& socket, const T& value)
+{
+    auto* signal = dynamic_cast<sc_core::sc_signal_inout_if<T>*>(
+        socket.get_interface());
+    ASSERT_NE(signal, nullptr);
+    signal->write(value);
+}
 } // namespace
 
-TEST(Dma350Test, ResetValuesCoverEarlyBl1Polling)
+TEST(Dma350Test, ExecutesMemoryPeripheralAndLifecycleOperations)
 {
     dma350 dut("dma350");
+    dut.p_trace = true;
+    dut.p_trace_limit = 256;
+    TestMemory memory("memory");
+    MmioInitiator mmio("mmio");
+    sc_core::sc_signal<uint32_t> trigger_ack("trigger_ack");
+    sc_core::sc_signal<bool> irq("irq");
+    dut.initiator_socket.bind(memory.target_socket);
+    mmio.socket.bind(dut.target_socket);
+    dut.trig_ack[0].bind(trigger_ack);
+    dut.irq[0].bind(irq);
 
-    EXPECT_EQ(read32(dut, DMASECINFO), 0x30u);
+    EXPECT_EQ((read32(dut, DMA_BUILDCFG0) >> 4) & 0x3fu, 3u);
+    EXPECT_EQ(read32(dut, DMA_BUILDCFG1) & 0x1ffu, 28u);
     EXPECT_EQ(read32(dut, DMAINFO_IIDR), 0x3a00043bu);
-    EXPECT_EQ(read32(dut, DMAINFO_AIDR), 0x0u);
-    EXPECT_EQ(read32(dut, CH0_CTRL), 0x00200200u);
-    EXPECT_EQ(read32(dut, CH0_DESTRANSCFG), 0x000f0400u);
-}
+    EXPECT_EQ(read32(dut, CH0 + CH_BUILDCFG1), 0xb3u);
 
-TEST(Dma350Test, ChannelCommandCompletesImmediately)
-{
-    dma350 dut("dma350");
+    sc_core::sc_start(sc_core::SC_ZERO_TIME);
 
-    write32(dut, CH0_CMD, 0xffffffffu);
-    EXPECT_EQ(read32(dut, CH0_CMD), 0x0u);
-}
+    const uint64_t source = 0x100000020ULL;
+    const uint64_t dest = 0x100001000ULL;
+    for (uint32_t i = 0; i < 32; ++i) memory.bytes[source + i] = i ^ 0x5a;
+    configure_copy(dut, source, dest, 8, 2);
+    write32(dut, CH0 + CH_INTREN, INTR_DONE | INTR_ERR);
+    write32(dut, CH0 + CH_CMD, 1);
+    EXPECT_EQ(read32(dut, CH0 + CH_CMD), 1u);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_NS));
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_DONE, 0u);
+    EXPECT_TRUE(irq.read());
+    for (uint32_t i = 0; i < 32; ++i)
+        EXPECT_EQ(memory.bytes[dest + i], static_cast<uint8_t>(i ^ 0x5a));
+    EXPECT_EQ(read32(dut, CH0 + CH_SRCADDR), 0x40u);
+    EXPECT_EQ(read32(dut, CH0 + CH_SRCADDRHI), 1u);
+    EXPECT_EQ(read32(dut, CH0 + CH_XSIZE), 0u);
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
+    EXPECT_FALSE(irq.read());
 
-TEST(Dma350Test, EnableCommandExecutesFillWrites)
-{
-    dma350 dut("dma350");
-    TestMemory memory("memory", 0x100);
+    write32(dut, CH0 + CH_FILLVAL, 0xa5c33c5au);
+    write64_address(dut, CH0 + CH_DESADDR, dest + 0x100);
+    write32(dut, CH0 + CH_XSIZE, 4u << 16);
+    write32(dut, CH0 + CH_XSIZEHI, 0);
+    write32(dut, CH0 + CH_XADDRINC, 1u << 16);
+    write32(dut, CH0 + CH_CTRL, 2u | (3u << 9) | (1u << 21));
+    write32(dut, CH0 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_NS));
+    const uint8_t pattern[] = { 0x5a, 0x3c, 0xc3, 0xa5 };
+    for (uint32_t i = 0; i < 16; ++i)
+        EXPECT_EQ(memory.bytes[dest + 0x100 + i], pattern[i & 3]);
 
-    dut.initiator_socket.bind(memory.target_socket);
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    const uint64_t wrap_source = source + 0x300;
+    const uint64_t wrap_dest = dest + 0x200;
+    for (uint32_t i = 0; i < 4; ++i) memory.bytes[wrap_source + i] = 0x30 + i;
+    write64_address(dut, CH0 + CH_SRCADDR, wrap_source);
+    write64_address(dut, CH0 + CH_DESADDR, wrap_dest);
+    write32(dut, CH0 + CH_XSIZE, 4u | (10u << 16));
+    write32(dut, CH0 + CH_XSIZEHI, 0);
+    write32(dut, CH0 + CH_XADDRINC, 0x00010001u);
+    write32(dut, CH0 + CH_CTRL, (2u << 9) | (1u << 21));
+    write32(dut, CH0 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_NS));
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_DONE, 0u);
+    for (uint32_t i = 0; i < 10; ++i)
+        EXPECT_EQ(memory.bytes[wrap_dest + i],
+                  static_cast<uint8_t>(0x30 + (i & 3)));
 
-    write32(dut, CH0_FILLVAL, 0xa5a55a5au);
-    write32(dut, CH0_DESADDR, 0x20u);
-    write32(dut, CH0_XADDRINC, 0x00010000u);
-    write32(dut, CH0_XSIZE, 0x00020000u);
-    write32(dut, CH0_CTRL, 0x01200603u);
-    write32(dut, CH0_CMD, 0x1u);
-
-    EXPECT_EQ(read32(dut, CH0_CMD), 0x0u);
-    for (auto i = 0u; i < 16u; i += sizeof(uint32_t)) {
-        uint32_t value = 0;
-        std::memcpy(&value, memory.bytes.data() + 0x20 + i, sizeof(value));
-        EXPECT_EQ(value, 0xa5a55a5au);
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    memory.fifo_address = 0x8000;
+    for (uint32_t i = 0; i < 4; ++i) memory.bytes[source + 0x100 + i] = 0x70 + i;
+    configure_copy(dut, source + 0x100, memory.fifo_address, 4, 0, 1, 0,
+                   1u << 26);
+    write32(dut, CH0 + CH_DESTRIGINCFG,
+            (2u << 8) | (2u << 10));
+    write32(dut, CH0 + CH_CMD, 1);
+    for (uint32_t i = 0; i < 4; ++i) {
+        drive(dut.trig_in[0], TRIGGER_ACTIVE);
+        sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_NS));
+        EXPECT_NE(trigger_ack.read() & TRIGGER_ACTIVE, 0u);
+        if (i == 3) EXPECT_EQ(trigger_ack.read() & 3u, ACK_LAST_OKAY);
+        EXPECT_EQ(memory.fifo_writes.size(), i + 1);
+        EXPECT_EQ(memory.fifo_writes.back().size(), 1u);
+        EXPECT_EQ(memory.fifo_writes.back()[0], 0x70 + i);
+        drive(dut.trig_in[0], 0u);
+        sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
+        EXPECT_EQ(trigger_ack.read(), 0u);
     }
-}
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_DONE, 0u);
 
-TEST(Dma350Test, EnableCommandCopiesContiguousMemoryAndSetsDoneStatus)
-{
-    dma350 dut("dma350_copy");
-    TestMemory memory("copy_memory", 0x100);
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    configure_copy(dut, source, dest + 0x400, 1024);
+    write32(dut, CH0 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(1100, sc_core::SC_PS));
+    write32(dut, CH0 + CH_CMD, 1u << 4);
+    sc_core::sc_start(sc_core::sc_time(500, sc_core::SC_PS));
+    uint32_t status = read32(dut, CH0 + CH_STATUS);
+    EXPECT_EQ(status & (STAT_PAUSED | STAT_RESUMEWAIT),
+              STAT_PAUSED | STAT_RESUMEWAIT);
+    const uint32_t paused_residue = read32(dut, CH0 + CH_XSIZE) >> 16;
+    EXPECT_GT(paused_residue, 0u);
+    EXPECT_LT(paused_residue, 1024u);
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, CH0 + CH_XSIZE) >> 16, paused_residue);
+    write32(dut, CH0 + CH_CMD, 1u << 5);
+    sc_core::sc_start(sc_core::sc_time(20, sc_core::SC_NS));
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_DONE, 0u);
 
-    dut.initiator_socket.bind(memory.target_socket);
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    configure_copy(dut, source, dest + 0x1000, 1024);
+    write32(dut, CH0 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(1100, sc_core::SC_PS));
+    write32(dut, CH0 + CH_CMD, 1u << 3);
+    sc_core::sc_start(sc_core::sc_time(500, sc_core::SC_PS));
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_STOPPED, 0u);
+    EXPECT_GT(read32(dut, CH0 + CH_XSIZE) >> 16, 0u);
 
-    const uint8_t source[] = {
-        0x10, 0x11, 0x12, 0x13,
-        0x20, 0x21, 0x22, 0x23,
-        0x30, 0x31, 0x32, 0x33,
-        0x40, 0x41, 0x42, 0x43,
-    };
-    std::memcpy(memory.bytes.data() + 0x20, source, sizeof(source));
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    configure_copy(dut, source, dest, 1, 0, 1, 1, 1u << 26);
+    write32(dut, CH0 + CH_DESTRIGINCFG,
+            99u | (2u << 8) | (2u << 10));
+    write32(dut, CH0 + CH_CMD, 1);
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_ERR, 0u);
+    EXPECT_NE(read32(dut, CH0 + CH_ERRINFO) & (1u << 1), 0u);
 
-    write32(dut, CH0_SRCADDR, 0x20u);
-    write32(dut, CH0_DESADDR, 0x80u);
-    write32(dut, CH0_XADDRINC, 0x00010001u);
-    write32(dut, CH0_XSIZE, sizeof(source) | (sizeof(source) << 16));
-    write32(dut, CH0_CTRL, 0x00200200u);
-    write32(dut, CH0_CMD, 0x1u);
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    memory.fail_read_address = source + 0x200;
+    configure_copy(dut, memory.fail_read_address, dest, 1);
+    write32(dut, CH0 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_NS));
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_ERR, 0u);
+    EXPECT_NE(read32(dut, CH0 + CH_ERRINFO) & (1u << 16), 0u);
 
-    EXPECT_EQ(read32(dut, CH0_CMD), 0x0u);
-    EXPECT_NE(read32(dut, CH0_STATUS) & CH_STATUS_STAT_DONE, 0u);
-    EXPECT_EQ(std::memcmp(memory.bytes.data() + 0x80, source, sizeof(source)), 0);
-
-    write32(dut, CH0_STATUS, CH_STATUS_STAT_DONE);
-    EXPECT_EQ(read32(dut, CH0_STATUS) & CH_STATUS_STAT_DONE, 0u);
-}
-
-TEST(Dma350Test, EnableCommandCopiesXsizeHighBits)
-{
-    dma350 dut("dma350_copy_high");
-    TestMemory memory("copy_high_memory", 0x24000);
-    const uint32_t length = 0x10004;
-    const uint32_t source = 0x20;
-    const uint32_t dest = 0x12000;
-
-    dut.initiator_socket.bind(memory.target_socket);
-
-    for (uint32_t i = 0; i < length; ++i) {
-        memory.bytes[source + i] = static_cast<uint8_t>(i ^ (i >> 8));
-    }
-
-    write32(dut, CH0_SRCADDR, source);
-    write32(dut, CH0_DESADDR, dest);
-    write32(dut, CH0_XADDRINC, 0x00010001u);
-    write32(dut, CH0_XSIZE, (length & 0xffffu) | ((length & 0xffffu) << 16));
-    write32(dut, CH0_XSIZEHI, ((length >> 16) & 0xffffu) | (((length >> 16) & 0xffffu) << 16));
-    write32(dut, CH0_CTRL, 0x00200200u);
-    write32(dut, CH0_CMD, 0x1u);
-
-    EXPECT_NE(read32(dut, CH0_STATUS) & CH_STATUS_STAT_DONE, 0u);
-    EXPECT_EQ(memory.bytes[dest], memory.bytes[source]);
-    EXPECT_EQ(memory.bytes[dest + 0x8000], memory.bytes[source + 0x8000]);
-    EXPECT_EQ(memory.bytes[dest + length - 1], memory.bytes[source + length - 1]);
-}
-
-TEST(Dma350Test, TraceCopyFilterSkipsFillOperations)
-{
-    dma350 dut("dma350_trace_copy");
-
-    dut.p_trace = true;
-    dut.p_trace_filter = std::string("copy");
-    dut.p_trace_limit = 32;
-
-    std::stringstream captured;
-    auto* old_cerr = std::cerr.rdbuf(captured.rdbuf());
-
-    write32(dut, CH0_FILLVAL, 0xa5a55a5au);
-    write32(dut, CH0_DESADDR, 0x20u);
-    write32(dut, CH0_XADDRINC, 0x00010000u);
-    write32(dut, CH0_XSIZE, 0x00020000u);
-    write32(dut, CH0_CTRL, 0x01200603u);
-    write32(dut, CH0_CMD, 0x1u);
-
-    write32(dut, CH0_SRCADDR, 0x20u);
-    write32(dut, CH0_DESADDR, 0x80u);
-    write32(dut, CH0_XADDRINC, 0x00010001u);
-    write32(dut, CH0_XSIZE, 0x10u | (0x10u << 16));
-    write32(dut, CH0_CTRL, 0x00200200u);
-    write32(dut, CH0_CMD, 0x1u);
-
-    std::cerr.rdbuf(old_cerr);
-
-    const auto log = captured.str();
-    EXPECT_EQ(log.find(" fill"), std::string::npos);
-    EXPECT_NE(log.find(" copy"), std::string::npos);
-    EXPECT_NE(log.find("source=0x20"), std::string::npos);
-    EXPECT_NE(log.find("dest=0x80"), std::string::npos);
-}
-
-TEST(Dma350Test, TraceAddressThresholdFiltersLowCopies)
-{
-    dma350 dut("dma350_trace_threshold");
-
-    dut.p_trace = true;
-    dut.p_trace_filter = std::string("copy");
-    dut.p_trace_address_min = 0x70000000u;
-    dut.p_trace_limit = 32;
-
-    std::stringstream captured;
-    auto* old_cerr = std::cerr.rdbuf(captured.rdbuf());
-
-    write32(dut, CH0_SRCADDR, 0x20u);
-    write32(dut, CH0_DESADDR, 0x80u);
-    write32(dut, CH0_XADDRINC, 0x00010001u);
-    write32(dut, CH0_XSIZE, 0x10u | (0x10u << 16));
-    write32(dut, CH0_CTRL, 0x00200200u);
-    write32(dut, CH0_CMD, 0x1u);
-
-    write32(dut, CH0_SRCADDR, 0xb0067000u);
-    write32(dut, CH0_DESADDR, 0x70083c00u);
-    write32(dut, CH0_XADDRINC, 0x00010001u);
-    write32(dut, CH0_XSIZE, 0x10u | (0x10u << 16));
-    write32(dut, CH0_CTRL, 0x00200200u);
-    write32(dut, CH0_CMD, 0x1u);
-
-    std::cerr.rdbuf(old_cerr);
-
-    const auto log = captured.str();
-    EXPECT_EQ(log.find("source=0x20"), std::string::npos);
-    EXPECT_EQ(log.find("dest=0x80"), std::string::npos);
-    EXPECT_NE(log.find("source=0xb0067000"), std::string::npos);
-    EXPECT_NE(log.find("dest=0x70083c00"), std::string::npos);
-}
-
-TEST(Dma350Test, RejectsUnsupportedAndOutOfRangeTransactions)
-{
-    dma350 dut("dma350");
-    tlm::tlm_generic_payload trans;
-    uint8_t data[3] = {};
-    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
-
-    trans.set_command(tlm::TLM_READ_COMMAND);
-    trans.set_address(0);
-    trans.set_data_ptr(data);
-    trans.set_data_length(sizeof(data));
-    dut.b_transport(trans, delay);
-    EXPECT_EQ(trans.get_response_status(), tlm::TLM_ADDRESS_ERROR_RESPONSE);
-
-    trans.set_data_length(sizeof(uint32_t));
-    trans.set_address(0x2000 - 1);
-    dut.b_transport(trans, delay);
-    EXPECT_EQ(trans.get_response_status(), tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    drive(dut.reset, true);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
+    drive(dut.reset, false);
+    EXPECT_EQ(read32(dut, CH0 + CH_STATUS), 0u);
+    EXPECT_FALSE(irq.read());
 }
 
 int sc_main(int argc, char* argv[])
 {
     cci_utils::consuming_broker broker("global_broker");
     cci_register_broker(broker);
-
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
