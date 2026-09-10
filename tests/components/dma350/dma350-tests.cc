@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -378,6 +379,23 @@ int sc_main(int argc, char* argv[])
 {
     cci_utils::consuming_broker broker("global_broker");
     cci_register_broker(broker);
+    if (argc == 2 && std::string(argv[1]) == "--reject-nine-channels") {
+        cci::cci_originator originator("dma350-test");
+        broker.set_preset_cci_value("invalid_dma.channel_count",
+                                    cci::cci_value(9u), originator);
+        sc_core::sc_report_handler::set_actions(sc_core::SC_FATAL,
+                                                sc_core::SC_THROW);
+        try {
+            dma350 invalid_dma("invalid_dma");
+        } catch (const sc_core::sc_report& report) {
+            return std::string(report.what()).find(
+                       "channel_count must be between 1 and 8") !=
+                           std::string::npos
+                       ? 0
+                       : 1;
+        }
+        return 1;
+    }
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

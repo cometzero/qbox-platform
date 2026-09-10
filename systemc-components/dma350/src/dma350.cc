@@ -9,7 +9,7 @@
 #include <limits>
 
 namespace {
-constexpr unsigned int MAX_CHANNELS = 16;
+constexpr unsigned int MAX_CHANNELS = 8;
 constexpr unsigned int MAX_TRIGGERS = 256;
 constexpr unsigned int MODEL_DATA_WIDTH_LOG2 = 4; /* 128-bit */
 constexpr unsigned int MODEL_ADDRESS_WIDTH = 48;
@@ -43,7 +43,7 @@ dma350::dma350(sc_core::sc_module_name name)
     , m_output_event(false)
 {
     if (p_channel_count.get_value() == 0 || p_channel_count.get_value() > MAX_CHANNELS)
-        SC_REPORT_FATAL(name, "channel_count must be between 1 and 16");
+        SC_REPORT_FATAL(name, "channel_count must be between 1 and 8");
     if (p_trigger_count.get_value() > MAX_TRIGGERS)
         SC_REPORT_FATAL(name, "trigger_count must not exceed 256");
     if (p_burst_bytes.get_value() == 0)
