@@ -122,6 +122,7 @@ if(BUILD_TESTING)
         cc3xx
         dma350
         dma350_peripherals
+        dw_apb_i2s
         gic720ae_messreg
         apollo_sbist
         gicx00_multiview
@@ -224,6 +225,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     hsoc_gpio
     dw-apb-ssi
     dw-apb-uart
+    dw-apb-i2s
     uart-pl011
     global_peripheral_initiator
     cpu_arm_cortexA720AE
