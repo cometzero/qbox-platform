@@ -897,6 +897,35 @@ The current ABI uses packed SEL/DAT/PS/PE/DS/IS/IE registers and
 INTR_CON/PEND/MIRR_PEND/MASK/FLT_TYP/FLT_DEPTH. See
 `doc/board/hsoc-gpio.md` for bit packing, reset and digital modeling limits.
 
+### AP DMA-350 and peripheral DMA
+
+`hw-block/ros.lua` connects an eight-channel DMA-350 at `0x31000000`
+to the AP router, GIC SPIs 271–278, and eight dedicated TX/RX requests:
+SPI0 uses channels 0/1, SPI1 2/3, UART0 4/5 and UART1 6/7.
+Linux channels map permanently to physical channels; no dynamic channel
+sharing is used. I2C0–5, SPI2/3 and UART2/3 remain PIO-only in the AP wiring.
+DMA execution is asynchronous SystemC/TLM;
+the peripheral FIFOs use four-phase request/acknowledge handshakes.
+Linux uses DMAengine, DesignWare SPI DMA and 8250 DMA.
+Short transfers and UART RX tails may use PIO.
+
+Build with `./yocto_build.sh --keep-conf --bsp` from the workspace root.
+Launch a dedicated BSP guest with `QBOX_RDASPEN_DMA350_TRACE=true`,
+`QBOX_RDASPEN_DMA350_TRACE_LIMIT=20000` and
+`QBOX_RDASPEN_DMA350_TRACE_FILTER=operation`. While the runner is still
+collecting logs, execute:
+
+```bash
+./scripts/run/ssh_run.sh scripts/test/verify_qbox_dma350.sh
+```
+
+Capture this output and correlate it with the AP DMA trace using
+`scripts/test/validate_qbox_dma350.py`; data comparison alone does not
+prove DMA use. The test temporarily writes and restores EEPROM contents,
+checks I2C PIO, uses SPI loopback and UART0/1, and requires exclusive endpoint use.
+See workspace `doc/dma-350/apollo-qvp-implementation.md` for the exact
+commands, TRM scope, passing evidence and unsupported features.
+
 ### Keep the guest running
 
 ```bash
