@@ -13,7 +13,7 @@ function pinctrl.define(platform)
     platform.pinctrl_peri0 = {
         moduletype = "hsoc_gpio";
         bank_sizes = "8,8,8,8,8,8,1,1,1,1,1,1,1,1";
-        peripheral_routes = "0:0:0:2;1:0:2:2;2:0:4:2;3:0:6:2;4:1:0:2;5:1:2:2;6:2:0:4;7:2:4:4;10:4:0:2;11:4:2:2";
+        peripheral_routes = "0:0:0:2;1:0:2:2;2:0:4:2;3:0:6:2;4:1:0:2;5:1:2:2;6:2:0:4;7:2:4:4;10:4:0:2;11:4:2:2;14:3:0:4;15:3:4:4";
         target_socket = {
             address = PINCTRL_BASE;
             size = PINCTRL_SIZE;
@@ -30,6 +30,9 @@ function pinctrl.define(platform)
     for i=0,1 do
         device["peripheral_enable_"..(6 + i)] = {bind = "&ap_dw_ssi_"..i..".pinmux_enable"}
         device["peripheral_enable_"..(10 + i)] = {bind = "&ap_dw_uart_"..i..".pinmux_enable"}
+    end
+    for i=0,1 do
+        device["peripheral_enable_"..(14 + i)] = {bind = "&ap_dw_i2s_"..i..".pinmux_enable"}
     end
 
     platform.pinctrl_peri1 = {

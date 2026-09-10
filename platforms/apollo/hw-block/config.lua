@@ -85,7 +85,8 @@ end
 
 function ap_cold_reset_bind_targets()
     local targets = {
-        "&ap_dma350.reset";
+        "&dma350_0.reset";
+        "&dma350_1.reset";
         "&pinctrl_peri0.reset";
         "&pinctrl_peri1.reset";
         "&ap_bl2_reset_loader.reset";
@@ -114,6 +115,9 @@ function ap_cold_reset_bind_targets()
     for i=0,3 do
         targets[#targets + 1] = "&ap_dw_ssi_"..i..".reset"
         targets[#targets + 1] = "&ap_dw_uart_"..i..".reset"
+    end
+    for i=0,1 do
+        targets[#targets + 1] = "&ap_dw_i2s_"..i..".reset"
     end
 
     if getenv_bool_or("QBOX_APOLLO_RUNTIME_INJECTION", false) then

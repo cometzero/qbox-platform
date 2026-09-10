@@ -25,7 +25,7 @@ public:
     static constexpr unsigned int MAX_BANKS = 14;
     static constexpr unsigned int PINS_PER_BANK = 8;
     static constexpr unsigned int NUM_PIN_SLOTS = MAX_BANKS * PINS_PER_BANK;
-    static constexpr unsigned int NUM_PERIPHERALS = 14;
+    static constexpr unsigned int NUM_PERIPHERALS = 16;
     static constexpr uint32_t BANK_STRIDE = 0x1000;
 
     enum BankRegister : uint32_t {

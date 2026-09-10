@@ -52,24 +52,30 @@ local ROS_DW_UART_BASES = {
 }
 local ROS_DW_UART_SPIS = {330; 331; 332; 333}
 local ROS_DW_UART_INTIDS = {362; 363; 364; 365}
+local ROS_DW_I2S_BASES = {0x30200000; 0x30210000}
+local ROS_DW_I2S_SPIS = {356; 357}
+local ROS_DW_I2S_INTIDS = {388; 389}
 local ROS_DMA350_BASE = 0x31000000
 local ROS_DMA350_CHANNELS = 8
 local ROS_DMA350_TRIGGERS = 8
 local ROS_DMA350_NONSEC_SPI = 279
+local ROS_I2S_DMA_BASE = 0x31010000
+local ROS_I2S_DMA_SPI = 358
 
 -- Each wired peripheral request has a dedicated channel with the same ID:
--- SPI0 TX/RX 0/1, SPI1 TX/RX 2/3, UART0 TX/RX 4/5, UART1 TX/RX 6/7.
+-- SPI0 TX/RX 0/1, SPI1 TX/RX 2/3, UART0 TX/RX 4/5, UART1 TX/RX 6/7,
+-- A second eight-channel DMA-350 serves I2S0 TX/RX 0/1 and I2S1 TX/RX 2/3.
 -- The DMA-350 channel selector remains programmable; Linux preserves this
 -- one-to-one board wiring when it allocates peripheral channels.
 local function bind_dma_requests(platform, device, name, tx_id)
-    device.dma_tx_req = {bind = "&ap_dma350.trig_in_"..tx_id}
-    device.dma_rx_req = {bind = "&ap_dma350.trig_in_"..(tx_id + 1)}
-    platform.ap_dma350["trig_ack_"..tx_id] = {bind = "&"..name..".dma_tx_ack"}
-    platform.ap_dma350["trig_ack_"..(tx_id + 1)] = {bind = "&"..name..".dma_rx_ack"}
+    device.dma_tx_req = {bind = "&dma350_0.trig_in_"..tx_id}
+    device.dma_rx_req = {bind = "&dma350_0.trig_in_"..(tx_id + 1)}
+    platform.dma350_0["trig_ack_"..tx_id] = {bind = "&"..name..".dma_tx_ack"}
+    platform.dma350_0["trig_ack_"..(tx_id + 1)] = {bind = "&"..name..".dma_rx_ack"}
 end
 
 function ros.define(ctx, platform)
-    platform.ap_dma350 = enable_ap_cpus and {
+    platform.dma350_0 = enable_ap_cpus and {
         moduletype = "dma350";
         channel_count = ROS_DMA350_CHANNELS;
         trigger_count = ROS_DMA350_TRIGGERS;
@@ -79,6 +85,19 @@ function ros.define(ctx, platform)
         irq_comb_nonsec = {bind = "&ap_gic.spi_in_"..ROS_DMA350_NONSEC_SPI};
         target_socket = {
             address = ROS_DMA350_BASE;
+            size = ROS_MMIO_SIZE;
+            bind = "&host_router.initiator_socket";
+        };
+        initiator_socket = {bind = "&host_router.target_socket"};
+    } or nil
+
+    platform.dma350_1 = enable_ap_cpus and {
+        moduletype = "dma350";
+        channel_count = 8;
+        trigger_count = 8;
+        irq_comb_nonsec = {bind = "&ap_gic.spi_in_"..ROS_I2S_DMA_SPI};
+        target_socket = {
+            address = ROS_I2S_DMA_BASE;
             size = ROS_MMIO_SIZE;
             bind = "&host_router.initiator_socket";
         };
@@ -264,17 +283,60 @@ function ros.define(ctx, platform)
         end
     end
 
+    for i=0,1 do
+        local i2s = "ap_dw_i2s_"..i
+        platform[i2s] = enable_ap_cpus and {
+            moduletype = "dw_apb_i2s";
+            dylib_path = "dw-apb-i2s";
+            master_mode = i == 0;
+            transmitter_enabled = true;
+            receiver_enabled = true;
+            -- Transaction pacing for the temporally decoupled AP CPUs.
+            -- Physical clock/overrun timing is tested with this disabled.
+            functional_pacing = true;
+            target_socket = {
+                address = ROS_DW_I2S_BASES[i + 1];
+                size = ROS_MMIO_SIZE;
+                bind = "&host_router.initiator_socket";
+            };
+            irq = {bind = "&ap_gic.spi_in_"..ROS_DW_I2S_SPIS[i + 1]};
+        } or nil
+    end
+    if platform.ap_dw_i2s_0 then
+        platform.ap_dw_i2s_0.audio_socket = {
+            bind = "&ap_dw_i2s_1.audio_socket";
+        }
+        for i=0,1 do
+            local name = "ap_dw_i2s_"..i
+            local device = platform[name]
+            device.dma_tx_req = {bind = "&dma350_1.trig_in_"..(2 * i)}
+            device.dma_rx_req = {bind = "&dma350_1.trig_in_"..(2 * i + 1)}
+            platform.dma350_1["trig_ack_"..(2 * i)] = {bind = "&"..name..".dma_tx_ack"}
+            platform.dma350_1["trig_ack_"..(2 * i + 1)] = {bind = "&"..name..".dma_rx_ack"}
+        end
+    end
+
 end
 
 ros.peripherals = {
     dma = {
-        name = "ap_dma350";
+        name = "dma350_0";
         base = ROS_DMA350_BASE;
         size = ROS_MMIO_SIZE;
         channels = ROS_DMA350_CHANNELS;
         trigger_inputs = ROS_DMA350_TRIGGERS;
         dedicated_channel_requests = true;
         first_irq = ROS_DMA350_NONSEC_SPI + 32;
+        interrupt_count = 1;
+        modeled = true;
+    };
+    i2s_dma = {
+        name = "dma350_1";
+        base = ROS_I2S_DMA_BASE;
+        size = ROS_MMIO_SIZE;
+        channels = 8;
+        trigger_inputs = 8;
+        first_irq = ROS_I2S_DMA_SPI + 32;
         interrupt_count = 1;
         modeled = true;
     };
@@ -337,6 +399,10 @@ ros.peripherals = {
             {name = "ap_dw_uart_2"; base = ROS_DW_UART_BASES[3]; size = ROS_MMIO_SIZE; irq = ROS_DW_UART_INTIDS[3]; modeled = true};
             {name = "ap_dw_uart_3"; base = ROS_DW_UART_BASES[4]; size = ROS_MMIO_SIZE; irq = ROS_DW_UART_INTIDS[4]; modeled = true};
         };
+        i2s = {
+            {name = "ap_dw_i2s_0"; base = ROS_DW_I2S_BASES[1]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2S_INTIDS[1]; dma_tx = 0; dma_rx = 1; modeled = true};
+            {name = "ap_dw_i2s_1"; base = ROS_DW_I2S_BASES[2]; size = ROS_MMIO_SIZE; irq = ROS_DW_I2S_INTIDS[2]; dma_tx = 2; dma_rx = 3; modeled = true};
+        };
     };
 }
 
@@ -357,12 +423,22 @@ local function visit_dwc_targets(platform, visitor)
             visitor(uart.target_socket)
         end
     end
+    for i=0,1 do
+        local i2s = platform["ap_dw_i2s_"..i]
+        if i2s ~= nil then
+            visitor(i2s.target_socket)
+        end
+    end
 end
 
 function ros.bind_ap_view_targets(platform, bind_ap_target)
-    if platform.ap_dma350 then
-        bind_ap_target(platform.ap_dma350.target_socket)
-        platform.ap_dma350.initiator_socket = {bind = "&ap_router.target_socket"}
+    if platform.dma350_1 then
+        bind_ap_target(platform.dma350_1.target_socket)
+        platform.dma350_1.initiator_socket = {bind = "&ap_router.target_socket"}
+    end
+    if platform.dma350_0 then
+        bind_ap_target(platform.dma350_0.target_socket)
+        platform.dma350_0.initiator_socket = {bind = "&ap_router.target_socket"}
     end
     for i=0,(ROS_BLOCK_DEVICE_COUNT-1) do
         local virtio = platform["ap_virtioblk_"..i]
@@ -390,8 +466,11 @@ function ros.bind_ap_view_targets(platform, bind_ap_target)
 end
 
 function ros.lower_decode_priorities(platform, lower_decode_priority, priority)
-    if platform.ap_dma350 then
-        lower_decode_priority(platform.ap_dma350.target_socket, priority)
+    if platform.dma350_1 then
+        lower_decode_priority(platform.dma350_1.target_socket, priority)
+    end
+    if platform.dma350_0 then
+        lower_decode_priority(platform.dma350_0.target_socket, priority)
     end
     for i=0,(ROS_BLOCK_DEVICE_COUNT-1) do
         local virtio = platform["ap_virtioblk_"..i]
