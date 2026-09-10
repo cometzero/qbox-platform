@@ -41,6 +41,7 @@ public:
     sc_core::sc_vector<TargetSignalSocket<uint32_t>> trig_in;
     sc_core::sc_vector<InitiatorSignalSocket<uint32_t>> trig_ack;
     sc_core::sc_vector<InitiatorSignalSocket<bool>> irq;
+    InitiatorSignalSocket<bool> irq_comb_nonsec;
 
     SC_HAS_PROCESS(dma350);
     explicit dma350(sc_core::sc_module_name name);
@@ -53,6 +54,8 @@ private:
     static constexpr uint64_t REG_BYTES = 0x2000;
     static constexpr uint32_t SEC_CHINTRSTATUS0 = 0x100;
     static constexpr uint32_t NSEC_CHINTRSTATUS0 = 0x200;
+    static constexpr uint32_t NSEC_STATUS = 0x208;
+    static constexpr uint32_t NSEC_CTRL = 0x20c;
     static constexpr uint32_t DMA_BUILDCFG0 = 0xfb0;
     static constexpr uint32_t DMA_BUILDCFG1 = 0xfb4;
     static constexpr uint32_t DMAINFO_IIDR = 0xfc8;
@@ -104,6 +107,9 @@ private:
     static constexpr uint32_t STAT_SRCWAIT = 1u << 24;
     static constexpr uint32_t STAT_DESTWAIT = 1u << 25;
     static constexpr uint32_t STAT_OUTWAIT = 1u << 26;
+
+    static constexpr uint32_t INTR_ANYCHINTR = 1u << 0;
+    static constexpr uint32_t INTREN_ANYCHINTR = 1u << 0;
 
     static constexpr uint32_t CH_CTRL_XTYPE_SHIFT = 9;
     static constexpr uint32_t CH_CTRL_XTYPE_MASK = 0x7u << CH_CTRL_XTYPE_SHIFT;
@@ -184,6 +190,7 @@ private:
     std::vector<uint32_t> m_ack_values;
     sc_core::sc_vector<sc_core::sc_signal<uint32_t>> m_ack_stubs;
     sc_core::sc_vector<sc_core::sc_signal<bool>> m_irq_stubs;
+    sc_core::sc_signal<bool> m_irq_comb_nonsec_stub;
     gs::async_event m_work_event;
     gs::async_event m_output_event;
     std::atomic<bool> m_reset_requested{ false };

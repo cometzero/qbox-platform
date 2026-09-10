@@ -32,11 +32,13 @@ dma350::dma350(sc_core::sc_module_name name)
     , trig_in("trig_in", p_trigger_count.get_value())
     , trig_ack("trig_ack", p_trigger_count.get_value())
     , irq("irq", p_channel_count.get_value())
+    , irq_comb_nonsec("irq_comb_nonsec")
     , m_channels(p_channel_count.get_value())
     , m_trigger_owner(p_trigger_count.get_value(), -1)
     , m_ack_values(p_trigger_count.get_value(), 0)
     , m_ack_stubs("ack_stub", p_trigger_count.get_value())
     , m_irq_stubs("irq_stub", p_channel_count.get_value())
+    , m_irq_comb_nonsec_stub("irq_comb_nonsec_stub")
     , m_work_event(false)
     , m_output_event(false)
 {
@@ -75,6 +77,8 @@ void dma350::before_end_of_elaboration()
     for (unsigned int channel = 0; channel < irq.size(); ++channel) {
         if (!irq[channel].get_interface()) irq[channel].bind(m_irq_stubs[channel]);
     }
+    if (!irq_comb_nonsec.get_interface())
+        irq_comb_nonsec.bind(m_irq_comb_nonsec_stub);
 }
 
 bool dma350::is_supported_length(unsigned int len)
@@ -432,6 +436,9 @@ void dma350::update_interrupt_summary()
     }
     store32(SEC_CHINTRSTATUS0, 0);
     store32(NSEC_CHINTRSTATUS0, pending);
+    store32(NSEC_STATUS,
+            pending != 0 && (load32(NSEC_CTRL) & INTREN_ANYCHINTR) != 0 ?
+                INTR_ANYCHINTR : 0);
 }
 
 void dma350::drive_outputs()
@@ -446,6 +453,8 @@ void dma350::drive_outputs()
                 (load32(channel_base(channel) + CH_STATUS) & 0x7ffu) != 0);
         }
     }
+    if (irq_comb_nonsec.get_interface())
+        irq_comb_nonsec->write((load32(NSEC_STATUS) & INTR_ANYCHINTR) != 0);
 }
 
 bool dma350::clear_completed_handshakes(ChannelState& state)
@@ -827,7 +836,13 @@ void dma350::write32(uint32_t offset, uint32_t value, bool execute_side_effects)
         if (m_channels[channel].enabled && !writable_while_enabled(ch_offset))
             return;
         if (ch_offset == CH_ERRINFO || ch_offset >= CH_IIDR) return;
+    } else if (offset == NSEC_CTRL) {
+        store32(NSEC_CTRL, value & INTREN_ANYCHINTR);
+        update_interrupt_summary();
+        m_output_event.notify(sc_core::SC_ZERO_TIME);
+        return;
     } else if (offset == SEC_CHINTRSTATUS0 || offset == NSEC_CHINTRSTATUS0 ||
+               offset == NSEC_STATUS ||
                (offset >= DMA_BUILDCFG0 && offset <= DMAINFO_AIDR)) {
         return;
     }

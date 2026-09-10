@@ -900,7 +900,8 @@ INTR_CON/PEND/MIRR_PEND/MASK/FLT_TYP/FLT_DEPTH. See
 ### AP DMA-350 and peripheral DMA
 
 `hw-block/ros.lua` connects an eight-channel DMA-350 at `0x31000000`
-to the AP router, GIC SPIs 271–278, and eight dedicated TX/RX requests:
+to the AP router, a combined non-secure IRQ at GIC SPI 279 (INTID 311),
+and eight dedicated TX/RX requests:
 SPI0 uses channels 0/1, SPI1 2/3, UART0 4/5 and UART1 6/7.
 Linux channels map permanently to physical channels; no dynamic channel
 sharing is used. I2C0–5, SPI2/3 and UART2/3 remain PIO-only in the AP wiring.
@@ -908,6 +909,14 @@ DMA execution is asynchronous SystemC/TLM;
 the peripheral FIFOs use four-phase request/acknowledge handshakes.
 Linux uses DMAengine, DesignWare SPI DMA and 8250 DMA.
 Short transfers and UART RX tails may use PIO.
+
+The DT repeats GIC SPI 279 for all eight channel interrupt entries, without
+`interrupt-names`. The upstream ANYCH patch enables
+`NSEC_CTRL.INTREN_ANYCHINTR`; the existing indexed IRQ lookup and per-channel
+`IRQF_SHARED` handlers then use one physical IRQ. No named-IRQ branch or
+custom binding is needed. Per-channel model outputs remain available.
+This model covers non-secure channel
+aggregation, not TrustZone attribution or the other global DMA unit sources.
 
 Build with `./yocto_build.sh --keep-conf --bsp` from the workspace root.
 Launch a dedicated BSP guest with `QBOX_RDASPEN_DMA350_TRACE=true`,

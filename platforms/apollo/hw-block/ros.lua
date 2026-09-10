@@ -55,7 +55,7 @@ local ROS_DW_UART_INTIDS = {362; 363; 364; 365}
 local ROS_DMA350_BASE = 0x31000000
 local ROS_DMA350_CHANNELS = 8
 local ROS_DMA350_TRIGGERS = 8
-local ROS_DMA350_FIRST_SPI = 271
+local ROS_DMA350_NONSEC_SPI = 279
 
 -- Each wired peripheral request has a dedicated channel with the same ID:
 -- SPI0 TX/RX 0/1, SPI1 TX/RX 2/3, UART0 TX/RX 4/5, UART1 TX/RX 6/7.
@@ -76,6 +76,7 @@ function ros.define(ctx, platform)
         trace = dma350_trace;
         trace_limit = dma350_trace_limit;
         trace_filter = dma350_trace_filter;
+        irq_comb_nonsec = {bind = "&ap_gic.spi_in_"..ROS_DMA350_NONSEC_SPI};
         target_socket = {
             address = ROS_DMA350_BASE;
             size = ROS_MMIO_SIZE;
@@ -83,13 +84,6 @@ function ros.define(ctx, platform)
         };
         initiator_socket = {bind = "&host_router.target_socket"};
     } or nil
-    if platform.ap_dma350 then
-        for channel=0,ROS_DMA350_CHANNELS-1 do
-            platform.ap_dma350["irq_"..channel] = {
-                bind = "&ap_gic.spi_in_"..(ROS_DMA350_FIRST_SPI + channel);
-            }
-        end
-    end
 
     platform.ap_virtioblk_0 = enable_ap_cpus and {
         moduletype = "virtio_mmio_blk";
@@ -280,7 +274,8 @@ ros.peripherals = {
         channels = ROS_DMA350_CHANNELS;
         trigger_inputs = ROS_DMA350_TRIGGERS;
         dedicated_channel_requests = true;
-        first_irq = ROS_DMA350_FIRST_SPI + 32;
+        first_irq = ROS_DMA350_NONSEC_SPI + 32;
+        interrupt_count = 1;
         modeled = true;
     };
     system = {

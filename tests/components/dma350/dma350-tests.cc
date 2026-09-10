@@ -17,7 +17,11 @@ namespace {
 constexpr uint64_t DMA_BUILDCFG0 = 0xfb0;
 constexpr uint64_t DMA_BUILDCFG1 = 0xfb4;
 constexpr uint64_t DMAINFO_IIDR = 0xfc8;
+constexpr uint64_t NSEC_CHINTRSTATUS0 = 0x200;
+constexpr uint64_t NSEC_STATUS = 0x208;
+constexpr uint64_t NSEC_CTRL = 0x20c;
 constexpr uint64_t CH0 = 0x1000;
+constexpr uint64_t CH1 = 0x1100;
 constexpr uint64_t CH_CMD = 0x00;
 constexpr uint64_t CH_STATUS = 0x04;
 constexpr uint64_t CH_INTREN = 0x08;
@@ -138,18 +142,18 @@ void write64_address(dma350& dut, uint64_t low_register, uint64_t address)
 void configure_copy(dma350& dut, uint64_t source, uint64_t dest,
                     uint32_t count, unsigned int transfer_log2 = 0,
                     int16_t source_inc = 1, int16_t dest_inc = 1,
-                    uint32_t extra_ctrl = 0)
+                    uint32_t extra_ctrl = 0, uint64_t channel = CH0)
 {
-    write64_address(dut, CH0 + CH_SRCADDR, source);
-    write64_address(dut, CH0 + CH_DESADDR, dest);
-    write32(dut, CH0 + CH_XSIZE,
+    write64_address(dut, channel + CH_SRCADDR, source);
+    write64_address(dut, channel + CH_DESADDR, dest);
+    write32(dut, channel + CH_XSIZE,
             (count & 0xffffu) | ((count & 0xffffu) << 16));
-    write32(dut, CH0 + CH_XSIZEHI,
+    write32(dut, channel + CH_XSIZEHI,
             (count >> 16) | ((count >> 16) << 16));
-    write32(dut, CH0 + CH_XADDRINC,
+    write32(dut, channel + CH_XADDRINC,
             static_cast<uint16_t>(source_inc) |
                 (static_cast<uint32_t>(static_cast<uint16_t>(dest_inc)) << 16));
-    write32(dut, CH0 + CH_CTRL,
+    write32(dut, channel + CH_CTRL,
             transfer_log2 | (1u << 9) | (1u << 21) | extra_ctrl);
 }
 
@@ -172,10 +176,14 @@ TEST(Dma350Test, ExecutesMemoryPeripheralAndLifecycleOperations)
     MmioInitiator mmio("mmio");
     sc_core::sc_signal<uint32_t> trigger_ack("trigger_ack");
     sc_core::sc_signal<bool> irq("irq");
+    sc_core::sc_signal<bool> irq1("irq1");
+    sc_core::sc_signal<bool> irq_comb_nonsec("irq_comb_nonsec");
     dut.initiator_socket.bind(memory.target_socket);
     mmio.socket.bind(dut.target_socket);
     dut.trig_ack[0].bind(trigger_ack);
     dut.irq[0].bind(irq);
+    dut.irq[1].bind(irq1);
+    dut.irq_comb_nonsec.bind(irq_comb_nonsec);
 
     EXPECT_EQ((read32(dut, DMA_BUILDCFG0) >> 4) & 0x3fu, 3u);
     EXPECT_EQ(read32(dut, DMA_BUILDCFG1) & 0x1ffu, 28u);
@@ -297,11 +305,73 @@ TEST(Dma350Test, ExecutesMemoryPeripheralAndLifecycleOperations)
     EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_ERR, 0u);
     EXPECT_NE(read32(dut, CH0 + CH_ERRINFO) & (1u << 16), 0u);
 
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    memory.fail_read_address = std::numeric_limits<uint64_t>::max();
+    for (uint32_t i = 0; i < 8; ++i) {
+        memory.bytes[source + 0x500 + i] = 0xa0 + i;
+        memory.bytes[source + 0x600 + i] = 0xb0 + i;
+    }
+    configure_copy(dut, source + 0x500, dest + 0x3000, 8);
+    configure_copy(dut, source + 0x600, dest + 0x4000, 8, 0, 1, 1, 0,
+                   CH1);
+    write32(dut, CH0 + CH_INTREN, INTR_DONE);
+    write32(dut, CH1 + CH_INTREN, INTR_DONE);
+    write32(dut, CH0 + CH_CMD, 1);
+    write32(dut, CH1 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, NSEC_CHINTRSTATUS0), 3u);
+    EXPECT_EQ(read32(dut, NSEC_STATUS), 0u);
+    EXPECT_FALSE(irq_comb_nonsec.read());
+
+    write32(dut, NSEC_CTRL, ~0u);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
+    EXPECT_EQ(read32(dut, NSEC_CTRL), 1u);
+    EXPECT_EQ(read32(dut, NSEC_STATUS), 1u);
+    EXPECT_TRUE(irq_comb_nonsec.read());
+    write32(dut, NSEC_CHINTRSTATUS0, 0);
+    write32(dut, NSEC_STATUS, 0);
+    EXPECT_EQ(read32(dut, NSEC_CHINTRSTATUS0), 3u);
+    EXPECT_EQ(read32(dut, NSEC_STATUS), 1u);
+
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
+    EXPECT_EQ(read32(dut, NSEC_CHINTRSTATUS0), 2u);
+    EXPECT_TRUE(irq_comb_nonsec.read());
+    write32(dut, CH1 + CH_STATUS, read32(dut, CH1 + CH_STATUS));
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
+    EXPECT_EQ(read32(dut, NSEC_CHINTRSTATUS0), 0u);
+    EXPECT_EQ(read32(dut, NSEC_STATUS), 0u);
+    EXPECT_FALSE(irq_comb_nonsec.read());
+
+    configure_copy(dut, source + 0x500, dest + 0x5000, 8);
+    write32(dut, CH0 + CH_INTREN, 0);
+    write32(dut, CH0 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_NS));
+    EXPECT_NE(read32(dut, CH0 + CH_STATUS) & STAT_DONE, 0u);
+    EXPECT_EQ(read32(dut, CH0 + CH_STATUS) & INTR_DONE, 0u);
+    EXPECT_EQ(read32(dut, NSEC_CHINTRSTATUS0), 0u);
+    EXPECT_FALSE(irq.read());
+    EXPECT_FALSE(irq_comb_nonsec.read());
+
+    write32(dut, CH0 + CH_STATUS, read32(dut, CH0 + CH_STATUS));
+    memory.fail_read_address = source + 0x700;
+    configure_copy(dut, memory.fail_read_address, dest + 0x6000, 1);
+    write32(dut, CH0 + CH_INTREN, INTR_ERR);
+    write32(dut, CH0 + CH_CMD, 1);
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, NSEC_CHINTRSTATUS0), 1u);
+    EXPECT_EQ(read32(dut, NSEC_STATUS), 1u);
+    EXPECT_TRUE(irq_comb_nonsec.read());
+
     drive(dut.reset, true);
     sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
     drive(dut.reset, false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_PS));
     EXPECT_EQ(read32(dut, CH0 + CH_STATUS), 0u);
+    EXPECT_EQ(read32(dut, NSEC_CHINTRSTATUS0), 0u);
+    EXPECT_EQ(read32(dut, NSEC_STATUS), 0u);
     EXPECT_FALSE(irq.read());
+    EXPECT_FALSE(irq_comb_nonsec.read());
 }
 
 int sc_main(int argc, char* argv[])
