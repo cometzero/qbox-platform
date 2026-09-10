@@ -121,6 +121,7 @@ if(BUILD_TESTING)
         apollo_cpu_ras
         cc3xx
         dma350
+        dma350_peripherals
         gic720ae_messreg
         apollo_sbist
         gicx00_multiview
