@@ -233,6 +233,10 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     arm_gicv3
     arm_gicv3_its
     qemu_gpex
+    qemu_pcie_root_port
+    qemu_pcie_epc
+    qemu_pcie_test_ep
+    nvme
     virtio_net_pci
     virtio_mmio_blk
     virtio_mmio_net

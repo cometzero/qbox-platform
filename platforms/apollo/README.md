@@ -533,7 +533,77 @@ paths.
 - SI0, CSS, and RSE counter windows use the `host_gtimer` control/read/sync
   frame model for REFCLK counter behavior.
 
+## Generic QEMU Gen5 PCIe Ports
+
+The default QVP GPEX host provides native `pcie-root-port` devices with
+maximum link capabilities x4 + x4 + x2 + x2 at 32GT/s. There is no
+Synopsys controller register model or analog PHY. Set
+`QBOX_APOLLO_PCIE_BIFURCATION=port2` to split x2 group 2 into two x1
+root ports; group 3 stays x2. The default is `none`; `port3` and `both`
+are rejected following the clarified single-controller requirement.
+This is a boot-time topology selection, not runtime lane reconfiguration.
+
+Set `QBOX_APOLLO_PCIE_TEST_ENDPOINTS=true` to attach an IOMMU-aware
+`virtio-net-pci` device to each port. PCI DMA retains its requester ID
+through the SystemC SMMUv3 path. These endpoints negotiate their native
+link speed and width; Gen5 root capabilities do not prove Gen5 throughput.
+
+From the workspace root, build with
+`./yocto_build.sh --machine apollo-qvp --keep-conf --bsp`, then launch:
+
+```bash
+QBOX_APOLLO_PCIE_TEST_ENDPOINTS=true QBOX_APOLLO_PCIE_BIFURCATION=none \
+./run_qbox_yocto.sh --machine apollo-qvp --bsp --headless --multi-session \
+  --copy-disks --no-persistent-rse-state --record-initial-state \
+  --out-dir build/pcie-gen5/default --timeout 600 --keep-running-after-pass
+
+ssh -p 8022 root@127.0.0.1 sh -s default \
+  < scripts/test/test_apollo_pcie_lanes.sh
+```
+
+The guest test accepts `default` and `port2`. It checks
+root capabilities, endpoint parentage, drivers, IOMMU groups, ping,
+TX/RX counters, and MSI interrupt deltas. Preserve separate run directories
+and stop only the previous test's processes before starting another mode.
+See workspace `doc/pcie/qemu-gen5.md` for evidence and limitations.
+
+## NVMe SSD On The Fixed x2 Port
+
+Set `QBOX_APOLLO_NVME_IMAGE` to an existing absolute raw image path to attach
+the native QEMU `nvme` model below root slot 4 (fixed x2 group 3).
+Apollo configures both NVMe endpoint and root port for Gen5 x2 (`x-speed=32`,
+`x-width=2`). This is a functional link configuration, not PHY timing or throughput emulation.
+`QBOX_APOLLO_NVME_SERIAL` defaults to `APOLLO-NVME-SSD`. The image is opened
+read/write, never created or truncated by the model. NVMe cannot share the
+PCI NIC or legacy IRQ test profiles. Group 2's bifurcation is unchanged.
+
+The NVMe image is persistent and is **not** copied by `--copy-disks`, which
+manages the boot disks. Use a new disposable image and the explicit serial
+`APOLLO-NVME-TEST` for `scripts/test/test_apollo_nvme.sh write-read`.
+Run `verify-only` after a fresh QBox start with the same image to check
+persistence. Never use an existing user-data image for destructive testing.
+See workspace `doc/pcie/nvme.md` for creation, launch, and validation commands.
+
+## PCIe RC–EP Loopback
+
+Set `QBOX_APOLLO_PCIE_EP_LOOPBACK=true` to connect x4 group 0 as RC to
+x4 group 1 as EP within one QVP/Linux instance. This removes root slot 2
+and uses a new virtual EPC, not a role-switch property of the generic root
+port. Other PCIe test/bifurcation profiles cannot be combined with it.
+The EPC control bank is at `0x30300000` (4KiB), and its outbound aperture
+is at `0x30400000` (4MiB). In ordinary RC mode the control bank exists but
+reports no linked endpoint, so Linux leaves the EPC inactive.
+
+After BSP login, run `scripts/test/test_apollo_pcie_endpoint.sh` over SSH
+with a host timeout. It configures the upstream `pci_epf_test`, rescans the
+RC, and uses `/usr/bin/pci_endpoint_test` for BAR, MSI, and bidirectional
+memcpy transactions. See workspace `doc/pcie/rc-ep-loopback.md` for exact
+commands, results, and unsupported features.
+
 ## PCIe MSI-X/LPI And INTx Test Profile
+
+The following legacy single-endpoint profile replaces the generic root-port
+topology when explicitly selected; its older qualification is separate.
 
 The Apollo PCIe interrupt endpoint is opt-in. Set
 `QBOX_APOLLO_PCIE_IRQ_TEST=true` to instantiate one `virtio-net-pci` endpoint

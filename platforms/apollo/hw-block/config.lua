@@ -15,6 +15,7 @@ local REQUEST_DOMAIN = {
 local REQUEST_ORIGIN = {
     ap_cpu_base = 0x1000;
     ap_gpex = 0x1100;
+    ap_pcie_epc = 0x1101;
     ap_global_peripheral = 0x1200;
     ap_loader = 0x1F00;
     rse_cpu = 0x3000;

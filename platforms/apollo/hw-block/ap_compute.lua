@@ -26,6 +26,8 @@ local AP_ADDRESS = {
     gpex_mmio = 0x60300000;
     gpex_ecam = 0x43B50000;
     gpex_mmio_high = 0x400000000;
+    pcie_epc = 0x30300000;
+    pcie_epc_outbound = 0x30400000;
     secure_uart = 0x1A410000;
     primary_uart = 0x1A400000;
     ns_wdog_control = 0x1A420000;
@@ -76,6 +78,8 @@ local AP_SIZE = {
     gpex_mmio = 0x1FD00000;
     gpex_ecam = 0x10000000;
     gpex_mmio_high = 0x200000000;
+    pcie_epc = 0x1000;
+    pcie_epc_outbound = 0x400000;
     uart = 0x00010000;
     secure_wdog = 0x00010000;
     sid = 0x00010000;
@@ -228,6 +232,27 @@ function ap_compute.define(ctx, platform)
     local pcie_irq_test_enabled =
         enable_ap_cpus and
         ctx.getenv_bool_or("QBOX_APOLLO_PCIE_IRQ_TEST", false)
+    local pcie_test_endpoints_enabled = enable_ap_cpus and not pcie_irq_test_enabled and
+        ctx.getenv_bool_or("QBOX_APOLLO_PCIE_TEST_ENDPOINTS", false)
+    local pcie_ep_loopback = enable_ap_cpus and
+        ctx.getenv_bool_or("QBOX_APOLLO_PCIE_EP_LOOPBACK", false)
+    local nvme_image = ctx.getenv_or("QBOX_APOLLO_NVME_IMAGE", "")
+    local nvme_enabled = enable_ap_cpus and nvme_image ~= ""
+    assert(not nvme_enabled or
+           (not pcie_irq_test_enabled and not pcie_test_endpoints_enabled),
+           "NVMe cannot share the PCIe NIC/legacy IRQ test profiles")
+    assert(not nvme_enabled or nvme_image:sub(1, 1) == "/",
+           "QBOX_APOLLO_NVME_IMAGE must be an absolute image path")
+    assert(not pcie_ep_loopback or
+           (not pcie_irq_test_enabled and not pcie_test_endpoints_enabled and
+            ctx.getenv_or("QBOX_APOLLO_PCIE_BIFURCATION", "none") == "none"),
+           "PCIe EP loopback cannot be combined with other PCIe test profiles")
+    local pci_qemu_args = ap_qemu_args
+    if pcie_test_endpoints_enabled then
+        -- Per-RID MMIO forwarding uses bounce buffers for virtio DMA mappings.
+        pci_qemu_args = pci_qemu_args..
+            " -global virtio-net-pci.x-max-bounce-buffer-size=1048576"
+    end
     local fault_event_test_enabled =
         enable_ap_cpus and
         ctx.getenv_bool_or("QBOX_APOLLO_FAULT_EVENT_TEST", false)
@@ -270,7 +295,7 @@ function ap_compute.define(ctx, platform)
             AP_QEMU.time_sync_strategy_env,
             AP_QEMU.time_sync_strategy);
         managed_start_in_reset_release = true;
-        qemu_args = ap_qemu_args;
+        qemu_args = pci_qemu_args;
         construction_priority = -299;
     } or nil
 
@@ -317,6 +342,7 @@ function ap_compute.define(ctx, platform)
         request_origin_id = ctx.request_context.origin.ap_gpex;
         request_domain_id = ctx.request_context.domain.ap;
         requester_id = AP_HW.gpex_requester_id;
+        pci_requester_id = not pcie_irq_test_enabled;
         bus_master = {bind = "&system_router.target_socket"};
         pio_iface = {
             address = AP_ADDRESS.gpex_pio;
@@ -351,6 +377,77 @@ function ap_compute.define(ctx, platform)
         mac = "52:54:00:12:34:56";
         netdev_str = "type=user";
     } or nil
+
+    -- Port-group 1 has a local EPC register bank even in its default RC mode.
+    -- Without the linked PCI function, the EPC reports EP mode inactive.
+    platform.ap_pcie_epc = enable_ap_cpus and {
+        moduletype = "qemu_pcie_epc";
+        args = {"&platform.ap_qemu_inst"};
+        request_origin_id = ctx.request_context.origin.ap_pcie_epc;
+        request_domain_id = ctx.request_context.domain.ap;
+        regs = {
+            address = AP_ADDRESS.pcie_epc;
+            size = AP_SIZE.pcie_epc;
+            bind = "&system_router.initiator_socket";
+        };
+        outbound = {
+            address = AP_ADDRESS.pcie_epc_outbound;
+            size = AP_SIZE.pcie_epc_outbound;
+            bind = "&system_router.initiator_socket";
+        };
+        local_master = {bind = "&system_router.target_socket"};
+    } or nil
+
+    -- Only x2 port-group 2 supports x1+x1 bifurcation; group 3 stays x2.
+    if enable_ap_cpus and not pcie_irq_test_enabled then
+        local bifurcation = ctx.getenv_or("QBOX_APOLLO_PCIE_BIFURCATION", "none")
+        assert(bifurcation == "none" or bifurcation == "port2",
+               "QBOX_APOLLO_PCIE_BIFURCATION must be none or port2")
+        local split2 = bifurcation == "port2"
+        local widths = {4, 4, split2 and 1 or 2, 2}
+        if pcie_ep_loopback then widths[2] = nil end
+        if split2 then widths[5] = 1 end
+        for slot=1,5 do
+            local width = widths[slot]
+            if width then
+                local port_name = "ap_pcie_root_port_"..slot
+                platform[port_name] = {
+                    moduletype = "qemu_pcie_root_port";
+                    args = {"&platform.ap_qemu_inst", "&platform.ap_gpex_0"};
+                    addr = string.format("%02x.0", slot);
+                    chassis = slot;
+                    slot = slot;
+                    port = slot;
+                    x_speed = "32";
+                    x_width = tostring(width);
+                }
+                platform["ap_pcie_test_net_"..slot] = pcie_test_endpoints_enabled and {
+                    moduletype = "virtio_net_pci";
+                    args = {"&platform.ap_qemu_inst", "&platform."..port_name};
+                    addr = "00.0";
+                    mac = string.format("52:54:00:50:00:%02x", slot);
+                    netdev_str = "type=user";
+                    iommu_platform = true;
+                } or nil
+            end
+        end
+        platform.ap_pcie_test_ep = pcie_ep_loopback and {
+            moduletype = "qemu_pcie_test_ep";
+            args = {"&platform.ap_qemu_inst", "&platform.ap_pcie_root_port_1",
+                    "&platform.ap_pcie_epc"};
+        } or nil
+        -- Group 3 stays x2, independent of group 2's x1+x1 bifurcation.
+        platform.ap_nvme_0 = nvme_enabled and {
+            moduletype = "nvme";
+            args = {"&platform.ap_qemu_inst", "&platform.ap_pcie_root_port_4"};
+            image_path = nvme_image;
+            serial = ctx.getenv_or("QBOX_APOLLO_NVME_SERIAL", "APOLLO-NVME-SSD");
+            format = "raw";
+            addr = "00.0";
+            x_speed = "32";
+            x_width = "2";
+        } or nil
+    end
 
     platform.host_ap_shared_sram = {
         moduletype = "gs_memory";
@@ -623,6 +720,7 @@ function ap_compute.define(ctx, platform)
             moduletype = "smmuv3_tbu";
             args = {"&platform.ap_smmu_0"};
             topology_id = 0x40;
+            requester_id_from_context = not pcie_irq_test_enabled;
             upstream_socket = {};
             downstream_socket = {bind = "&system_router.target_socket"};
         } or nil
@@ -1064,6 +1162,11 @@ function ap_compute.enable_ap_router(ctx, platform)
         bind_ap_target(platform.ap_gpex_0.mmio_iface)
         bind_ap_target(platform.ap_gpex_0.ecam_iface)
         bind_ap_target(platform.ap_gpex_0.mmio_iface_high)
+    end
+    if platform.ap_pcie_epc ~= nil then
+        bind_ap_target(platform.ap_pcie_epc.regs)
+        bind_ap_target(platform.ap_pcie_epc.outbound)
+        platform.ap_pcie_epc.local_master = {bind = "&ap_router.target_socket"}
     end
 
     -- Memory and interrupt controller windows
