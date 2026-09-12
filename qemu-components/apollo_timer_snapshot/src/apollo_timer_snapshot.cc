@@ -250,7 +250,7 @@ std::string apollo_timer_snapshot::capture(
                                       "common_sample_time")
         << ",\"observed\":true},"
         << "\"si1_cpu0\":{\"domain\":\"css\",\"counter\":" << css
-        << ",\"reported_frequency_hz\":100000000,"
+        << ",\"reported_frequency_hz\":" << smd.reported_frequency_hz << ","
         << observation_fields(si1_cpu, expected_ns, "qemu_local_mirror")
         << ",\"observed\":true},";
     const qbox_platform::qemu_timer::ArmSSETimerSnapshot rse[] = {
