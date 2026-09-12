@@ -83,7 +83,7 @@ local RSE_SIZE = {
     host_access = 0x10000000;
     lcm = 0x00011000;
     local_mhu_frame = 0x00010000;
-    nvic = 0x00010000;
+    nvic = 0x00021000; -- SCS plus the Armv8-M non-secure alias at +0x20000.
     register_window = 0x00001000;
     double_register_window = 0x00002000;
     uart_window = 0x00010000;
@@ -1227,6 +1227,7 @@ function rse.define(ctx, platform)
                 bl2_delay_max_cycles = rse_bl2_delay_max_cycles;
                 bl2_delay_expected_hits = rse_bl2_delay_expected_hits;
                 nvic = {
+                    systick_cpuclk_hz = 100000000;
                     mem = {
                         address = RSE_ADDRESS.nvic;
                         size = RSE_SIZE.nvic;

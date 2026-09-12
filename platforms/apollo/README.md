@@ -228,9 +228,16 @@ time synchronization after the target-vCPU reset release completes. After
 release they remain wakeable across WFI so QEMU deadline timers can wake the
 CPUs reliably. The host PPU model preserves the current power state when
 firmware enables a lower dynamic minimum policy, so that policy update does
-not reassert CPU reset. Each CL1 Cortex-R82 generic timer runs at 100 MHz to
-match the Zephyr system-clock configuration. Use a one-run platform parameter
+not reassert CPU reset. Each CL1 Cortex-R82 generic timer runs at 125 MHz to
+match the CSS counter and Zephyr system-clock configuration. Use a one-run platform parameter
 override when a bounded `multithread-quantum` comparison is required.
+
+RSE Cortex-M55 uses native QEMU secure/non-secure SysTick banks at the SCS
+window, including its non-secure alias. Apollo sets
+`cpu.nvic.systick_cpuclk_hz` to 100MHz. The opt-in Yocto setting
+`APOLLO_TFM_TIMER_TEST = "ON"` enables SysTick and TIMER0-3 self-tests in
+BL1_1, BL1_2, BL2, and the secure runtime, then disables them before handoff.
+Each stage emits five `APOLLO_TIMER_TEST` results; normal builds default OFF.
 
 The SI1 PFDI postbox also uses the propagated TLM request context to identify
 the vCPU that issued each doorbell. It asserts that vCPU's co-simulation

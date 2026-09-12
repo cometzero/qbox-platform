@@ -25,8 +25,15 @@ qemu_device_cold_reset::qemu_device_cold_reset(
 {
     reset.register_value_changed_cb([this](bool asserted) {
         if (asserted) {
-            qemu::Device device(m_device.get_qemu_dev());
-            qbox_platform::qemu_timer::cold_reset(device);
+            qemu::LibQemu& qemu = m_device.get_qemu_dev().get_inst();
+            qemu.lock_iothread();
+            try {
+                m_device.cold_reset();
+            } catch (...) {
+                qemu.unlock_iothread();
+                throw;
+            }
+            qemu.unlock_iothread();
         }
     });
 }
