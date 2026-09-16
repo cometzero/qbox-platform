@@ -266,6 +266,67 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     external_reset.write(false);
 }
 
+TEST(HostPpuTest, PowerOffWaitsForArchitecturalStandby)
+{
+    auto broker = cci::cci_get_global_broker(cci::cci_originator("standby_test"));
+    broker.set_preset_cci_value("standby_ppu.assert_power_on_reset", cci::cci_value(true));
+    broker.set_preset_cci_value("standby_ppu.power_off_wait_for_standby", cci::cci_value(true));
+    broker.set_preset_cci_value("standby_ppu.power_on_load_to_reset_delay_ns", cci::cci_value(0ull));
+    host_ppu dut("standby_ppu");
+    TlmInitiator initiator("standby_initiator");
+    SignalSink reset_sink("standby_reset_sink");
+    SignalSource standby("standby_source");
+    SignalSource reset("standby_external_reset");
+    initiator.socket.bind(dut.target_socket);
+    dut.power_on_reset.bind(reset_sink.signal);
+    standby.signal.bind(dut.standby_wfi);
+    reset.signal.bind(dut.reset);
+    sc_core::sc_start(sc_core::SC_ZERO_TIME);
+
+    write32(dut, PPU_PWPR, 8);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    ASSERT_EQ(read32(dut, PPU_PWSR) & 15u, 8u);
+    ASSERT_FALSE(reset_sink.values.back());
+
+    write32(dut, PPU_PWPR, 0);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, PPU_PWPR), 0u);
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 15u, 8u);
+    EXPECT_FALSE(reset_sink.values.back());
+
+    // Replacing an OFF request must cancel its delayed completion.
+    write32(dut, PPU_PWPR, 8);
+    standby.write(true);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 15u, 8u);
+    EXPECT_FALSE(reset_sink.values.back());
+
+    standby.write(false);
+    write32(dut, PPU_PWPR, 0);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_FALSE(reset_sink.values.back());
+    standby.write(true);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 15u, 0u);
+    EXPECT_TRUE(reset_sink.values.back());
+
+    standby.write(false);
+    write32(dut, PPU_PWPR, 8);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_FALSE(reset_sink.values.back());
+    write32(dut, PPU_PWPR, 0);
+    reset.write(true);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(reset_sink.values.back());
+    reset.write(false);
+    write32(dut, PPU_PWPR, 8);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    standby.write(true);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(read32(dut, PPU_PWSR) & 15u, 8u);
+    EXPECT_FALSE(reset_sink.values.back());
+}
+
 int sc_main(int argc, char* argv[])
 {
     cci_utils::consuming_broker broker("global_broker");
