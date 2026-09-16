@@ -507,6 +507,14 @@ void dw_apb_i2s::b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& 
         return;
     }
 
+    // Register accesses interact with the independently clocked serializer.
+    // Honor the initiator's local time before applying an MMIO side effect,
+    // especially a STOP following a CPU-side FIFO drain delay.
+    if (delay != sc_core::SC_ZERO_TIME) {
+        sc_core::wait(delay);
+        delay = sc_core::SC_ZERO_TIME;
+    }
+
     uint32_t value = 0;
     if (trans.get_command() == tlm::TLM_WRITE_COMMAND) {
         std::memcpy(&value, data, length);
