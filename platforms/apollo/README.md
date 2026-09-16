@@ -113,8 +113,30 @@ This is transaction-level functional validation, not physical I2S clock or
 FIFO deadline validation. The standalone model defaults to timed operation
 (`functional_pacing=false`), with idle-zero and overflow unit coverage.
 The current four-CPU freerunning profile is not qualified for timed audio.
+MMIO consumes incoming TLM delay before register side effects so a CPU's
+drain interval precedes STOP on the SystemC serializer timeline. Linux DMA
+playback also drains its FIFO before disabling the transmitter; DMA completion
+alone only proves FIFO acceptance. Actual WAV comparisons are available via
+`scripts/test/validate_qbox_i2s_wav.py --out-dir <fresh-output-directory>`
+from the workspace root (S16_LE stereo, 48 kHz).
 See the workspace's `doc/dwc/dw-apb-i2s.md` for PIO-before-DMA evidence,
 cyclic software rearm, commands, and limitations.
+
+Under the default freerunning/QK profile, the optional Linux DMA350
+`cyclic_done_pause` path uses hardware command links and resumes after each
+client callback. With a 5000 ms PCM wait override and IRQ/application CPU
+affinity, bidirectional WAV, repeated starts/stops and odd-tail comparisons
+pass. Autonomous cyclic remains unqualified in this profile. The Linux DAI
+now retains FIFO ownership while paused; bidirectional TX-only/duplex
+pause-resume and paused STOP tests pass with the same DMA settings.
+These are functional pacing results, not continuous physical audio timing.
+PIO odd tails additionally require the optional Linux `pio_fifo_empty_irq`
+path in the tested profile: it selects the lowest TX threshold while disabled
+and polls that status before STOP. Thirty short odd-tail runs and two long
+bidirectional WAV runs pass with the documented wait/CPU-affinity settings.
+The original fixed-delay PIO drain still has intermittent tail failures.
+See `doc/dwc/i2s-default-qk-investigation-20260916.md` in the workspace root
+for exact conditions, failures and artifacts.
 
 ### Full-system boot
 
@@ -231,6 +253,13 @@ firmware enables a lower dynamic minimum policy, so that policy update does
 not reassert CPU reset. Each CL1 Cortex-R82 generic timer runs at 125 MHz to
 match the CSS counter and Zephyr system-clock configuration. Use a one-run platform parameter
 override when a bounded `multithread-quantum` comparison is required.
+
+AP core PPUs defer an OFF request's actual PWSR/reset transition until the
+CPU's `standby_wfi` output asserts. PWPR still records the request immediately;
+TF-A must finish PSCI affinity/cache cleanup before the core is reset. CPU
+standby excludes scheduler pauses, queued work, reset and external halt, and
+is published on the SystemC thread. Cold reset remains immediate. This is a
+functional power-down handshake, not a complete physical PPU protocol model.
 
 RSE Cortex-M55 uses native QEMU secure/non-secure SysTick banks at the SCS
 window, including its non-secure alias. Apollo sets
@@ -1010,6 +1039,62 @@ Linux channels map permanently to physical channels; no dynamic channel
 sharing is used. I2C0–5, SPI2/3 and UART2/3 remain PIO-only in the AP wiring.
 DMA execution is asynchronous SystemC/TLM;
 the peripheral FIFOs use four-phase request/acknowledge handshakes.
+DMA MMIO consumes incoming TLM delay before register effects or status reads;
+future channel enables cannot start transfers early relative to CPU local time.
+Debug transport remains nonblocking and does not execute channel commands.
+The QBox CPU MMIO bridge refreshes relative delay on the SystemC dispatch
+thread and updates the keeper before returning; queued dispatch must not
+reapply elapsed kernel time. Regular MMIO jobs also respect SystemC suspension
+barriers: a target's timed wait must not globally bypass other initiators'
+time budgets. Control/debug jobs retain their existing dispatch policy.
+For MCIPS, synchronous MMIO also removes an I/O-lock/target-waiting CPU from
+clock selection, reserves its completion-time window on SystemC before waking
+the host thread, then restores execution under the QEMU lock. The native
+libqemu provider installs the required `libidlinker` plugin on POSIX hosts.
+MCIPS also reconciles architectural idle after a scheduler-pause wakeup;
+a still-halted CPU must not retain a RUNNING clock window. The callback uses
+the plugin shutdown drain. An all-domain MCIPS diagnostic must include the
+actual nested RSE instance, `platform.rse_cpu_pass.qemu_inst`, not only the
+outer device-only `platform.qemu_inst`.
+An idle CPU also reserves a `WAKE_PENDING` time window when its native kick
+arrives, before the host vCPU thread resumes. Repeated kicks retain the first
+deadline, and a no-work wake releases the reservation at the next idle
+acknowledgment. This prevents host scheduling latency from advancing devices
+past an unserviced IRQ. The libqemu kick callback precedes the halt-condition
+broadcast; its callback drain and per-vCPU initialization guard cover teardown
+and startup. Clock-source handoff preserves the replacement CPU's in-flight
+instruction count.
+When native resume notification is skipped because QEMU does not sleep,
+the first real instruction quota acknowledges pending wake and retires the
+observed instructions through normal MCIPS accounting. This avoids a stale
+pending barrier while the CPU is already executing.
+A dedicated libqemu execution-entry callback also reconciles MCIPS state
+under BQL before MTTCG/RR execution. Queued work can resume a CPU without
+passing through the paired sleep/resume notifications; an idle CPU must
+reattach its time window before executing. Native run permission is checked
+again after the callback. Use matching rebuilt QBox/libqemu artifacts for
+this added callback API.
+Scheduler pause/resume requests are ordered on the native CPU work queue
+under BQL, preventing stop acknowledgment from overwriting a resume.
+A per-CPU reset epoch rejects requests queued before reset or while reset
+is held; reset assertion/release are serialized under BQL. Standby output
+publication uses a delta notification so synchronous PPU reset feedback
+cannot lose the falling edge through immediate self-notification.
+MCIPS tracks architectural reset separately from scheduler pause: a held
+CPU is excluded from clock selection, and a queued reset release reserves
+its wake window before the native worker runs. Scheduler resume also respects
+native VM pause; guest GDB waiting does not latch the board reset state.
+The libqemu M-profile idle path distinguishes WFI from WFE: an event flag
+alone must not wake WFI, and M-profile WFE must reach its helper under MTTCG.
+Actual Cortex-M55/NVIC regressions cover these cases and interrupt wakeup.
+These tests do not qualify snapshot migration or every WFE event-consumption
+corner case. TF-M firmware is not patched to bypass idle instructions.
+See the I2S follow-up evidence for the remaining
+small-ring service-latency limits; this is not a real-time timing guarantee.
+The explicit all-domain MCIPS/100-us profile passed 20 sequential bidirectional
+Linux blocking WAV transfers with 1024/2048-frame geometry and two odd-tail
+transfers. The default QK profile is unchanged; nonblocking ALSA-utils polling
+with this small ring still fails and is recorded separately.
 Linux uses DMAengine, DesignWare SPI DMA and 8250 DMA.
 Short transfers and UART RX tails may use PIO.
 
