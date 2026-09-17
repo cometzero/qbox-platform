@@ -1,4 +1,4 @@
--- Board wiring: I2C0 shares its EEPROM with a resettable GPIO expander.
+-- Board wiring: I2C0 shares three EEPROMs with a resettable GPIO expander.
 local board = {}
 
 function board.connect(platform)
@@ -11,7 +11,20 @@ function board.connect(platform)
         dylib_path = "i2c-bus";
     }
     platform.ap_dw_i2c_0.i2c_socket = {bind = "&board_i2c0.target_socket"}
+    platform.ap_dw_i2c_0_eeprom.write_cycle = "5 ms"
     platform.ap_dw_i2c_0_eeprom.i2c_socket = {bind = "&board_i2c0.initiator_socket"}
+    for index = 1, 2 do
+        platform["ap_dw_i2c_0_eeprom_" .. index] = {
+            moduletype = "dw_i2c_eeprom";
+            dylib_path = "dw-apb-i2c";
+            address = 0x50 + index;
+            size = 256;
+            address_width = 8;
+            page_size = 8;
+            write_cycle = "5 ms";
+            i2c_socket = {bind = "&board_i2c0.initiator_socket"};
+        }
+    end
     platform.board_pca9539 = {
         moduletype = "pca9539";
         dylib_path = "pca9539";

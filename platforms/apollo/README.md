@@ -495,7 +495,7 @@ Synopsys RTL configuration replicas.
 
 | Block | Instances | AP base range | AP GIC SPI range | Guest validation |
 | --- | ---: | --- | --- | --- |
-| `dw_apb_i2c` + `dw_i2c_eeprom` | 6 | `0x30100000`-`0x3015ffff` | 320-325 | AT24 EEPROM read/write/compare at `0x50` |
+| `dw_apb_i2c` + `dw_i2c_eeprom` | 6 controllers / 8 EEPROMs | `0x30100000`-`0x3015ffff` | 320-325 | AT24 EEPROM read/write/compare at `0x50` |
 | `dw_apb_ssi` | 4 | `0x30160000`-`0x3019ffff` | 326-329 | `spi-loopback-test` with `SPI_LOOP` |
 | `dw_apb_uart` | 4 | `0x301a0000`-`0x301dffff` | 330-333 | `ttyS0` <-> `ttyS1`, `ttyS2` <-> `ttyS3` |
 
@@ -984,19 +984,27 @@ See workspace `doc/board/pca9539.md` for wiring, model limitations, and results.
 
 ### TPS6594 PMIC board demo
 
-`board/tps6594.lua` adds a TPS6594-Q1 on I2C0 at base address `0x48`
-(page aliases `0x49` through `0x4c`). Its active-low interrupt connects to
-SMD PL061 GPIO2. GPIO offsets 0→1 and 8→9 are board loopbacks.
+`board/tps6594.lua` adds four independent TPS6594-Q1 models on I2C0 at
+base addresses `0x48`, `0x58`, `0x60`, and `0x68`. Each consumes five
+consecutive page addresses; these are QVP test-board assignments, not a
+claim about physical address straps. Their active-low interrupts connect to
+SMD PL061 GPIO2–5 respectively. Each has GPIO offsets 0→1 and 8→9 as loopbacks.
 Linux uses the existing TPS6594 MFD, regulator, pinctrl/GPIO, and RTC drivers.
-Two `regulator-output` consumers exercise BUCK1 (900 mV) and LDO1 (1.8 V).
+All 36 rails have named DT constraints and `regulator-output` consumers:
+BUCK1–5 at 900 mV and LDO1–4 at 1.8 V on every PMIC.
 From the workspace root after BSP boot:
 
 ```bash
 ./scripts/run/ssh_run.sh scripts/test/verify_qbox_tps6594.sh
 ```
 
-The script exercises regulator on/off, GPIO loopbacks, RTC time, and alarm
-interrupts. See workspace `doc/board/tps6594.md` for the NVM profile,
+The script exercises all 36 regulators and GPIO loopbacks on all four PMICs,
+plus the primary PMIC RTC time and alarm interrupts. I2C0 also contains three
+AT24C02-profile EEPROMs at `0x50`–`0x52` with a 5 ms write-busy interval, composed in `board/pca9539.lua`.
+Run `./scripts/run/ssh_run.sh scripts/test/verify_qbox_i2c_multi_slave.sh`
+for three concurrent Linux clients, eight 256-byte write/read rounds each,
+slave isolation, and verified restoration. Linux serializes adapter transfers;
+this does not model multi-controller arbitration. See workspace `doc/board/tps6594.md` for the NVM profile,
 functional modeling limits, and recorded results.
 
 ### HSOC GPIO / PERI0-PERI1 pinctrl
