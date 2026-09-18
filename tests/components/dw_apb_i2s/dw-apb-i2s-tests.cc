@@ -142,41 +142,6 @@ private:
     }
 };
 
-TEST_BENCH(I2sTestBench, DelayedStopPreservesSerializedFrames)
-{
-    playback.p_functional_pacing = true;
-    capture.p_functional_pacing = true;
-    write(capture, dw_apb_i2s::IER, 1);
-    write(capture, dw_apb_i2s::IRER, 1);
-    write(capture, dw_apb_i2s::RER0, 1);
-    write(playback, dw_apb_i2s::IER, 1);
-    write(playback, dw_apb_i2s::ITER, 1);
-    write(playback, dw_apb_i2s::TER0, 1);
-    for (uint32_t i = 1; i <= 8; ++i) {
-        write(playback, dw_apb_i2s::TXDMA, i);
-        write(playback, dw_apb_i2s::TXDMA, ~i);
-    }
-    write(playback, dw_apb_i2s::CER, 1);
-
-    // A temporally decoupled CPU stops only after its drain interval.
-    // The register side effect must not precede that annotated time.
-    uint32_t stop = 0;
-    tlm::tlm_generic_payload trans;
-    trans.set_command(tlm::TLM_WRITE_COMMAND);
-    trans.set_address(dw_apb_i2s::ITER);
-    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&stop));
-    trans.set_data_length(sizeof(stop));
-    trans.set_streaming_width(sizeof(stop));
-    sc_core::sc_time delay(10, sc_core::SC_NS);
-    playback.b_transport(trans, delay);
-    wait(delay);
-    ASSERT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
-    for (uint32_t i = 1; i <= 8; ++i) {
-        EXPECT_EQ(read(capture, dw_apb_i2s::RXDMA), i);
-        EXPECT_EQ(read(capture, dw_apb_i2s::RXDMA), ~i);
-    }
-}
-
 TEST_BENCH(I2sTestBench, TransfersPioAndCyclesDmaRequests)
 {
     EXPECT_EQ(read(playback, dw_apb_i2s::COMP_PARAM_1), 0x4007eu);

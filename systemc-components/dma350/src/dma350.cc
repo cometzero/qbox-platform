@@ -174,9 +174,9 @@ void dma350::reset_channel(unsigned int channel)
     store32(base + CH_BUILDCFG0,
             (15u << 26) | (MODEL_DATA_WIDTH_LOG2 << 22) |
                 ((MODEL_ADDRESS_WIDTH - 1) << 16) | 15u);
-    /* Command linking, 1D/fill, 32-bit XSIZE and external triggers. */
+    /* 1D/fill, 32-bit XSIZE and selectable external trigger input support. */
     store32(base + CH_BUILDCFG1,
-            (1u << 8) | (1u << 7) | (1u << 5) | (1u << 4) | (1u << 1) | 1u);
+            (1u << 7) | (1u << 5) | (1u << 4) | (1u << 1) | 1u);
     m_channels[channel] = ChannelState{};
 }
 
@@ -249,22 +249,16 @@ bool dma350::configure_trigger(unsigned int channel, uint32_t config, bool used,
     return true;
 }
 
-bool dma350::configure_channel(unsigned int channel, bool linked)
+bool dma350::configure_channel(unsigned int channel)
 {
     const uint32_t base = channel_base(channel);
     const uint32_t ctrl = load32(base + CH_CTRL);
     const uint32_t xtype = (ctrl & CH_CTRL_XTYPE_MASK) >> CH_CTRL_XTYPE_SHIFT;
     ChannelState state{};
-    if (linked) {
-        state.pause_requested = m_channels[channel].pause_requested;
-        state.stop_requested = m_channels[channel].stop_requested;
-        state.disable_requested = m_channels[channel].disable_requested;
-        state.clear_requested = m_channels[channel].clear_requested;
-    }
 
     state.transfer_bytes = transfer_bytes_from_ctrl(ctrl);
     if (state.transfer_bytes > (1u << MODEL_DATA_WIDTH_LOG2) ||
-        (xtype != 0 && xtype != XTYPE_CONTINUE && xtype != XTYPE_WRAP &&
+        (xtype != XTYPE_CONTINUE && xtype != XTYPE_WRAP &&
          xtype != XTYPE_FILL)) {
         set_error(channel, ERRINFO_CFG | ERRINFO_REG_VALUE);
         return false;
@@ -278,8 +272,8 @@ bool dma350::configure_channel(unsigned int channel, bool linked)
     state.dest = channel_address(base, CH_DESADDR) & alignment_mask;
     state.start_source = state.source;
     state.start_dest = state.dest;
-    state.source_remaining = state.fill || xtype == 0 ? 0 : source_xsize(base);
-    state.dest_remaining = xtype == 0 ? 0 : dest_xsize(base);
+    state.source_remaining = state.fill ? 0 : source_xsize(base);
+    state.dest_remaining = dest_xsize(base);
     state.source_length = state.source_remaining;
     state.wrap_remaining = state.wrap ?
         std::max(state.source_remaining, state.dest_remaining) : 0;
@@ -319,108 +313,12 @@ bool dma350::configure_channel(unsigned int channel, bool linked)
         !(configured.dest_trigger.used && configured.dest_trigger.command);
     store_address(base, CH_SRCADDR, configured.source);
     store_address(base, CH_DESADDR, configured.dest);
-    // ENABLE clears sticky status; a hardware link is not a new ENABLE.
-    if (!linked) store32(base + CH_STATUS, 0);
+    store32(base + CH_STATUS, 0);
     store32(base + CH_ERRINFO, 0);
-    store32(base + CH_CMD, CH_CMD_ENABLE |
-        (configured.pause_requested ? CH_CMD_PAUSE : 0) |
-        (configured.stop_requested ? CH_CMD_STOP : 0) |
-        (configured.disable_requested ? CH_CMD_DISABLE : 0) |
-        (configured.clear_requested ? CH_CMD_CLEAR : 0));
+    store32(base + CH_CMD, CH_CMD_ENABLE);
     update_irq(channel);
     update_interrupt_summary();
     return true;
-}
-
-void dma350::complete_command(unsigned int channel)
-{
-    ChannelState& state = m_channels[channel];
-    const uint32_t ctrl = load32(channel_base(channel) + CH_CTRL);
-    const bool report_done = ((ctrl >> 21) & 7u) != 0;
-    if (state.disable_requested) {
-        if (report_done) set_status_event(channel, STAT_DONE, INTR_DONE);
-        finish_channel(channel, STAT_DISABLED, INTR_DISABLED);
-    } else if (load32(channel_base(channel) + CH_LINKADDR) & 1u) {
-        trace_operation(channel, state, "linked-done");
-        release_triggers(channel);
-        state.finish_after_ack = false;
-        state.link_pending = true;
-        if (report_done) set_status_event(channel, STAT_DONE, INTR_DONE);
-        if (report_done && (ctrl & (1u << 24))) state.pause_requested = true;
-    } else {
-        finish_channel(channel, report_done ? STAT_DONE : 0,
-                        report_done ? INTR_DONE : 0);
-    }
-}
-
-bool dma350::load_linked_command(unsigned int channel)
-{
-    const uint32_t base = channel_base(channel);
-    uint64_t address = channel_address(base, CH_LINKADDR) & ~uint64_t(3);
-    // Header bit n identifies register offset n * 4. Reserved bits have no
-    // payload. REGCLEAR has no payload either (TRM command structure).
-    constexpr uint32_t reserved = (1u << 1) | (1u << 23) |
-                                  (1u << 25) | (1u << 27);
-    auto read_word = [&](uint32_t& value) {
-        uint8_t data[4];
-        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
-        const bool ok = mem_read(address, data, sizeof(data), delay);
-        if (delay != sc_core::SC_ZERO_TIME) sc_core::wait(delay);
-        if (m_reset_requested.load()) return false;
-        if (m_channels[channel].stop_requested) {
-            finish_channel(channel, STAT_STOPPED, INTR_STOPPED);
-            return false;
-        }
-        if (!ok) {
-            set_error(channel, ERRINFO_BUS | ERRINFO_READ_RESPONSE);
-            return false;
-        }
-        value = uint32_t(data[0]) | (uint32_t(data[1]) << 8) |
-                (uint32_t(data[2]) << 16) | (uint32_t(data[3]) << 24);
-        address += sizeof(data);
-        return true;
-    };
-    uint32_t header;
-    if (!read_word(header)) return false;
-    // Even a zero-length ring consumes descriptor-fetch service time when
-    // its memory target annotates no latency; avoid an infinite delta loop.
-    if (p_burst_latency.get_value() != sc_core::SC_ZERO_TIME)
-        sc_core::wait(p_burst_latency.get_value());
-    if (m_reset_requested.load()) return false;
-    if (m_channels[channel].stop_requested) {
-        finish_channel(channel, STAT_STOPPED, INTR_STOPPED);
-        return false;
-    }
-    if (!(header & ~reserved)) {
-        set_error(channel, ERRINFO_CFG | ERRINFO_LINK_HEADER);
-        return false;
-    }
-    if (header & 1u) {
-        for (unsigned int bit = 2; bit < 32; ++bit)
-            if (!(reserved & (1u << bit))) store32(base + bit * 4, 0);
-    }
-    for (unsigned int bit = 2; bit < 32; ++bit) {
-        if (!(header & (1u << bit)) || (reserved & (1u << bit))) continue;
-        uint32_t value;
-        if (!read_word(value)) return false;
-        store32(base + bit * 4, value);
-        if (m_channels[channel].stop_requested) {
-            finish_channel(channel, STAT_STOPPED, INTR_STOPPED);
-            return false;
-        }
-    }
-    // Optional 2D/template/stream/GPO/auto-restart features are not modeled.
-    // Do not silently accept a descriptor asking for those operations.
-    constexpr uint32_t unsupported = (1u << 13) | (1u << 15) |
-        (1u << 16) | (1u << 17) | (1u << 18) | (1u << 21) |
-        (1u << 22) | (1u << 24) | (1u << 26) | (1u << 29);
-    for (unsigned int bit = 2; bit < 32; ++bit) {
-        if ((unsupported & (1u << bit)) && load32(base + bit * 4)) {
-            set_error(channel, ERRINFO_CFG | ERRINFO_REG_VALUE);
-            return false;
-        }
-    }
-    return configure_channel(channel, true);
 }
 
 void dma350::set_status_event(unsigned int channel, uint32_t status_bit,
@@ -748,19 +646,14 @@ bool dma350::service_channel(unsigned int channel)
         return true;
     }
     if (state.paused) return false;
-    if (state.link_pending) {
-        if (state.disable_requested)
-            finish_channel(channel, STAT_DISABLED, INTR_DISABLED);
-        else
-            load_linked_command(channel);
-        return true;
-    }
 
     const bool handshake_changed = clear_completed_handshakes(state);
     if (state.finish_after_ack) {
         if (state.source_trigger.ack_active || state.dest_trigger.ack_active)
             return handshake_changed;
-        complete_command(channel);
+        finish_channel(channel,
+                       state.disable_requested ? STAT_DISABLED : STAT_DONE,
+                       state.disable_requested ? INTR_DISABLED : INTR_DONE);
         return true;
     }
     if (!state.command_started) {
@@ -854,7 +747,9 @@ bool dma350::service_channel(unsigned int channel)
         state.finish_after_ack =
             state.source_trigger.ack_active || state.dest_trigger.ack_active;
         if (!state.finish_after_ack)
-            complete_command(channel);
+            finish_channel(channel,
+                           state.disable_requested ? STAT_DISABLED : STAT_DONE,
+                           state.disable_requested ? INTR_DISABLED : INTR_DONE);
     }
     return true;
 }
@@ -921,7 +816,7 @@ bool dma350::mem_write(uint64_t address, const uint8_t* data, unsigned int len,
 
 bool dma350::writable_while_enabled(uint32_t offset) const
 {
-    return offset == CH_CMD || offset == CH_STATUS || offset == CH_INTREN;
+    return offset == CH_CMD || offset == CH_STATUS;
 }
 
 void dma350::write32(uint32_t offset, uint32_t value, bool execute_side_effects)
@@ -1005,12 +900,6 @@ bool dma350::access(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay,
 void dma350::b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
 {
     trans.set_dmi_allowed(false);
-    // Synchronize register effects and snapshots with the DMA worker before
-    // an initiator running ahead of kernel time enables or polls a channel.
-    if (delay != sc_core::SC_ZERO_TIME) {
-        sc_core::wait(delay);
-        delay = sc_core::SC_ZERO_TIME;
-    }
     access(trans, delay, true);
 }
 

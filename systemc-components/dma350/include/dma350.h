@@ -78,8 +78,6 @@ private:
     static constexpr uint32_t CH_FILLVAL = 0x038;
     static constexpr uint32_t CH_SRCTRIGINCFG = 0x04c;
     static constexpr uint32_t CH_DESTRIGINCFG = 0x050;
-    static constexpr uint32_t CH_LINKATTR = 0x070;
-    static constexpr uint32_t CH_LINKADDR = 0x078;
     static constexpr uint32_t CH_ERRINFO = 0x090;
     static constexpr uint32_t CH_IIDR = 0x0f0;
     static constexpr uint32_t CH_AIDR = 0x0f4;
@@ -146,7 +144,6 @@ private:
     static constexpr uint32_t ERRINFO_SRC_TRIGGER = 1u << 2;
     static constexpr uint32_t ERRINFO_DEST_TRIGGER = 1u << 3;
     static constexpr uint32_t ERRINFO_REG_VALUE = 1u << 25;
-    static constexpr uint32_t ERRINFO_LINK_HEADER = 1u << 24;
     static constexpr uint32_t ERRINFO_CFG_CONFLICT = 1u << 26;
     static constexpr uint32_t ERRINFO_READ_RESPONSE = 1u << 16;
     static constexpr uint32_t ERRINFO_WRITE_RESPONSE = 1u << 17;
@@ -169,7 +166,6 @@ private:
         bool clear_requested = false;
         bool command_started = false;
         bool finish_after_ack = false;
-        bool link_pending = false;
         bool fill = false;
         bool wrap = false;
         uint64_t start_source = 0;
@@ -221,9 +217,7 @@ private:
     void reset_registers();
     void reset_channel(unsigned int channel);
     void release_triggers(unsigned int channel);
-    bool configure_channel(unsigned int channel, bool linked = false);
-    void complete_command(unsigned int channel);
-    bool load_linked_command(unsigned int channel);
+    bool configure_channel(unsigned int channel);
     bool configure_trigger(unsigned int channel, uint32_t config, bool used,
                            TriggerSide& side, uint32_t error_bit);
     void write_command(unsigned int channel, uint32_t value);
