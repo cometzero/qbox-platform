@@ -1524,7 +1524,6 @@ function si_cl0.enable(ctx, platform)
                 trace = host_ppu_trace;
                 trace_limit = host_ppu_trace_limit;
                 assert_power_on_reset = cpu_active;
-                power_off_wait_for_standby = cpu_active;
                 assert_power_on_load = cpu_active and cpu_index == 0;
                 power_on_load_pulse_width_ns = 0;
                 power_on_load_to_reset_delay_ns = 0;
@@ -1542,12 +1541,6 @@ function si_cl0.enable(ctx, platform)
                 };
                 log_level = 0;
             }
-            if cpu_active then
-                platform["ap_cpu_"..cpu_index].standby_wfi = {
-                    bind = "&si_cl0_ap_cluster"..cluster.."_core"..core..
-                        "_ppu.standby_wfi";
-                }
-            end
         end
     end
 

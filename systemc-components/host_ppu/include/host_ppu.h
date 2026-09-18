@@ -49,9 +49,6 @@ class host_ppu : public sc_core::sc_module
     std::deque<pending_power_transition> m_pending_power_transitions;
     sc_core::sc_event m_power_on_sequence_event;
     gs::runonsysc m_power_transition_run_on_sysc;
-    bool m_standby_wfi = false;
-    bool m_power_off_pending = false;
-    uint32_t m_power_off_status = 0;
 
     static bool is_supported_length(unsigned int len)
     {
@@ -87,9 +84,6 @@ class host_ppu : public sc_core::sc_module
             const bool op_dynamic = (value & PPU_OP_DYN_ENABLE) != 0;
             const uint32_t requested_power = value & PPU_POWER_MASK;
             const uint32_t requested_op = value & PPU_OP_POLICY_MASK;
-            if (requested_power != PPU_POWER_STATUS_OFF || power_dynamic) {
-                m_power_off_pending = false;
-            }
 
             // Dynamic policy is a minimum; without DEVACTIVE inputs it cannot
             // lower the current status until software requests a static mode.
@@ -120,11 +114,7 @@ class host_ppu : public sc_core::sc_module
                 (p_power_on_status_delay_ns.get_value() != 0 ||
                  p_assert_power_on_load.get_value() ||
                  p_assert_power_on_reset.get_value());
-            const bool defer_power_off_status =
-                power_status_is_on(previous_status) &&
-                power_status_is_off(status) &&
-                p_power_off_wait_for_standby.get_value();
-            if (defer_power_on_status || defer_power_off_status) {
+            if (defer_power_on_status) {
                 const uint32_t transitional_status =
                     (status & ~PPU_POWER_MASK) |
                     (previous_status & PPU_POWER_MASK);
@@ -162,8 +152,7 @@ class host_ppu : public sc_core::sc_module
             trace_signal("power-on-sequence-scheduled", true);
             queue_power_transition(true, status);
         } else if (power_status_is_on(previous_status) && power_status_is_off(status) &&
-                   (p_power_on_reset_assert_on_power_off.get_value() ||
-                    p_power_off_wait_for_standby.get_value())) {
+                   p_power_on_reset_assert_on_power_off.get_value()) {
             queue_power_transition(false, status);
         }
     }
@@ -173,12 +162,6 @@ class host_ppu : public sc_core::sc_module
         m_power_transition_run_on_sysc.run_on_sysc(
             [this, power_on, final_status] {
                 if (!power_on) {
-                    if (p_power_off_wait_for_standby.get_value()) {
-                        m_power_off_pending = true;
-                        m_power_off_status = final_status;
-                        complete_standby_power_off();
-                        return;
-                    }
                     write_power_on_reset(true);
                     return;
                 }
@@ -187,19 +170,6 @@ class host_ppu : public sc_core::sc_module
                     {true, final_status});
                 m_power_on_sequence_event.notify(sc_core::SC_ZERO_TIME);
             });
-    }
-
-    void complete_standby_power_off()
-    {
-        if (!m_power_off_pending || !m_standby_wfi) {
-            return;
-        }
-        m_power_off_pending = false;
-        store32(PPU_PWSR, m_power_off_status);
-        trace_signal("standby-power-off", true);
-        if (p_power_on_reset_assert_on_power_off.get_value()) {
-            write_power_on_reset(true);
-        }
     }
 
     static void wait_ns(uint64_t ns)
@@ -340,7 +310,6 @@ public:
     cci::cci_param<uint32_t> p_initial_power_status;
     cci::cci_param<bool> p_assert_power_on_reset;
     cci::cci_param<bool> p_power_on_reset_assert_on_power_off;
-    cci::cci_param<bool> p_power_off_wait_for_standby;
     cci::cci_param<bool> p_assert_power_on_load;
     cci::cci_param<uint64_t> p_power_on_load_pulse_width_ns;
     cci::cci_param<uint64_t> p_power_on_load_to_reset_delay_ns;
@@ -350,7 +319,6 @@ public:
     InitiatorSignalSocket<bool> power_on_reset;
     InitiatorSignalSocket<bool> power_on_load;
     TargetSignalSocket<bool> reset;
-    TargetSignalSocket<bool> standby_wfi;
 
     explicit host_ppu(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
@@ -361,7 +329,6 @@ public:
         , p_assert_power_on_reset("assert_power_on_reset", false)
         , p_power_on_reset_assert_on_power_off(
               "power_on_reset_assert_on_power_off", true)
-        , p_power_off_wait_for_standby("power_off_wait_for_standby", false)
         , p_assert_power_on_load("assert_power_on_load", false)
         , p_power_on_load_pulse_width_ns("power_on_load_pulse_width_ns", 1)
         , p_power_on_load_to_reset_delay_ns("power_on_load_to_reset_delay_ns", 1)
@@ -371,22 +338,16 @@ public:
         , power_on_reset("power_on_reset")
         , power_on_load("power_on_load")
         , reset("reset")
-        , standby_wfi("standby_wfi")
     {
         reset_registers();
         SC_THREAD(emit_power_on_sequence);
         target_socket.register_b_transport(this, &host_ppu::b_transport);
         target_socket.register_transport_dbg(this, &host_ppu::transport_dbg);
-        standby_wfi.register_value_changed_cb([this](bool standby) {
-            m_standby_wfi = standby;
-            complete_standby_power_off();
-        });
         reset.register_value_changed_cb([this](const bool& asserted) {
             if (!asserted) {
                 return;
             }
             m_pending_power_transitions.clear();
-            m_power_off_pending = false;
             m_power_on_sequence_event.cancel();
             reset_registers();
             if (p_assert_power_on_reset.get_value()) {
