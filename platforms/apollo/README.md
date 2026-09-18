@@ -113,30 +113,8 @@ This is transaction-level functional validation, not physical I2S clock or
 FIFO deadline validation. The standalone model defaults to timed operation
 (`functional_pacing=false`), with idle-zero and overflow unit coverage.
 The current four-CPU freerunning profile is not qualified for timed audio.
-MMIO consumes incoming TLM delay before register side effects so a CPU's
-drain interval precedes STOP on the SystemC serializer timeline. Linux DMA
-playback also drains its FIFO before disabling the transmitter; DMA completion
-alone only proves FIFO acceptance. Actual WAV comparisons are available via
-`scripts/test/validate_qbox_i2s_wav.py --out-dir <fresh-output-directory>`
-from the workspace root (S16_LE stereo, 48 kHz).
 See the workspace's `doc/dwc/dw-apb-i2s.md` for PIO-before-DMA evidence,
 cyclic software rearm, commands, and limitations.
-
-Under the default freerunning/QK profile, the optional Linux DMA350
-`cyclic_done_pause` path uses hardware command links and resumes after each
-client callback. With a 5000 ms PCM wait override and IRQ/application CPU
-affinity, bidirectional WAV, repeated starts/stops and odd-tail comparisons
-pass. Autonomous cyclic remains unqualified in this profile. The Linux DAI
-now retains FIFO ownership while paused; bidirectional TX-only/duplex
-pause-resume and paused STOP tests pass with the same DMA settings.
-These are functional pacing results, not continuous physical audio timing.
-PIO odd tails additionally require the optional Linux `pio_fifo_empty_irq`
-path in the tested profile: it selects the lowest TX threshold while disabled
-and polls that status before STOP. Thirty short odd-tail runs and two long
-bidirectional WAV runs pass with the documented wait/CPU-affinity settings.
-The original fixed-delay PIO drain still has intermittent tail failures.
-See `doc/dwc/i2s-default-qk-investigation-20260916.md` in the workspace root
-for exact conditions, failures and artifacts.
 
 ### Full-system boot
 
@@ -1047,9 +1025,6 @@ Linux channels map permanently to physical channels; no dynamic channel
 sharing is used. I2C0–5, SPI2/3 and UART2/3 remain PIO-only in the AP wiring.
 DMA execution is asynchronous SystemC/TLM;
 the peripheral FIFOs use four-phase request/acknowledge handshakes.
-DMA MMIO consumes incoming TLM delay before register effects or status reads;
-future channel enables cannot start transfers early relative to CPU local time.
-Debug transport remains nonblocking and does not execute channel commands.
 The QBox CPU MMIO bridge refreshes relative delay on the SystemC dispatch
 thread and updates the keeper before returning; queued dispatch must not
 reapply elapsed kernel time. Regular MMIO jobs also respect SystemC suspension
@@ -1097,12 +1072,6 @@ alone must not wake WFI, and M-profile WFE must reach its helper under MTTCG.
 Actual Cortex-M55/NVIC regressions cover these cases and interrupt wakeup.
 These tests do not qualify snapshot migration or every WFE event-consumption
 corner case. TF-M firmware is not patched to bypass idle instructions.
-See the I2S follow-up evidence for the remaining
-small-ring service-latency limits; this is not a real-time timing guarantee.
-The explicit all-domain MCIPS/100-us profile passed 20 sequential bidirectional
-Linux blocking WAV transfers with 1024/2048-frame geometry and two odd-tail
-transfers. The default QK profile is unchanged; nonblocking ALSA-utils polling
-with this small ring still fails and is recorded separately.
 Linux uses DMAengine, DesignWare SPI DMA and 8250 DMA.
 Short transfers and UART RX tails may use PIO.
 
