@@ -174,6 +174,9 @@ function apollo_system_reset_bind_targets()
     targets[#targets + 1] = "&si_cl0_ni710ae_secondary_nci.reset"
     targets[#targets + 1] = "&si_cl0_ni710ae_mhu_nci.reset"
     targets[#targets + 1] = "&si_cl0_qemu_inst.reset"
+    targets[#targets + 1] = "&si_cl0_dw_i2c_0.reset"
+    targets[#targets + 1] = "&si_cl0_pmic_gpio_cold_reset.reset"
+    targets[#targets + 1] = "&si_cl0_pmic_gpio.reset"
     for _, frame in ipairs({
         "si_cl0_ap_ns_mhu_pbx";
         "si_cl0_ap_ns_mhu_mbx";

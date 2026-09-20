@@ -93,6 +93,10 @@ SI_CONST.SI_CL1_CORE_PPU_COUNT = 4
 SI_CONST.SI_CL_PPU_SIZE = 0x00001000
 SI_CONST.SI_CL0_UART_BASE = 0x2A400000
 SI_CONST.SI_CL0_UART_SIZE = 0x00010000
+-- QVP board extensions, not physical RD-Aspen SI peripheral assignments.
+SI_CONST.SI_CL0_PMIC_I2C_BASE = 0x2A800000
+SI_CONST.SI_CL0_PMIC_GPIO_BASE = 0x2A810000
+SI_CONST.SI_CL0_PMIC_MMIO_SIZE = 0x00010000
 SI_CONST.SI_CL0_SCR_BASE = 0x2A6B0000
 SI_CONST.SI_CL0_SCR_SIZE = 0x00010000
 SI_CONST.SI_CL0_TIMER_CNTCTL_BASE = 0x2A6F0000
@@ -686,6 +690,36 @@ function si_cl0.enable(ctx, platform)
     platform.si_cl0_router = {
         moduletype = "router";
         log_level = 0;
+    }
+
+    -- SCP initializes the board rails before power-feature initialization.
+    -- The boot transport polls the controller. Independent PMIC fault inputs
+    -- are exposed for inspection without an AP or SI GIC interrupt route.
+    platform.si_cl0_dw_i2c_0 = {
+        moduletype = "dw_apb_i2c";
+        dylib_path = "dw-apb-i2c";
+        transfer_latency = "10 us";
+        target_socket = {
+            address = SI_CONST.SI_CL0_PMIC_I2C_BASE;
+            size = SI_CONST.SI_CL0_PMIC_MMIO_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+        };
+    }
+    platform.si_cl0_pmic_gpio = {
+        moduletype = "qemu_pl061";
+        args = {"&platform.si_cl0_qemu_inst"};
+        init_inputs = 0x01;
+        pullups = 0x01;
+        pulldowns = 0;
+        mem = {
+            address = SI_CONST.SI_CL0_PMIC_GPIO_BASE;
+            size = SI_CONST.SI_CL0_PMIC_MMIO_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+        };
+    }
+    platform.si_cl0_pmic_gpio_cold_reset = {
+        moduletype = "qemu_device_cold_reset";
+        args = {"&platform.si_cl0_pmic_gpio"};
     }
 
     platform.si_cl0_ap_ns_mhu_pbx = {

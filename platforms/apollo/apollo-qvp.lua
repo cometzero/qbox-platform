@@ -50,13 +50,13 @@ ros.define(ctx, platform)
 pinctrl.define(platform)
 system_mgmt.define(ctx, platform)
 board.connect(platform)
-pmic.connect(platform)
 peri0_loopback.connect(platform)
 ap_compute.enable_ap_router(ctx, platform)
 si_cl0.define(ctx, platform)
 si_cl1.define(ctx, platform)
 
 si_cl0.enable(ctx, platform)
+pmic.connect(platform)
 si_cl1.enable(ctx, platform)
 
 if ctx.config.runtime_injection.enabled then

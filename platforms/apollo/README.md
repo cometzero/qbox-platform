@@ -955,22 +955,42 @@ See workspace `doc/board/pca9539.md` for wiring, model limitations, and results.
 
 ### TPS6594 PMIC board demo
 
-`board/tps6594.lua` adds four independent TPS6594-Q1 models on I2C0 at
-base addresses `0x48`, `0x58`, `0x60`, and `0x68`. Each consumes five
-consecutive page addresses; these are QVP test-board assignments, not a
-claim about physical address straps. Their active-low interrupts connect to
-SMD PL061 GPIO2–5 respectively. Each has GPIO offsets 0→1 and 8→9 as loopbacks.
-Linux uses the existing TPS6594 MFD, regulator, pinctrl/GPIO, and RTC drivers.
-All 36 rails have named DT constraints and `regulator-output` consumers:
-BUCK1–5 at 900 mV and LDO1–4 at 1.8 V on every PMIC.
-From the workspace root after BSP boot:
+`board/tps6594.lua` adds one TPS6594-Q1 model on SI CL0 I2C0 at base address
+`0x48`, consuming five consecutive page addresses (`0x48`–`0x4c`). This is a
+QVP test-board assignment, not a
+claim about physical address straps. The dedicated `board_si_i2c0` bus connects
+to `si_cl0_dw_i2c_0`, accessible only through the SI CL0 router. Its byte
+transfer latency remains 10 us; no zero-delay timing workaround is applied.
 
-```bash
-./scripts/run/ssh_run.sh scripts/test/verify_qbox_tps6594.sh
-```
+| SI CL0 local window | QVP component | Purpose |
+| --- | --- | --- |
+| `0x2a800000`–`0x2a80ffff` | `si_cl0_dw_i2c_0` | SCP polled DesignWare I2C transport |
+| `0x2a810000`–`0x2a81ffff` | `si_cl0_pmic_gpio` | PL061 input 0: PMIC INT_N |
 
-The script exercises all 36 regulators and GPIO loopbacks on all four PMICs,
-plus the primary PMIC RTC time and alarm interrupts. I2C0 also contains three
+These two windows are QVP board extensions, not physical RD-Aspen assignments.
+The active-low fault input has a pull-up and its own signal sink. The PL061
+interrupt output is not routed to a GIC: input 0 is available for polled
+fault inspection; asynchronous SCP fault handling is not implemented by this
+wiring. The PMIC retains GPIO offsets 0→1 and 8→9 as loopbacks.
+
+SCP owns PMIC initialization before power features initialize and preserves
+the existing BUCK/LDO voltage selectors and enable state. Default boot performs
+one `DEV_REV` read and no PMIC register writes; rail programming and GPIO
+self-tests are skipped. Runtime control APIs remain available. The model's
+`reset_device()` power-on profile sets BUCK1–5 to 300 mV, LDO1–3 to 600 mV,
+and LDO4 to 1.2 V, with all nine rails disabled. These are programmed selector
+values; disabled rails drive zero output voltage in the model. Linux
+does not enumerate the PMIC. Its RTC register model remains internal and
+unused; Linux continues to use the AP PL031 RTC. The former Linux TPS6594
+test is historical evidence and is not a qualification path for this topology.
+
+The I2C controller and SI fault GPIO reset on full-system reset, not AP cold
+reset. The TPS6594 model has no external reset input: its registers and rail
+state survive SoC reset, and process restart reapplies its power-on profile.
+Firmware initialization preserves this retained state rather than restoring
+the power-on selectors on every SoC boot.
+
+AP I2C0 still contains PCA9539 and three
 AT24C02-profile EEPROMs at `0x50`–`0x52` with a 5 ms write-busy interval, composed in `board/pca9539.lua`.
 Run `./scripts/run/ssh_run.sh scripts/test/verify_qbox_i2c_multi_slave.sh`
 for three concurrent Linux clients, eight 256-byte write/read rounds each,
