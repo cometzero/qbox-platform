@@ -112,6 +112,12 @@ stops QBox and closes the session. Its private key table preserves other
 sessions' key bindings. `--headless --exit-after-pass
 --timeout 180` provides a bounded boot smoke test. Outputs and the exact
 launch plan are retained under `build/qbox-apollo-qvp/linux-*`.
+`--headless` also prints live UART output; `--timeout` stops the emulator
+in either tmux or headless mode. `linux-uart.log` retains the console and
+`qbox.log` retains line-buffered platform output and runner lifecycle events.
+Linux mock MHU/SCMI/SI tracing is disabled by default. The launcher defaults to global INFO
+(`--log-level 4`); module-specific quiet settings still apply. Use
+`--domain-trace` to enable mock transport tracing.
 The shared network default forwards host TCP port 2222 to guest SSH. For
 concurrent instances, select a different `QBOX_RDASPEN_NETDEV` host port or
 use `QBOX_RDASPEN_NETDEV=type=user` to omit forwarding. Existing tmux sessions
