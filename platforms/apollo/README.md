@@ -975,11 +975,14 @@ wiring. The PMIC retains GPIO offsets 0→1 and 8→9 as loopbacks.
 
 SCP owns PMIC initialization before power features initialize and preserves
 the existing BUCK/LDO voltage selectors and enable state. Default boot performs
-one `DEV_REV` read and no PMIC register writes; rail programming and GPIO
-self-tests are skipped. Runtime control APIs remain available. The model's
+`DEV_REV` and BUCK/LDO/GPIO status reads and no PMIC register writes; rail
+programming and GPIO self-tests are skipped. RAMFW reads all nine rails through
+the PMIC HAL, logging enable and programmed voltage. TPS6594 uses the timer,
+I2C (`dw_apb_i2c`), GPIO and PMIC HAL interfaces. The model's
 `reset_device()` power-on profile sets BUCK1–5 to 300 mV, LDO1–3 to 600 mV,
-and LDO4 to 1.2 V, with all nine rails disabled. These are programmed selector
-values; disabled rails drive zero output voltage in the model. Linux
+and LDO4 to 1.2 V, with all nine rails enabled. These are model power-on defaults,
+not a production NVM image; enabled model outputs reflect these selector values.
+Disabled rails drive zero output voltage in the model. Linux
 does not enumerate the PMIC. Its RTC register model remains internal and
 unused; Linux continues to use the AP PL031 RTC. The former Linux TPS6594
 test is historical evidence and is not a qualification path for this topology.
