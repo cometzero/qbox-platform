@@ -439,6 +439,7 @@ private:
     cci::cci_param<uint32_t> p_aidr;
     cci::cci_param<bool> p_doorbell_commit_on_notify;
     cci::cci_param<bool> p_direct_boot_compat;
+    cci::cci_param<int> p_direct_boot_status;
     cci::cci_param<std::string> p_scmi_transport;
     cci::cci_param<uint64_t> p_tx_shmem;
     cci::cci_param<uint64_t> p_rx_shmem;
@@ -1232,6 +1233,9 @@ private:
 
     std::vector<uint8_t> scmi_supported_protocols() const
     {
+        if (p_scmi_transport.get_value() == "linux-stub") {
+            return {SCMI_PROTOCOL_BASE};
+        }
         if (p_scmi_transport.get_value() == "pfdi-monitor") {
             return {SCMI_PROTOCOL_BASE, SCMI_PROTOCOL_PFDI_MONITOR};
         }
@@ -1623,7 +1627,12 @@ private:
             trace_event("scmi-request", detail.str());
         }
 
-        if (valid_length) {
+        const bool unsupported_linux_service =
+            p_scmi_transport.get_value() == "linux-stub" &&
+            protocol_id(header) != SCMI_PROTOCOL_BASE;
+        if (valid_length && unsupported_linux_service) {
+            status = SCMI_ERR_SUPPORT;
+        } else if (valid_length) {
             switch (protocol_id(header)) {
             case SCMI_PROTOCOL_BASE:
                 respond_scmi_base(header, status, payload);
@@ -1667,7 +1676,7 @@ private:
             mbx->signal_doorbell(p_ack_bit.get_value());
             trace_event("scmi-ack-signaled");
         }
-        if (valid_length &&
+        if (valid_length && status == SCMI_SUCCESS &&
             protocol_id(header) == SCMI_PROTOCOL_POWER_DOMAIN &&
             msg_id(header) == 0x5) {
             const uint32_t domain_id = read_le32(request, 0);
@@ -2738,7 +2747,7 @@ private:
         return reply;
     }
 
-    std::vector<uint8_t> build_rse_success_reply(const std::vector<uint8_t>& request) const
+    std::vector<uint8_t> build_rse_stub_reply(const std::vector<uint8_t>& request) const
     {
         std::vector<uint8_t> reply;
         const uint8_t protocol = request.size() >= 1 ? request[0] : RSE_COMMS_PROTOCOL_EMBED;
@@ -2751,7 +2760,7 @@ private:
         reply.push_back(client_lo);
         reply.push_back(client_hi);
 
-        append_u32(reply, PSA_SUCCESS);
+        append_u32(reply, static_cast<uint32_t>(p_direct_boot_status.get_value()));
         if (protocol == RSE_COMMS_PROTOCOL_POINTER_ACCESS) {
             for (unsigned int i = 0; i < PSA_MAX_IOVEC; ++i) {
                 append_u32(reply, 0);
@@ -2796,7 +2805,7 @@ private:
     void respond_rse_doorbell()
     {
         const auto request = read_doorbell_message();
-        const auto reply = build_rse_success_reply(request);
+        const auto reply = build_rse_stub_reply(request);
 
         clear_postbox_transfer();
         if (auto mbx = paired_mbx()) {
@@ -3026,6 +3035,8 @@ public:
         , p_aidr("aidr", 0x20)
         , p_doorbell_commit_on_notify("doorbell_commit_on_notify", false)
         , p_direct_boot_compat("direct_boot_compat", false)
+        , p_direct_boot_status("direct_boot_status", 0,
+                              "PSA status for direct-boot synthetic replies")
         , p_scmi_transport("scmi_transport", std::string("mailbox"))
         , p_tx_shmem("tx_shmem", 0x00180000)
         , p_rx_shmem("rx_shmem", 0x00180100)

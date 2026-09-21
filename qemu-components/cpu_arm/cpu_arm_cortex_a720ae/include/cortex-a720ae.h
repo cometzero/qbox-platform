@@ -69,6 +69,7 @@ public:
     cci::cci_param<bool> p_en_pauth;
     cci::cci_param<bool> p_pauth_qarma3;
     cci::cci_param<std::string> p_psci_conduit;
+    cci::cci_param<uint64_t> p_linux_smc_stub_address;
     cci::cci_param<uint64_t> p_rvbar;
     cci::cci_param<uint64_t> p_cntfrq_hz;
 
@@ -105,6 +106,8 @@ public:
                          "disabled->no conduit, "
                          "hvc->through hvc call, "
                          "smc->through smc call")
+        , p_linux_smc_stub_address("linux_smc_stub_address", 0ull,
+                                  "Optional Linux-only SMCCC MMIO service")
         , p_rvbar("rvbar", 0ull, "Reset vector base address register value")
         , p_cntfrq_hz("cntfrq_hz", 0ull, "CPU Generic Timer CNTFRQ in Hz")
 
@@ -146,6 +149,9 @@ public:
                           p_pauth_qarma3.get_value());
         cpu.set_prop_bool("start-powered-off", p_start_powered_off);
         cpu.set_prop_int("psci-conduit", get_psci_conduit_val());
+        if (p_linux_smc_stub_address.get_value()) {
+            cpu.set_prop_int("linux-smc-stub-address", p_linux_smc_stub_address);
+        }
 
         cpu.set_prop_int("rvbar", p_rvbar);
         if (!p_cntfrq_hz.is_default_value()) {

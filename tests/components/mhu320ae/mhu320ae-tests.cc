@@ -1391,6 +1391,32 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     write32(ap_mbx_bus, notify_base + (DBCW_CLR - 0x1000), MHU_NOTIFY_VALUE);
     EXPECT_EQ(read32(ap_mbx_bus, notify_base), 0u);
 
+    // Linux-only RSE mock explicitly fails without dereferencing pointers or
+    // fabricating output data. The preceding case checks default success.
+    broker.get_param_handle("ap_rse_pbx.direct_boot_status")
+        .set_cci_value(cci::cci_value(-134));
+    write_doorbell_message(ap_pbx_bus, notify_channel,
+        build_embed_msg(0x40000110, 0x71, 1002, {}, {16}));
+    auto unsupported_reply = read_doorbell_message(ap_mbx_bus, notify_channel);
+    ASSERT_EQ(unsupported_reply.size(), 16u);
+    EXPECT_EQ(unsupported_reply[0], RSE_COMMS_PROTOCOL_EMBED);
+    EXPECT_EQ(unsupported_reply[1], 0x71u);
+    EXPECT_EQ(unsupported_reply[2], 1u);
+    EXPECT_EQ(read_le32(unsupported_reply, 4), 0xffffff7au);
+    EXPECT_EQ(read_le32(unsupported_reply, 8), 0u);
+    EXPECT_EQ(read_le32(unsupported_reply, 12), 0u);
+    write_doorbell_message(ap_pbx_bus, notify_channel,
+        build_pointer_msg(0x40000110, 0x72, 1002,
+                          {4, 16, 0, 0}, {0xdead0000, 0xdead1000, 0, 0}, 1, 1));
+    unsupported_reply = read_doorbell_message(ap_mbx_bus, notify_channel);
+    ASSERT_EQ(unsupported_reply.size(), 24u);
+    EXPECT_EQ(unsupported_reply[0], RSE_COMMS_PROTOCOL_POINTER_ACCESS);
+    EXPECT_EQ(unsupported_reply[1], 0x72u);
+    EXPECT_EQ(read_le32(unsupported_reply, 4), 0xffffff7au);
+    for (size_t offset = 8; offset < 24; offset += 4)
+        EXPECT_EQ(read_le32(unsupported_reply, offset), 0u);
+    EXPECT_EQ(read32(ap_pbx_bus, notify_base), 0u);
+
     const uint32_t ps_notify_channel = read32(ps_pbx_bus, DBCH_CFG0);
     const uint64_t ps_uid = 0x1122334455667788ULL;
     const auto ps_uid_bytes = le64_bytes(ps_uid);
@@ -1822,6 +1848,42 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(read32(reset_test_pbx_bus, DBCW_ST), 0u);
     EXPECT_FALSE(reset_test_requester_hold.reset.read());
     reset_test_pbx_reset.write(false);
+
+    // Keep default SCMI behavior tested above; Linux-only discovery exposes
+    // BASE and rejects other services with a completed error response.
+    auto transport = broker.get_param_handle("rse_si_pbx.scmi_transport");
+    transport.set_cci_value(cci::cci_value(std::string("linux-stub")));
+    const auto linux_request = [&](uint32_t protocol, uint32_t message) {
+        const uint32_t header = scmi_header(protocol, message) | (7u << 18);
+        write32(mbx_bus, DBCW_CLR, 0xffffffffu);
+        shmem.write32(SCMI_STATUS, 0);
+        shmem.write32(SCMI_LENGTH, 8);
+        shmem.write32(SCMI_HEADER, header);
+        shmem.write32(SCMI_PAYLOAD, 0);
+        write32(pbx_bus, DBCW_SET, 2);
+        EXPECT_EQ(shmem.read32(SCMI_STATUS), 1u);
+        EXPECT_EQ(shmem.read32(SCMI_HEADER), header);
+        EXPECT_EQ(read32(mbx_bus, DBCW_ST), 2u);
+    };
+    linux_request(SCMI_PROTOCOL_BASE, SCMI_MESSAGE_PROTOCOL_ATTRIBUTES);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
+    EXPECT_EQ(shmem.read8(SCMI_PAYLOAD + 4), 1u);
+    linux_request(SCMI_PROTOCOL_BASE, SCMI_MESSAGE_DISCOVER_LIST_PROTOCOLS);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + 4), 1u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + 8), SCMI_PROTOCOL_BASE);
+    for (const auto protocol : {SCMI_PROTOCOL_PERFORMANCE,
+             SCMI_PROTOCOL_POWER_DOMAIN, SCMI_PROTOCOL_SYS_POWER,
+             SCMI_PROTOCOL_PFDI_MONITOR, 0xffu}) {
+        linux_request(protocol, SCMI_MESSAGE_PROTOCOL_VERSION);
+        EXPECT_EQ(shmem.read32(SCMI_LENGTH), 8u);
+        EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0xffffffffu);
+    }
+    // The restriction is opt-in; switching back restores the existing model.
+    transport.set_cci_value(cci::cci_value(std::string("mailbox")));
+    linux_request(SCMI_PROTOCOL_PERFORMANCE, SCMI_MESSAGE_PROTOCOL_VERSION);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD), 0u);
+    EXPECT_EQ(shmem.read32(SCMI_PAYLOAD + 4), 0x00040000u);
     std::remove(bridge_trace_path.c_str());
 }
 

@@ -118,6 +118,8 @@ if(BUILD_TESTING)
     set(QBOX_PLATFORM_SYSTEMC_COMPONENT_TESTS
         arm_system_counter
         apollo_runtime_injection
+        apollo_linux_stub
+        apollo_si_stub
         apollo_cpu_ras
         cc3xx
         dma350
@@ -263,6 +265,8 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     mhu320ae
     gicx00_multiview
     apollo_runtime_injection
+    apollo_linux_stub
+    apollo_si_stub
     signal_fault_injector
     gic720ae_messreg
     apollo_cpu_ras

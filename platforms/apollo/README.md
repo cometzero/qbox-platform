@@ -92,6 +92,65 @@ to force a repeat, initialize the build environment and run
 
 ## Runtime
 
+### Direct Linux profile
+
+The workspace `./run_qbox_linux.sh` launches `apollo-qvp-linux.lua` with the
+deployed Apollo kernel and a private copy of the Yocto root filesystem.
+The matching product initramfs sets up dm-verity and the normal writable
+overlay/data partitions; the deployed WIC is never modified.
+`./run_qbox_linux.sh --bsp` boots the BSP initramfs and attaches a private copy
+of `nexios-bsp-initramfs-apollo-qvp.wic` as `/dev/vda` (boot and misc partitions).
+The root remains the initramfs; the BSP WIC is not a product root filesystem.
+`--rootfs PATH` overrides the disk source for either mode.
+It runs the original `/init` without an init overlay. Selftest failures enter
+the original `nexios-bsp-failed#` UART shell and remain FAIL in `bsp_selftest`;
+they do not prevent an AP boot smoke PASS. Network/SSH setup is not reached
+on that failure path.
+The tmux console uses a 70% upper UART pane and two equal lower panes for
+the QBox log and an interactive host shell. Click a pane to select it; F12
+stops QBox and closes the session. Its private key table preserves other
+sessions' key bindings. `--headless --exit-after-pass
+--timeout 180` provides a bounded boot smoke test. Outputs and the exact
+launch plan are retained under `build/qbox-apollo-qvp/linux-*`.
+The shared network default forwards host TCP port 2222 to guest SSH. For
+concurrent instances, select a different `QBOX_RDASPEN_NETDEV` host port or
+use `QBOX_RDASPEN_NETDEV=type=user` to omit forwarding. Existing tmux sessions
+are not replaced; select another `--session` name when necessary.
+
+`apollo-qvp-common.lua` shares AP/RoS and board construction with the full
+system. The Linux entrypoint replaces firmware reset/domain connections
+after construction; the hardware block Lua files remain authoritative.
+The direct-boot payload enters Linux at non-secure EL2, with four CPUs by
+default (`--cpus 1..16`). See `linux-boot/README.md` for the boot ABI.
+
+RSE, SI CL0 and CL1 firmware do not execute in this profile. SystemC MHU
+responders supply mock SCMI and RSE responses; unknown SMC services go through
+the optional QEMU-to-SystemC `apollo_linux_stub` bridge and return
+`NOT_SUPPORTED`. QEMU implements PSCI CPU startup. These are explicit mocks:
+successful replies do not qualify firmware, cross-domain timing, power,
+reset, secure services or FVP parity. Use `apollo-qvp.lua` for those workflows.
+The standard product image still requests `pfdi_misc`; its insertion returns
+`Operation not permitted` with this profile's unsupported secure services,
+leaving `systemd-modules-load.service` failed. This does not prevent login.
+The launcher does not suppress that failure or modify the product's services.
+
+The `apollo_si_stub` SystemC model replaces the SI CL1 attach/RPMsg service:
+it supplies the resource table at `0x00100000`, two 32-entry vrings at
+`0x00120000`/`0x00140000`, and an `ethsi1` endpoint through the existing Linux
+remoteproc and RPMsg drivers. Its Ethernet peer has MAC `00:01:02:03:04:06`
+and IPv4 address `192.168.1.1`; it answers ARP and IPv4 ICMP echo for untagged
+or VLAN-tagged frames. It is not a general network bridge or SI RTOS.
+Use Linux address `192.168.1.2/24` and MTU 478 (512-byte RPMsg buffer minus
+16-byte RPMsg and 18-byte tagged Ethernet headers).
+The guest-side `scripts/test/verify_qbox_linux_si_stub.sh` checks attach,
+untagged/VLAN 200 traffic, 56/450-byte ICMP payloads, queue reuse and packet
+counters. Run it in a fresh AP-only guest; it configures and then cleans up
+the test addresses on `ethsi1`. PFDI, actual SI firmware execution, SI power
+management and physical timing remain unsupported by this substitute.
+Idle `detach` followed by `start` is supported via resource-table `DRIVER_OK`
+polling. Stop traffic before detaching: cancellation of an in-flight DMA batch
+during concurrent detach/reset is outside this model's contract.
+
 ### DW_apb_i2s audio pair
 
 I2S0 at `0x30200000` (SPI 356) and I2S1 at `0x30210000` (SPI 357)
