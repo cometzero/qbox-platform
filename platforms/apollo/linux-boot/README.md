@@ -10,6 +10,13 @@ The product initramfs retains its normal dm-verity
 setup and read-only `rootro_a` root; writable state uses the WIC's overlay/data
 partitions. Each launch uses a private WIC copy.
 Initramfs images are loaded unchanged, without an appended init overlay.
+The root launcher's `--autosd` mode also accepts an AutoSD nightly disk and
+its original dracut initramfs via a prepared JSON manifest. It uses the same
+reset payload and deployed Apollo kernel, with root UUID and OSTree deployment
+arguments extracted from the image's BLS entry. Required drivers, EROFS and
+fs-verity are built into that kernel; the AutoSD kernel modules cannot be
+loaded across kernel ABIs. This direct boot does not run AutoSD UKI boot
+selection or qualify Secure Boot, updates or rollback.
 BSP uses `rdinit=/init` and runs the image's original selftests. On failure,
 the original init opens `nexios-bsp-failed#`; on success it opens `nexios-bsp#`.
 Both are bootable interactive shells. The launcher's `bsp_selftest` result

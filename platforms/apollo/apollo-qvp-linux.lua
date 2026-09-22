@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: BSD-3-Clause
--- AP-only Linux profile: no RSE, SCP, Zephyr, TF-A or U-Boot firmware.
+-- AP-only profile: direct Linux or optional standalone U-Boot/UKIBoot first boot.
+-- RSE, SCP, Zephyr and TF-A remain absent; whole-platform EFI reset is not wired.
 local apollo_dir = debug.getinfo(1, "S").source:sub(2):match("(.*/)") or "./"
 local common = dofile(apollo_dir.."apollo-qvp-common.lua")
 local ctx = common.load(apollo_dir)
@@ -87,15 +88,17 @@ local function required(name)
     assert(path ~= "", "Missing Linux boot artifact: "..name)
     return path
 end
+local firmware = ctx.getenv_or("QBOX_LINUX_FIRMWARE", "false") == "true"
 platform.linux_loader = {
     moduletype = "loader";
     initiator_socket = {bind = "&ap_router.target_socket"};
     {bin_file = required("QBOX_LINUX_BOOT_STUB"); address = 0x80000000};
-    {bin_file = required("QBOX_LINUX_KERNEL"); address = 0x80200000};
+    {bin_file = required("QBOX_LINUX_KERNEL"); address = firmware and 0x80080000 or 0x80200000};
     {bin_file = required("QBOX_LINUX_DTB"); address = 0x88000000};
 }
 local initrd = ctx.getenv_or("QBOX_LINUX_INITRD", "")
 if initrd ~= "" then
+    assert(not firmware, "EFI firmware mode takes its initrd from the on-disk UKI")
     table.insert(platform.linux_loader, {bin_file = initrd; address = 0x90000000})
 end
 dofile(apollo_dir.."linux-boot/domains.lua").define(ctx, platform)

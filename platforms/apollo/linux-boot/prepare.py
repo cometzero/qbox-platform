@@ -19,6 +19,12 @@ def command(*args):
 
 
 def prepare(args):
+    firmware = getattr(args, "firmware", False)
+    addresses = dict(ADDRESSES)
+    if firmware:
+        addresses["kernel"] = 0x80080000
+        if args.initrd:
+            raise ValueError("firmware mode embeds initrd in the on-disk UKI")
     kernel = args.kernel.resolve(strict=True)
     source_dtb = args.dtb.resolve(strict=True)
     out = args.output_dir.resolve()
@@ -27,10 +33,10 @@ def prepare(args):
         header = stream.read(64)
     if len(header) != 64 or header[56:60] != b"ARM\x64":
         raise ValueError("--kernel must be an uncompressed arm64 Linux Image")
-    if struct.unpack_from("<Q", header, 8)[0] != 0:
-        raise ValueError("fixed 2 MiB-aligned kernel placement requires zero Image text_offset")
+    if struct.unpack_from("<Q", header, 8)[0] != (0x80000 if firmware else 0):
+        raise ValueError("Image text_offset does not match the selected boot placement")
     image_size = max(kernel.stat().st_size, struct.unpack_from("<Q", header, 16)[0])
-    if ADDRESSES["kernel"] + image_size > ADDRESSES["dtb"]:
+    if addresses["kernel"] + image_size > addresses["dtb"]:
         raise ValueError("Linux Image overlaps the fixed DTB address")
     if source_dtb.stat().st_size > 0x200000:
         raise ValueError("DTB exceeds the arm64 boot protocol 2 MiB limit")
@@ -41,7 +47,8 @@ def prepare(args):
     boot = out / "boot.bin"
     obj = out / "boot.o"
     prefix = os.environ.get("CROSS_COMPILE", "aarch64-linux-gnu-")
-    command(prefix + "as", "-march=armv8-a", "-o", obj,
+    command(prefix + "as", "-march=armv8-a", "--defsym",
+            f"BOOT_ENTRY={addresses['kernel']}", "-o", obj,
             Path(__file__).with_name("boot.S"))
     command(prefix + "objcopy", "-O", "binary", "-j", ".text.boot", obj, boot)
     dtb = out / "linux.dtb"
@@ -95,12 +102,14 @@ def prepare(args):
     put("/soc/si_remoteproc/si-cl1", "status", "okay", kind="s")
     return {"boot_stub": str(boot), "kernel": str(kernel), "dtb": str(dtb),
             "initrd": str(initrd) if initrd else None,
-            "addresses": ADDRESSES, "cpus": args.cpus}
+            "addresses": addresses, "cpus": args.cpus, "firmware": firmware}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel", type=Path, required=True)
+    parser.add_argument("--firmware", action="store_true",
+                        help="load Apollo U-Boot Linux-header image at 0x80080000")
     parser.add_argument("--dtb", type=Path, required=True)
     parser.add_argument("--initrd", type=Path)
     parser.add_argument("--disk", action="store_true",
