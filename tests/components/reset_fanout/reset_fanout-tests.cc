@@ -31,6 +31,9 @@ public:
         reset->write(true);
         wait(sc_core::sc_time(4, sc_core::SC_PS));
         reset->write(false);
+        wait(sc_core::sc_time(2, sc_core::SC_PS));
+        reset->write(true);
+        reset->write(false);
     }
 };
 
@@ -98,7 +101,7 @@ TEST(ResetFanoutTest, BroadcastsResetValueToEveryTarget)
 
     sc_core::sc_start(sc_core::sc_time(10, sc_core::SC_PS));
 
-    ASSERT_GE(sink0.observed.size(), 2u);
+    ASSERT_EQ(sink0.observed, (std::vector<bool>{true, false, true, false}));
     EXPECT_EQ(sink0.observed, sink1.observed);
     EXPECT_EQ(sink0.observed, sink2.observed);
     EXPECT_TRUE(sink0.observed.front());
