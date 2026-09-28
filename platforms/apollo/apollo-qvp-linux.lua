@@ -29,6 +29,7 @@ platform = {
     };
 }
 common.define_ap(ctx, platform)
+dofile(apollo_dir.."apollo-qvp-qmp.lua")(platform, false)
 if ctx.config.monitor.enabled then
     platform.qbox_monitor = {
         moduletype = "monitor";
