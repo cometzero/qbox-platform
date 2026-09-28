@@ -239,6 +239,7 @@ SI_CONST.SI_IRQ = {
     cl0_cl1_mhu = 107;
     cl0_fmu_critical = 128;
     cl0_fmu_noncritical = 129;
+    cl0_ap_ns_watchdog_ws1 = 321;
     cl0_ap_ras_cluster0 = 325;
     cl0_ap_ras_cluster1 = 327;
     cl0_ap_ras_cluster2 = 329;
@@ -276,6 +277,9 @@ local function irq_route_definition(
 end
 
 local SI_ACTIVE_ROUTES = {
+    irq_route_definition(
+        "si_cl0_ap_ns_watchdog_ws1", "ap_watchdog_0.ws1", "SPI", SI_CONST.SI_IRQ.cl0_ap_ns_watchdog_ws1,
+        "View1", "shared", {0});
     irq_route_definition(
         "si_sgi_directed", "si_cpu.icc_sgi1r_el1", "SGI", SI_CONST.SI_IRQ.sgi_directed,
         "View1", "directed", {4});
@@ -1559,8 +1563,12 @@ function si_cl0.enable(ctx, platform)
                 trace_limit = host_ppu_trace_limit;
                 assert_power_on_reset = cpu_active;
                 assert_power_on_load = cpu_active and cpu_index == 0;
-                power_on_load_pulse_width_ns = 0;
-                power_on_load_to_reset_delay_ns = 0;
+                -- CPU0's load drives a +1 ps asynchronous cold-reset fanout.
+                -- Delta-only waits can publish ON before watchdog/IRQ reset.
+                -- Retain the PPU's 1 ns phases only for this cold-boot path;
+                -- secondary CPU hotplug keeps its existing delta timing.
+                power_on_load_pulse_width_ns = cpu_index == 0 and 1 or 0;
+                power_on_load_to_reset_delay_ns = cpu_index == 0 and 1 or 0;
                 power_on_load = cpu_active and cpu_index == 0 and
                     {bind = "&host_reset_ctrl.ap_power_reset"} or nil;
                 power_on_reset = cpu_active and {

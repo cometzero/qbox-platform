@@ -86,6 +86,13 @@ end
 
 function ap_cold_reset_bind_targets()
     local targets = {
+        -- Clear both WS1 sources before releasing the asynchronous AP reset.
+        -- WS1 falling acknowledges reset to the host controller; it must not
+        -- remain asserted while reset_gpio waits for its QEMU reset handshake.
+        "&ap_watchdog_0.reset";
+        "&ap_secure_wdog.reset";
+        "&ap_secure_uart.reset";
+        "&ap_primary_uart.reset";
         "&dma350_0.reset";
         "&dma350_1.reset";
         "&pinctrl_peri0.reset";
@@ -144,6 +151,7 @@ end
 function apollo_system_reset_bind_targets()
     local targets = {
         ap_system_reset_bind_targets();
+        "&rse_host_uart0_s.reset";
         "&rse_sysctrl.reset";
         "&rse_watchdog_ns.reset";
         "&rse_watchdog_s.reset";
@@ -155,6 +163,7 @@ function apollo_system_reset_bind_targets()
         "&host_rse_si_mhu_mbx.reset";
         "&host_smd_gpio_cold_reset.reset";
         "&host_smd_gpio.reset";
+        "&si_cl0_watchdog.reset";
     }
 
     if rse_local_crypto then

@@ -308,12 +308,14 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_cold_reset_fanout = enable_ap_cpus and {
         moduletype = "reset_fanout";
+        trace = getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
         reset_out = {bind = ap_cold_reset_bind_targets()};
         log_level = 0;
     } or nil
 
     platform.apollo_system_reset_fanout = enable_ap_cpus and {
         moduletype = "reset_fanout";
+        trace = getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
         reset_out = {bind = apollo_system_reset_bind_targets()};
         log_level = 0;
     } or nil
@@ -322,7 +324,7 @@ function ap_compute.define(ctx, platform)
         moduletype = "signal_fanout";
         signal_out = {
             bind = "&ap_gic.spi_in_"..AP_IRQ.ns_wdog_ws1..
-                ";&host_reset_ctrl.ap_ns_watchdog_reset";
+                ";"..ctx.modules.si_cl0.spi_target(ctx, "si_cl0_ap_ns_watchdog_ws1", "View1");
         };
     } or nil
 
@@ -727,6 +729,7 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_watchdog_0 = enable_ap_cpus and {
         moduletype = "zena_watchdog";
+        trace = getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
         clock_frequency = AP_HW.arch_timer_frequency_hz;
         control = {
             address = AP_ADDRESS.ns_wdog_control;
@@ -822,6 +825,7 @@ function ap_compute.define(ctx, platform)
 
     platform.ap_secure_wdog = enable_ap_cpus and {
         moduletype = "zena_watchdog";
+        trace = getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
         clock_frequency = AP_HW.arch_timer_frequency_hz;
         control = {
             address = AP_ADDRESS.secure_wdog_control;
