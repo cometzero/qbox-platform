@@ -4,6 +4,13 @@
 local apollo_dir = debug.getinfo(1, "S").source:sub(2):match("(.*/)") or "./"
 local common = dofile(apollo_dir.."apollo-qvp-common.lua")
 local ctx = common.load(apollo_dir)
+-- Shared AP construction references SI interrupt/window metadata. Load the same
+-- module contracts as full-system, without constructing Safety Island domains;
+-- their firmware edges are removed/replaced by the AP-only profile below.
+ctx.modules = {
+    si_cl0 = dofile(apollo_dir.."hw-block/si_cl0.lua");
+    si_cl1 = dofile(apollo_dir.."hw-block/si_cl1.lua");
+}
 assert(enable_ap_cpus, "Linux profile requires QBOX_RDASPEN_ENABLE_AP_CPUS=true")
 assert(not ctx.config.runtime_injection.enabled,
        "Full-system runtime injection is not supported by the Linux profile")
