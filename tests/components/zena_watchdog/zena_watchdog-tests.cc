@@ -3,10 +3,12 @@
  */
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <cci/utils/broker.h>
 #include <gtest/gtest.h>
+#include <ports/initiator-signal-socket.h>
 #include <ports/target-signal-socket.h>
 #include <systemc>
 #include <tlm>
@@ -19,6 +21,7 @@ namespace {
 constexpr uint64_t WCS = 0x000;
 constexpr uint64_t WRR = 0x000;
 constexpr uint64_t WOR = 0x008;
+constexpr uint64_t WCV = 0x010;
 constexpr uint64_t W_IIDR = 0xfcc;
 constexpr uint32_t WCS_EN = 1u << 0;
 constexpr uint32_t WCS_WS0 = 1u << 1;
@@ -36,6 +39,16 @@ public:
     {
         signal.register_value_changed_cb(
             [this](bool value) { values.push_back(value); });
+    }
+};
+
+class SignalSource : public sc_core::sc_module
+{
+public:
+    InitiatorSignalSocket<bool> signal;
+    explicit SignalSource(sc_core::sc_module_name name)
+        : sc_core::sc_module(name), signal("signal")
+    {
     }
 };
 
@@ -100,16 +113,23 @@ TEST(ZenaWatchdogTest, ExpiresInTwoStagesAndRefreshRearms)
         cci::cci_originator("zena_watchdog_test"));
     broker.set_preset_cci_value("watchdog_expiry.clock_frequency",
                                 cci::cci_value(1000ull));
+    broker.set_preset_cci_value("watchdog_expiry.trace", cci::cci_value(true));
+    broker.set_preset_cci_value("watchdog_expiry.trace_limit", cci::cci_value(1u));
 
     zena_watchdog dut("watchdog_expiry");
     TlmInitiator control("watchdog_control_initiator");
     TlmInitiator refresh("watchdog_refresh_initiator");
     SignalSink ws0("watchdog_ws0");
     SignalSink ws1("watchdog_ws1");
+    SignalSource reset("watchdog_reset_source");
     control.socket.bind(dut.control);
     refresh.socket.bind(dut.refresh);
     dut.ws0.bind(ws0.signal);
     dut.ws1.bind(ws1.signal);
+    reset.signal.bind(dut.reset);
+
+    // Polling must not consume the independently bounded stage/reset budget.
+    ::testing::internal::CaptureStderr();
 
     ASSERT_EQ(dut.p_clock_frequency.get_value(), 1000u);
     EXPECT_EQ(read_control(dut, W_IIDR), 0x0001043bu);
@@ -122,9 +142,16 @@ TEST(ZenaWatchdogTest, ExpiresInTwoStagesAndRefreshRearms)
 
     write_control(dut, WOR, 2u);
     write_control(dut, WCS, WCS_EN);
+    EXPECT_EQ(read_control(dut, WCV), 2u);
+    // Linux action=0 includes the second WOR before WS0 is asserted.
+    EXPECT_EQ(read_control(dut, WOR) + read_control(dut, WCV), 4u);
     sc_core::sc_start(sc_core::sc_time(3, sc_core::SC_MS));
 
     EXPECT_EQ(read_control(dut, WCS), WCS_EN | WCS_WS0);
+    EXPECT_EQ(read_control(dut, WCV), 4u);
+    // After WS0, GETTIMELEFT is just WCV - the 3 ms counter, not a
+    // wrapped unsigned subtraction from the expired first-stage compare.
+    EXPECT_EQ(read_control(dut, WCV) - 3u, 1u);
     ASSERT_FALSE(ws0.values.empty());
     EXPECT_TRUE(ws0.values.back());
     EXPECT_TRUE(ws1.values.empty() || !ws1.values.back());
@@ -132,10 +159,12 @@ TEST(ZenaWatchdogTest, ExpiresInTwoStagesAndRefreshRearms)
     write_refresh(dut, WRR, 0u);
     sc_core::sc_start(sc_core::SC_ZERO_TIME);
     EXPECT_EQ(read_control(dut, WCS), WCS_EN);
+    EXPECT_EQ(read_control(dut, WCV), 5u);
     EXPECT_FALSE(ws0.values.back());
 
     sc_core::sc_start(sc_core::sc_time(3, sc_core::SC_MS));
     EXPECT_EQ(read_control(dut, WCS), WCS_EN | WCS_WS0);
+    EXPECT_EQ(read_control(dut, WCV), 7u);
     sc_core::sc_start(sc_core::sc_time(3, sc_core::SC_MS));
     EXPECT_EQ(read_control(dut, WCS), WCS_EN | WCS_WS0 | WCS_WS1);
     ASSERT_FALSE(ws1.values.empty());
@@ -146,6 +175,28 @@ TEST(ZenaWatchdogTest, ExpiresInTwoStagesAndRefreshRearms)
     EXPECT_EQ(read_control(dut, WCS), 0u);
     EXPECT_FALSE(ws0.values.back());
     EXPECT_FALSE(ws1.values.back());
+
+    // Reset cancels a pending expiry and dominates in-flight MMIO writes.
+    write_control(dut, WOR, 2u);
+    write_control(dut, WCS, WCS_EN);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_MS));
+    reset.signal->write(true);
+    write_control(dut, WOR, 1u);
+    write_control(dut, WCS, WCS_EN);
+    EXPECT_EQ(read_control(dut, WCS), 0u);
+    EXPECT_EQ(read_control(dut, WOR), 0u);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_MS));
+    reset.signal->write(false);
+    sc_core::sc_start(sc_core::sc_time(5, sc_core::SC_MS));
+    EXPECT_EQ(read_control(dut, WCS), 0u);
+    EXPECT_FALSE(ws0.values.back());
+    EXPECT_FALSE(ws1.values.back());
+
+    const std::string trace = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(trace.find("read frame=control"), std::string::npos);
+    EXPECT_NE(trace.find("ws0=1 ws1=0 sc_time="), std::string::npos);
+    EXPECT_EQ(trace.find("write frame="), std::string::npos);
+    EXPECT_EQ(trace.find("ws0=0 ws1=0"), std::string::npos);
 }
 
 int sc_main(int argc, char* argv[])

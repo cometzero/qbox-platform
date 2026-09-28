@@ -41,7 +41,9 @@ class zena_watchdog : public sc_core::sc_module
     uint32_t m_wcvu = 0;
     uint64_t m_generation = 0;
     bool m_reset = false;
+    uint32_t m_last_stage_bits = 0;
     unsigned int m_trace_count = 0;
+    unsigned int m_signal_trace_count = 0;
     sc_core::sc_event m_rearm;
 
     uint64_t offset_ticks() const
@@ -68,6 +70,16 @@ class zena_watchdog : public sc_core::sc_module
 
     void write_outputs()
     {
+        const uint32_t stages = m_wcs & (WCS_WS0 | WCS_WS1);
+        if (stages != m_last_stage_bits) {
+            m_last_stage_bits = stages;
+            if (p_trace.get_value() && m_signal_trace_count < p_trace_limit.get_value()) {
+                ++m_signal_trace_count;
+                std::cerr << name() << " ws0=" << ((stages & WCS_WS0) != 0)
+                          << " ws1=" << ((stages & WCS_WS1) != 0)
+                          << " sc_time=" << sc_core::sc_time_stamp() << std::endl;
+            }
+        }
         if (ws0.size() != 0) {
             ws0->write((m_wcs & WCS_WS0) != 0);
         }
@@ -76,13 +88,18 @@ class zena_watchdog : public sc_core::sc_module
         }
     }
 
-    void rearm(bool update_compare)
+    void update_compare()
+    {
+        const uint64_t compare = current_ticks() + offset_ticks();
+        m_wcvl = static_cast<uint32_t>(compare);
+        m_wcvu = static_cast<uint32_t>(compare >> 32);
+    }
+
+    void rearm(bool refresh_compare)
     {
         ++m_generation;
-        if (update_compare && (m_wcs & WCS_EN) != 0) {
-            const uint64_t compare = current_ticks() + offset_ticks();
-            m_wcvl = static_cast<uint32_t>(compare);
-            m_wcvu = static_cast<uint32_t>(compare >> 32);
+        if (refresh_compare && (m_wcs & WCS_EN) != 0) {
+            update_compare();
         }
         m_rearm.notify(sc_core::SC_ZERO_TIME);
     }
@@ -121,6 +138,9 @@ class zena_watchdog : public sc_core::sc_module
             }
             if ((m_wcs & WCS_WS0) == 0) {
                 m_wcs |= WCS_WS0;
+                // A timeout refresh starts the second watch period. Linux
+                // GETTIMELEFT reads WCV - counter once WS0 is asserted.
+                update_compare();
             } else {
                 m_wcs |= WCS_WS1;
             }
@@ -210,7 +230,10 @@ class zena_watchdog : public sc_core::sc_module
             std::memcpy(data, &value, sizeof(value));
         } else if (trans.get_command() == tlm::TLM_WRITE_COMMAND) {
             std::memcpy(&value, data, sizeof(value));
-            if (refresh_frame) {
+            if (m_reset) {
+                // Reset dominates MMIO. Do not leave a rearm queued behind
+                // deassertion from an in-flight initiator transaction.
+            } else if (refresh_frame) {
                 write_refresh(static_cast<uint32_t>(offset));
             } else {
                 write_control(static_cast<uint32_t>(offset), value);
@@ -234,6 +257,12 @@ class zena_watchdog : public sc_core::sc_module
 
     void reset_changed(bool asserted)
     {
+        if (m_reset != asserted && p_trace.get_value() &&
+            m_signal_trace_count < p_trace_limit.get_value()) {
+            ++m_signal_trace_count;
+            std::cerr << name() << " reset=" << asserted
+                      << " sc_time=" << sc_core::sc_time_stamp() << std::endl;
+        }
         m_reset = asserted;
         if (asserted) {
             reset_registers();
