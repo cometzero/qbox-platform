@@ -1,5 +1,24 @@
 # QBox Apollo Platform
 
+## AutoSD monitor and optional QMP
+
+AutoSD launchers accept `--monitor-port PORT` and bind the monitor to IPv4
+loopback. The AP-only profile exposes status with runtime mutation disabled;
+full-system injection requires the explicit `--runtime-injection` option.
+The launch manifest records domain CPU/instance paths and a separate runtime
+manifest verifies the listening process using Linux socket inodes and process
+start times. An occupied port is an error, not an existing session to adopt.
+
+`--qmp` adds one QMP component per present domain (AP, or RSE/SI CL0/SI CL1/AP).
+The launcher creates a private mode-0700 directory with short unique Unix socket
+paths. Components bind their actual QemuInstance and own the Unix client;
+dashboard queries use the monitor biflow, e.g.
+`platform.si_cl1_qmp.qmp_socket.qmp_socket_router`.
+QMP is opt-in and does not qualify global pause, coherent register snapshots,
+or hardware timing fidelity. Read-only command allowlisting belongs to the
+dashboard adapter. The manifest records expected biflows; clients must discover
+their runtime presence before reporting availability.
+
 ## Yocto unit tests
 
 The native provider enables tests by default. Its `do_check` task builds and
