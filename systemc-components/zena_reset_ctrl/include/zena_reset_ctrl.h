@@ -51,9 +51,12 @@ class zena_reset_ctrl : public sc_core::sc_module
     uint32_t m_power_ack = 0;
     uint32_t m_reset_request = 0;
     uint32_t m_reset_ack = 0;
-    bool m_ap_watchdog_reset = false;
+    bool m_ap_ns_watchdog_reset = false;
+    bool m_ap_s_watchdog_reset = false;
+    bool m_si_watchdog_reset = false;
     bool m_ap_power_reset = false;
     bool m_safety_fault_reset = false;
+    bool m_ap_reset_output = false;
     std::array<uint32_t, 16> m_clock_ctrl{};
 
     static uint32_t identity(uint32_t offset)
@@ -122,6 +125,7 @@ class zena_reset_ctrl : public sc_core::sc_module
         } else if (offset == RGM_RST_MASK) {
             m_rgm_mask = value & RGM_EXP0RESET;
             update_ap_reset();
+            update_si_reset();
         }
     }
 
@@ -211,18 +215,25 @@ class zena_reset_ctrl : public sc_core::sc_module
     {
         const bool safety_reset = m_safety_fault_reset &&
             (m_rgm_mask & RGM_EXP0RESET) != 0;
+        const bool asserted = m_ap_ns_watchdog_reset || m_ap_s_watchdog_reset ||
+            m_ap_power_reset || safety_reset;
+        // Emit transitions only. A repeated or initial deassertion must not
+        // enter reset_gpio's completion handshake without an assertion.
+        if (asserted == m_ap_reset_output) {
+            return;
+        }
+        m_ap_reset_output = asserted;
         if (ap_reset.size() != 0) {
-            ap_reset->write(m_ap_watchdog_reset || m_ap_power_reset ||
-                            safety_reset);
+            ap_reset->write(asserted);
         }
     }
 
-    void ap_watchdog_changed(bool asserted)
+    void ap_watchdog_changed(bool asserted, bool secure)
     {
         if (asserted) {
             m_rgm_syndrome |= RGM_EXTCOLDRESET;
         }
-        m_ap_watchdog_reset = asserted;
+        (secure ? m_ap_s_watchdog_reset : m_ap_ns_watchdog_reset) = asserted;
         update_ap_reset();
     }
 
@@ -246,9 +257,15 @@ class zena_reset_ctrl : public sc_core::sc_module
         if (asserted) {
             m_rgm_syndrome |= RGM_EXP0RESET;
         }
+        m_si_watchdog_reset = asserted;
+        update_si_reset();
+    }
+
+    void update_si_reset()
+    {
         const bool enabled = (m_rgm_mask & RGM_EXP0RESET) != 0;
         if (si_reset.size() != 0) {
-            si_reset->write(asserted && enabled);
+            si_reset->write(m_si_watchdog_reset && enabled);
         }
     }
 
@@ -303,9 +320,9 @@ public:
         rgm.register_b_transport(this, &zena_reset_ctrl::rgm_b_transport);
         pik.register_b_transport(this, &zena_reset_ctrl::pik_b_transport);
         ap_ns_watchdog_reset.register_value_changed_cb(
-            [this](bool value) { ap_watchdog_changed(value); });
+            [this](bool value) { ap_watchdog_changed(value, false); });
         ap_s_watchdog_reset.register_value_changed_cb(
-            [this](bool value) { ap_watchdog_changed(value); });
+            [this](bool value) { ap_watchdog_changed(value, true); });
         ap_power_reset.register_value_changed_cb(
             [this](bool value) { ap_power_changed(value); });
         si_watchdog_reset.register_value_changed_cb(
