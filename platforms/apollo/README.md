@@ -264,7 +264,13 @@ SCMI, PFDI, or RPMsg replies while the real firmware peer is unavailable.
 
 AP cold reset and Apollo full-system reset have distinct target lists. The
 core0 PPU power-on load pulse drives the AP cold-reset path and must not reset
-the PPU that generated it. A full-system reset additionally resets the four
+the PPU that generated it. CPU0 retains the PPU's 1 ns load pulse and 1 ns
+load-to-release phase, so the asynchronous +1 ps cold-reset fanout clears
+watchdog WS1 before CPU release and PWSR ON. Zero-duration delta phases do
+not provide that ordering. Secondary CPU hotplug keeps its delta-only timing.
+A repeated component test checks the controller, reset/IRQ fanouts and
+watchdog sequence; it does not qualify cross-QEMU scheduling or physical
+reset timing. A full-system reset additionally resets the four
 active AP core PPUs, RSE/SI QEMU instances, RSE accelerator and local crypto,
 SI0 NI-710AE policy, and the live-domain MHU frames. SI0 can then sequence the
 AP PPUs back on only after its second initialization, preventing AP measured
@@ -272,6 +278,112 @@ boot traffic from being posted before the RSE receiver is ready.
 
 The Apollo reset fanout retains exactly one reset for each SI CL0/CL1 QEMU
 instance and orders the SI GIC multiview reset before both QEMU reset targets.
+The SI PPUs establish the external CPU holds before either instance-reset
+request. Managed `start_in_reset` CPUs retain a `soft_stopped` hold across
+QEMU's instance-wide resume; only explicit PPU release clears that hold.
+This matters because QEMU's `resume_all_vcpus()` clears the ordinary CPU
+`stop/stopped` flags even for an already asserted external reset. No delay
+is used as a substitute for the held-state contract. A four-CPU regression
+uses an unheld witness CPU to acknowledge each real instance reset while
+the other three remain held, then checks their explicit release. Firmware
+reload and deferred Zephyr logging are checked separately in the full-system run.
+The diagnostic mode is `aarch64-start-in-reset-release-test
+-p test-bench.instance_reset_while_held=true` with the managed MTTCG options
+from its existing CTest entry. Both old and new implementations reached all
+seven functional checkpoints in the isolated diagnostic; both subsequently
+timed out in the existing post-`sc_stop` teardown boundary. The diagnostic is
+not an additional default CTest and is not a deterministic negative control
+for the reset-order fix.
+In the 2026-09-28 AutoSD `autosd-watchdog-held-reset` run, native reboot
+restored the second SI1 epoch's PFDI, network and RPMsg logs, all four domain
+markers, AP provisioning and AP-to-SI ICMP replies (3/3). The preceding
+readiness run with the same four firmware image hashes lost SI1 deferred
+logs after reboot. This is evidence for the combined hold/order change,
+not an isolated attribution to either change or a reset-stress qualification.
+A further native reboot after two successful watchdog recoveries lost SI1
+deferred logs again despite a recorded loader reload and a responsive shell.
+That run remained partial; the hold/order change is not a sufficient fix for
+that logging symptom. Subsequent GDB snapshots identified the Zephyr shell's
+backend-ID initialization race (runtime filters zero despite a live logger).
+Early synchronous backend-ID setup fixed the source race. The final non-debug
+`autosd-watchdog-entry-fixed-20260928` run passed two native reboots interleaved
+with two WS1 recoveries, fresh SI logs, four AP CPUs, healthy applications,
+HIPC ICMP 3/3 after every boot, and normal shutdown. The root full runner now
+validates the input SI ELF/bin including its post-build CRC and passes the ELF
+entry to all four CPU RVBAR defaults; explicit overrides remain supported.
+`si-cl1-boot.json` records the effective address (the Lua printed entry is only
+its fallback default). This is bounded functional evidence, not reset stress
+or physical timing qualification.
+SystemC PL011 consoles now reset their register/FIFO/IRQ state in the owning
+domain: AP secure/primary consoles on AP cold reset, SI0/SI1 and RSE host
+consoles on full-system reset. SI UART IRQ sources are cleared before the SI
+GIC/QEMU reset requests. Masking all UART interrupts drives the IRQ low even
+without reset. Host console files and already queued output remain intact.
+The focused repeated-reset regression covers mask/unmask, pending IRQ update,
+FIFO state and fresh TX/RX interrupts; the final full-system run separately
+qualifies the deferred Zephyr log path after native reboot.
+
+AP non-secure SBSA watchdog WS1 is routed to the AP SPI 51 and documented
+Safety Island INTID 321 (View1, CL0). The QVP SCP platform masks the level IRQ
+and defers recovery through its existing `MOD_PD_SYSTEM_WARM_RESET` flow:
+core PPU power-off, RSE BL2 reload handshake, AP context initialization, then
+boot CPU power-on. This
+keeps SCP power-domain state consistent with the reset AP. It is an explicit
+firmware recovery policy, not proof of board-level watchdog reset scope.
+The AP-only Linux profile retains its original AP SPI-only route.
+
+Watchdog recovery sends the subscribed SCMI warm-reset notification with
+platform agent ID 0 after AP cores are off. Its RSE ACK wait is asynchronous:
+a 10 ms alarm compares actual timer/ACK timestamps against a QVP-specific
+10 s reload budget (observed reload/verification took about 3.44 s). This is
+a simulation recovery allowance, not a hardware FTTI claim; SI1 PFDI's 500 ms
+threshold is unchanged. Generation-tagged completion rejects stale/duplicate
+events, and timeout leaves AP off without rearming WS1.
+After a valid ACK, SCP reuses the authorized `apcontext` reset API to clear
+only its configured 64-byte AP context at AP addresses `0x1fc0..0x1fff`,
+including the trusted warm-entry mailbox at `0x1ff8`. RSE's BL2 reload starts
+at `0x82000` and does not clear that mailbox. SDS and unrelated SRAM are
+preserved. In the AutoSD full-system sequence-retry run (2026-09-28), two
+consecutive non-secure WS1 expiries recovered four AP CPUs, PFDI startup,
+application health and AP-to-SI ICMP replies (3/3 after each reset), with the
+same QBox processes. This is bounded functional evidence, not reset stress
+or physical-timing qualification. A separate initial-boot attempt stopped
+after core2 OoR; its affinity-OFF/PPU boundary remains unqualified.
+
+AP cold reset includes both watchdogs before `ap_reset_gpio`:
+reset assertion disables the watchdog and cancels its pending expiry, clearing
+WS0/WS1. On the secure watchdog's direct path, WS1 deassertion acknowledges
+the reset to `host_reset_ctrl`, which releases its request once every active
+source has cleared. Non-secure recovery completes through the SCP IRQ
+rearm path instead. The asynchronous
+fanout preserves assertion and release edges; the QEMU reset bridge retains
+its completion handshake. CPU0 power-on invokes this AP peripheral reset.
+SCP clears and checks IRQ pending state before rearming watchdog recovery;
+both observed recovery cycles rearmed IRQ321 with enabled=1 and pending=0.
+Secure watchdog
+WS1 retains the direct reset-controller path. The RGM external-cold-reset
+syndrome on that path alone does not establish reset scope.
+Full-system reset also clears the SI CL0 watchdog. RGM mask changes immediately
+re-evaluate a held SI watchdog/safety fault source.
+
+The signal broadcast queue consumes each edge once, including when a callback
+queues a release while assertion is being delivered. Component regressions
+cover repeated two-stage expiry, reset acknowledgment/release, independent
+secure/non-secure sources, masking, and cancellation of an outstanding timer.
+These functional tests do not establish board reset pulse widths, clock-domain
+synchronization timing, or successful firmware/guest restart; validate those
+runtime paths separately with the matching firmware and per-domain logs.
+Set `QBOX_APOLLO_RESET_TRACE=1` for bounded AP NS/S watchdog WS0/WS1 and
+reset assertion/release traces with simulation timestamps, plus AP cold and
+whole-system fanout traces. The default remains quiet. Watchdogs have separate
+MMIO and stage/reset budgets, each bounded by `trace_limit` (64 records each,
+128 total by default), so polling cannot hide expiry evidence. Budgets remain
+bounded across resets. Fanouts retain a single `trace_limit` budget. Increase
+that CCI parameter for long-running tests if necessary. A stage-two trace is
+reset-request evidence, not proof that the guest completed another boot.
+At first expiry, the watchdog advances WCV to the second-stage compare in
+counter ticks. This keeps Linux `WDIOC_GETTIMELEFT` valid during WS0 instead
+of underflowing against the expired first-stage compare.
 
 The current Yocto FWU reset qualification reaches a second RSE/SI/TF-A/U-Boot
 and Linux Regular State. Capsule A/B acceptance is still open: a copied
