@@ -29,6 +29,15 @@ platform = {
     };
 }
 common.define_ap(ctx, platform)
+if ctx.config.monitor.enabled then
+    platform.qbox_monitor = {
+        moduletype = "monitor";
+        bind_address = "127.0.0.1";
+        server_port = ctx.config.monitor.port;
+        runtime_mutation = false;
+        use_html_presentation = false;
+    }
+end
 platform.host_smd_gpio = {
     moduletype = "qemu_pl061";
     args = {"&platform.ap_qemu_inst"};
