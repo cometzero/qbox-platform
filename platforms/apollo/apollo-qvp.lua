@@ -78,6 +78,8 @@ if ctx.config.runtime_injection.enabled then
     }
 end
 
+dofile(apollo_dir.."apollo-qvp-qmp.lua")(platform, true)
+
 if ctx.config.monitor.enabled then
     platform.qbox_monitor = {
         moduletype = "monitor";

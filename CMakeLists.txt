@@ -213,6 +213,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     platforms-vp
     keep_alive
     monitor
+    qmp
     addrtr
     router
     gs_memory
