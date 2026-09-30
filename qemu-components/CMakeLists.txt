@@ -1,3 +1,5 @@
+add_subdirectory(qemu_dma350)
+add_subdirectory(qemu_dw_apb_i2s)
 add_subdirectory(qemu_timer_api)
 add_subdirectory(cc3xx_native)
 add_subdirectory(rse_cpu_accel)
@@ -14,6 +16,8 @@ add_subdirectory(sbsa_gwdt)
 add_subdirectory(virtio_mmio_rng)
 
 foreach(qbox_platform_qemu_target
+    qemu_dma350
+    qemu_dw_apb_i2s
     qemu_timer_api
     arm_smmuv3
     qemu_clock_source

@@ -210,6 +210,8 @@ set(
 )
 
 set(QBOX_APOLLO_REQUIRED_TARGETS
+    qemu_dma350
+    qemu_dw_apb_i2s
     platforms-vp
     keep_alive
     monitor

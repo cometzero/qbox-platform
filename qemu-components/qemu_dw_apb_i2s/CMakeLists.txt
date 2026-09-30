@@ -1,0 +1,2 @@
+gs_create_dymod(qemu_dw_apb_i2s)
+target_link_libraries(qemu_dw_apb_i2s PUBLIC qemu_dma350)
