@@ -48,6 +48,8 @@ platform.host_smd_gpio = {
 }
 common.connect_board(ctx, platform)
 
+common.use_qemu_audio(platform)
+
 -- Retain the AP hardware definitions; replace only their firmware/domain edges.
 -- These objects implement firmware boot, whole-platform reset or SI fault routing.
 for _, name in ipairs({
