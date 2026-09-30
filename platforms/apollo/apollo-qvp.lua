@@ -46,6 +46,7 @@ common.define_ap(ctx, platform)
 system_mgmt.define(ctx, platform)
 common.connect_board(ctx, platform)
 ap_compute.enable_ap_router(ctx, platform)
+common.use_qemu_audio(platform)
 si_cl0.define(ctx, platform)
 si_cl1.define(ctx, platform)
 
