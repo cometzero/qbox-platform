@@ -188,7 +188,11 @@ during concurrent detach/reset is outside this model's contract.
 
 I2S0 at `0x30200000` (SPI 356) and I2S1 at `0x30210000` (SPI 357)
 both support TX and RX, connected in both directions. PERI0 bank3 pins
-0–3 serve I2S0 and 4–7 serve I2S1, using function 2.
+0–3 serve I2S0 and 4–7 serve I2S1, using function 2 in the DT.
+Both full-system and direct-Linux entrypoints now call
+`common.use_qemu_audio` to instantiate `qemu_dma350` and `qemu_dw_apb_i2s`.
+The QEMU audio route is fixed; pinmux gating is unsupported and its two
+SystemC output bindings are removed. RSE boot DMA remains a separate model.
 Both `dma350_0` (existing SPI/UART) and `dma350_1` (I2S) have eight channels.
 The latter uses `0x31010000`/SPI 358; channels 0/1 serve I2S0 TX/RX,
 2/3 serve I2S1 TX/RX, and 4–7 are unconnected.
@@ -202,7 +206,7 @@ timeout 420 ./scripts/run/ssh_run.sh scripts/test/verify_qbox_i2s.sh
 Both Apollo I2S instances explicitly enable `functional_pacing`: transfers
 wait for TX data and available RX FIFO space without an extra audio queue.
 This is transaction-level functional validation, not physical I2S clock or
-FIFO deadline validation. The standalone model defaults to timed operation
+FIFO deadline validation. The retained standalone SystemC model defaults to timed operation
 (`functional_pacing=false`), with idle-zero and overflow unit coverage.
 The current four-CPU freerunning profile is not qualified for timed audio.
 See the workspace's `doc/dwc/dw-apb-i2s.md` for PIO-before-DMA evidence,
@@ -1281,3 +1285,62 @@ commands, TRM scope, passing evidence and unsupported features.
   --timeout "${QBOX_APOLLO_TIMEOUT:-2400}" \
   --out-dir build/qbox-apollo-qvp/long-running
 ```
+
+
+## Standalone QEMU I2S counterpart
+
+The root `run_qemu_linux.sh --bsp` also exposes two DMA-350 controllers and
+cross-connected DW_apb_i2s devices through native QEMU models. Its generated
+DT uses the same addresses, shared DMA IRQs and I2S DMA request IDs as
+`hw-block/ros.lua` and Linux `apollo-qvp.dts`. The direct QBox Linux profile
+(`run_qbox_linux.sh --bsp`) previously used `qemu_dma350` and `qemu_dw_apb_i2s`
+wrappers for those same models under `hw/dma/arm-dma350.c` and
+`hw/audio/dw-apb-i2s.c` in the sibling QEMU repository. At that stage the full firmware
+profile retained its SystemC models. Native I2S peers and multi-bit DMA1
+request/ack links remain inside the AP QEMU instance; DMA memory accesses
+use its existing global peripheral initiator bridge to the AP router.
+DMA0 retains the SPI/UART SystemC request/ack connections through integer
+GPIO bridges. These native I2S devices have fixed audio routes.
+
+Use `--i2s-mode pio` on the QEMU launcher to select Linux PIO through the
+generated DT, or the default `--i2s-mode dma` for cyclic DMA. Run
+`python3 scripts/test/verify_qemu_i2s.py` from the workspace root for both
+modes with the existing QBox `i2s-loopback` PCM workload. Results are retained
+under `build/qbox-apollo-qvp/`. Audio functional pacing has the same limits
+as QBox: sample preservation does not qualify physical timing. The standalone
+machine has fixed audio routes and does not model QBox's pinmux controller.
+
+Direct QBox Linux requalification on 2026-09-30 passed both DMA controllers'
+memcpy/memset tests, four PCM cases per DMA/PIO mode including simultaneous
+duplex, and four full-file 48 kHz WAV comparisons. The earlier SystemC DMA
+duplex timeout did not occur with these native wrappers. Platform/core unit
+tests passed 64/61 cases. Full BSP PFDI selftest failure remains separate.
+Evidence: `build/qbox-apollo-qvp/qbox-qemu-components-audio-20260930/` in the
+workspace. Physical timing and native I2S pinmux gating are not qualified.
+
+The earlier direct-Linux experiment retained `qemu_dma350` but restores the
+common SystemC `dw_apb_i2s` devices, audio socket and pinmux bindings. DMA1
+request/ack now crosses the integer GPIO bridge. This mixed configuration
+fails DMA audio: QEMU blocks reentrant DMA MMIO at offset 0x1020 and Linux
+panics in `d350_get_residue`. Memory-only DMA tests pass. See the workspace
+I2S document for full results. That failure is historical evidence. Reproduce the direct-Linux configuration with
+`scripts/test/verify_qbox_linux_audio.py --out-dir <new-directory>`.
+
+
+The current full-system and direct-Linux configurations both use native QEMU
+DMA/I2S wrappers. Full-system validation uses
+`scripts/test/verify_qbox_full_audio.py --out-dir <new-directory>` from the
+workspace. It launches `run_qbox_yocto.sh --bsp` with foreground supervision,
+checks live DT mode, and preserves the deployed WIC. PIO changes only the
+DT sections of unsigned A/B UKIs in a private disk copy; kernel/initramfs
+section hashes remain unchanged. Native I2S peer/request/ack links stay
+inside the AP instance; DMA memory uses the existing AP global initiator.
+See `doc/dwc/dw-apb-i2s.md` in the workspace for observed full-system results.
+
+The 2026-09-30 full-system run passed all 22 BSP selftests and both DMA
+controllers' memory tests in both DT modes. Audio remains FAIL: DMA PCM
+0/4 (Broken pipe), PIO PCM 3/4 (one simultaneous direction fails), DMA WAV
+capture timeout 2/2. PIO WAV comparisons passed 2/2 with complete files equal
+to the 48 kHz source. Evidence is under
+`build/qbox-apollo-qvp/qbox-full-native-audio-foreground-20260930/`.
+The earlier AP-only native PASS does not qualify full-system audio timing.
