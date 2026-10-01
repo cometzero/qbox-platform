@@ -1344,3 +1344,16 @@ capture timeout 2/2. PIO WAV comparisons passed 2/2 with complete files equal
 to the 48 kHz source. Evidence is under
 `build/qbox-apollo-qvp/qbox-full-native-audio-foreground-20260930/`.
 The earlier AP-only native PASS does not qualify full-system audio timing.
+
+Follow-up experiments on 2026-10-01 preserve freerunning, quantum and frame
+pacing. DMA RAM/I2S MMIO aliases are active. The Linux PIO stream-lock
+correction is retained; native/bridge telemetry and the unproven regular-IRQ
+cache have been removed from active sources. Diagnostic scheduling,
+`--repeat`, `--kernel` UKI replacement and tracing are archived as patches
+in the workspace `doc/dma-i2s/patches/`, not enabled by the current verifiers.
+Historical full DMA warm3 success (PCM 12/12, whole-WAV 6/6) required an
+explicit IRQ SCHED_OTHER/audio nice -10 experiment; default-policy full DMA
+and the cold/warm 10-run gate remain unqualified. The current verifiers
+reject observed XRUN, PFDI timeout and RCU stall messages during the suite.
+See `doc/dma-i2s/05-code-cleanup.md` and `04-implementation-results.md` in
+the workspace for retained code and historical artifact provenance.

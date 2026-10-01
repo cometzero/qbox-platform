@@ -99,6 +99,21 @@ For bounded headless validation of the active QVP deploy image:
 Yocto-built Apollo QVP runs use `build/qbox-apollo-qvp/` and require the
 generated QVP `.qboxconf` plus native sysroot provider.
 
+Both Apollo full-system and direct-Linux profiles use native QEMU DMA350
+and DW_apb_i2s components. Audio qualification requires the workspace
+`scripts/test/verify_qbox_full_audio.py` or `verify_qbox_linux_audio.py`;
+boot/login alone does not exercise loopback. The verifiers check DMA
+memory, DMA/PIO PCM and 48 kHz whole-WAV equality, and reject observed
+XRUN, PFDI timeout and RCU stall messages during the suite.
+The Linux PIO stream-lock correction is retained. Native/bridge telemetry,
+the unproven IRQ cache and diagnostic scheduling tools were removed from
+active sources and archived in `../../../doc/dma-i2s/patches/`.
+Freerunning and audio pacing are unchanged. Historical full DMA warm3
+success required an explicit experimental guest scheduling policy;
+default-policy full DMA remains unresolved. See
+`../../../doc/dma-i2s/05-code-cleanup.md` for the retained changes,
+patch application instructions and qualification boundaries.
+
 ## Related Docs
 
 - Root workspace guide: `../../../README.md`
