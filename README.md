@@ -23,7 +23,7 @@ Apollo platform source should live in this overlay, not in the QBox core tree.
 The supported Apollo runtime entrypoint is:
 
 ```text
-platforms/apollo/apollo-qvp.lua
+platforms/apollo/apollo-qvp-saturn-v.lua
 ```
 
 Apollo hardware block helpers live under:

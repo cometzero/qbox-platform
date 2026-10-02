@@ -1,0 +1,29 @@
+local module = {}
+
+function module.create(ctx, hardware, _runtime, interrupts)
+    local SI_CONST = hardware
+    local irq_routes = interrupts
+
+    local block = {}
+
+    function block.define(ctx, platform)
+        assert(
+            platform.si_cl0_uart == nil,
+            "duplicate object: platform.si_cl0_uart")
+        platform.si_cl0_uart = {
+            moduletype = "Pl011";
+            dylib_path = "uart-pl011";
+            target_socket = {
+                address = SI_CONST.SI_CL0_UART_BASE;
+                size = SI_CONST.SI_CL0_UART_SIZE;
+                bind = "&si_cl0_router.initiator_socket";
+            };
+            irq = {bind = irq_routes.spi_target(ctx, "si_cl0_uart", "View1")};
+            backend_socket = {bind = "&si_cl0_console_file.biflow_socket"};
+        }
+    end
+
+    return block
+end
+
+return module

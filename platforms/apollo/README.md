@@ -1,5 +1,33 @@
 # QBox Apollo Platform
 
+## SoC, virtual platform and board composition
+
+`apollo-qvp-saturn-v.lua` is the canonical full-system entry. The previous
+`apollo-qvp.lua` forwards to it. `apollo-qvp-linux.lua` selects the AP-only
+profile with explicit firmware substitutes.
+
+- `soc/apollo.lua` composes `soc/hw-block/{ap_compute,ros,rse,system_mgmt,si_cl0,si_cl1}`.
+  Each domain groups CPU, memory, syscore, peripheral and interconnect definitions.
+- `vp/options.lua` resolves environment options into `ctx.options` before domain
+  construction. `vp/` owns QEMU instances, firmware loaders, host IO, VirtIO,
+  monitor/QMP, backend adapters, test wiring and AP-only mocks.
+- `board/saturn-v.lua` attaches EEPROMs, PCA9539, TPS6594 and their I2C buses from
+  `board/hw-block/`. Existing test loopbacks are selected explicitly by the entry.
+
+Includes are source-relative literal `dofile` paths. Modules return local tables
+or functions; only the fully composed `platform` is exported globally to QBox.
+File hierarchy does not add CCI containers: `platform.ap_cpu_0` and the existing
+nested `platform.rse_cpu_pass` paths remain unchanged. Reset fanout order, address
+views and constructor priorities are preserved. Native Lua evaluation failures
+must stop startup before CCI export.
+
+Board population preserves the current QVP setup. Saturn-V schematic fidelity
+is unverified. SI PMIC host transport is explicitly a VP extension. Native audio
+adaptation runs after AP address routing to preserve the current descriptor and
+model socket contract; it is isolated in `vp/backends/audio.lua`.
+
+The workspace `doc/soc_plan/` documents ownership, style, migration and validation.
+
 ## AutoSD monitor and optional QMP
 
 AutoSD launchers accept `--monitor-port PORT` and bind the monitor to IPv4

@@ -1,0 +1,86 @@
+local module = {}
+
+function module.create(ctx, hardware, runtime, _interrupts)
+    local SI_CL1_CPU_COUNT = hardware.SI_CL1_CPU_COUNT
+    local SI_CL1_GICR0_BASE = hardware.SI_CL1_GICR0_BASE
+    local SI_CL1_GICR_STRIDE = hardware.SI_CL1_GICR_STRIDE
+    local SI_CL1_GICR_SIZE = hardware.SI_CL1_GICR_SIZE
+    local ARCH_TIMER_FREQUENCY_HZ = hardware.ARCH_TIMER_FREQUENCY_HZ
+    local SI_CL1_AFFINITY_BASE = hardware.SI_CL1_AFFINITY_BASE
+    local SI_CL1_AFFINITY_STRIDE = hardware.SI_CL1_AFFINITY_STRIDE
+
+    local block = {}
+
+    function block.define(ctx, platform, qemu_instance)
+        local gic_name = "si_cl1_gic"
+        local gic = platform[gic_name]
+        local irq_routes = ctx.modules.si_cl0
+        for i = 0,(SI_CL1_CPU_COUNT-1) do
+            local gic_cpu = i
+            assert(
+                platform["si_cl1_cpu_" .. i] == nil,
+                "duplicate object: platform." .. ("si_cl1_cpu_" .. i))
+            platform["si_cl1_cpu_" .. i] = {
+                moduletype = "cpu_arm_cortexR82";
+                args = {qemu_instance};
+                mem = {bind = "&si_cl1_router.target_socket"};
+                has_el2 = true;
+                psci_conduit = "smc";
+                start_powered_off = false;
+                start_in_reset = true;
+                reset_power_on = true;
+                rvbar = runtime.entry;
+                mp_affinity = SI_CL1_AFFINITY_BASE +
+                    (i * SI_CL1_AFFINITY_STRIDE);
+                cntfrq_hz = ARCH_TIMER_FREQUENCY_HZ;
+                request_origin_id = ctx.request_context.origin.si_cl1_cpu_base + i;
+                request_domain_id = ctx.request_context.domain.si_cl1;
+                requester_id = i;
+                irq_timer_sec_out = {
+                    bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
+                        gic_cpu .. "_" ..
+                        irq_routes.ppi_index(ctx, "si_secure_timer");
+                };
+                irq_timer_phys_out = {
+                    bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
+                        gic_cpu .. "_" ..
+                        irq_routes.ppi_index(ctx, "si_physical_timer");
+                };
+                irq_timer_virt_out = {
+                    bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
+                        gic_cpu .. "_" ..
+                        irq_routes.ppi_index(ctx, "si_virtual_timer");
+                };
+                irq_timer_hyp_out = {
+                    bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
+                        gic_cpu .. "_" ..
+                        irq_routes.ppi_index(ctx, "si_hypervisor_timer");
+                };
+            }
+            assert(
+                platform["si_cl1_cpu_counter_mirror_" .. i] == nil,
+                "duplicate object: platform." .. ("si_cl1_cpu_counter_mirror_" .. i))
+            platform["si_cl1_cpu_counter_mirror_" .. i] = {
+                moduletype = "qemu_arm_counter_mirror";
+                args = {
+                    "&platform.si_cl1_cpu_" .. i;
+                    "&platform.css_system_counter";
+                };
+            }
+            gic["redist_iface_" .. i] = {
+                address = SI_CL1_GICR0_BASE + (i * SI_CL1_GICR_STRIDE);
+                size = SI_CL1_GICR_SIZE;
+                bind = "&si_cl1_router.initiator_socket";
+            }
+            for _, signal in ipairs({"irq", "fiq", "virq", "vfiq"}) do
+                gic[signal .. "_out_" .. gic_cpu] = {
+                    bind = "&si_cl1_cpu_" .. i .. "." .. signal .. "_in";
+                }
+            end
+        end
+    end
+
+    return block
+end
+
+return module
