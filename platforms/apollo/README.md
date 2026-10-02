@@ -443,8 +443,8 @@ yet emit `FWU: Updating`, `FIP_B`, or Trial State after that reset. Do not use
 the second Regular State result as evidence of capsule application or rollback
 persistence.
 
-The full-system RSE and SI CL0 instances use single-thread TCG, while SI CL1
-and AP use multi-thread TCG. All four QEMU instances use
+The full-system RSE instance uses single-thread TCG; SI CL0, SI CL1 and AP
+use multi-thread TCG. All four QEMU instances use
 `multithread-freerunning` synchronization with the `quantum_keeper` time-sync
 strategy to avoid global-quantum rendezvous between independently scheduled
 domains. QBox completes managed start-in-reset release on the target vCPU and

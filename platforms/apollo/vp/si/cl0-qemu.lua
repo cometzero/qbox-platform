@@ -5,7 +5,7 @@ function module.create(ctx, _hardware, _runtime, _interrupts)
         accel_env = "QBOX_APOLLO_FULL_SI_CL0_ACCEL";
         accel = "tcg";
         tcg_mode_env = "QBOX_APOLLO_FULL_SI_CL0_TCG_MODE";
-        tcg_mode = "SINGLE";
+        tcg_mode = "MULTI";
         sync_policy_env = "QBOX_APOLLO_FULL_SI_CL0_SYNC_POLICY";
         sync_policy = "multithread-freerunning";
         time_sync_strategy_env = "QBOX_APOLLO_FULL_SI_CL0_TIME_SYNC_STRATEGY";
