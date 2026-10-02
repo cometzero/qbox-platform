@@ -868,7 +868,7 @@ python3 scripts/test/prepare_qbox_apollo_pcie_irq_profile.py \
   --fvp-reference-gate \
     .omo/evidence/apollo-gic-its/final/F2/cycle2/integration-current/fvp-reference-gate-current.json \
   --base-disk build/tmp_baremetal/deploy/images/apollo-qvp/nexios-bsp-initramfs-apollo-qvp.wic \
-  --base-dtb build/tmp_baremetal/deploy/images/apollo-qvp/apollo-qvp.dtb \
+  --base-dtb build/tmp_baremetal/deploy/images/apollo-qvp/apollo-qvp-saturn-v.dtb \
   --base-initramfs build/tmp_baremetal/deploy/images/apollo-qvp/nexios-bsp-initramfs-apollo-qvp.cpio.gz \
   --output-dir build/qbox-apollo-qvp/pcie-irq-profile
 QBOX_APOLLO_NUM_CPUS=4 QBOX_APOLLO_PCIE_IRQ_TEST=true \
