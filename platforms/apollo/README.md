@@ -387,8 +387,8 @@ Watchdog recovery sends the subscribed SCMI warm-reset notification with
 platform agent ID 0 after AP cores are off. Its RSE ACK wait is asynchronous:
 a 10 ms alarm compares actual timer/ACK timestamps against a QVP-specific
 10 s reload budget (observed reload/verification took about 3.44 s). This is
-a simulation recovery allowance, not a hardware FTTI claim; SI1 PFDI's 500 ms
-threshold is unchanged. Generation-tagged completion rejects stale/duplicate
+a simulation recovery allowance, not a hardware FTTI claim. The independent
+SI1 PFDI timing policy is described below. Generation-tagged completion rejects stale/duplicate
 events, and timeout leaves AP off without rearming WS1.
 After a valid ACK, SCP reuses the authorized `apcontext` reset API to clear
 only its configured 64-byte AP context at AP addresses `0x1fc0..0x1fff`,
@@ -485,14 +485,23 @@ CPUs 0 through 3. `sync_hold` pauses only QEMU/SystemC scheduling and the
 requester's quantum keeper; it does not synthesize an MHU response or expose a
 guest-visible halt, reset, IRQ, or power transition.
 
-The QVP SCP-firmware build gives AP and SI1 online PFDI watchdogs 500 ms. This
-reserves five complete heartbeat, response, and SystemC-quantum windows for
-the four independently scheduled QEMU instances. The Arm FVP reference keeps
-its original AP 100 ms and SI1 60 ms firmware values; the additional margin
-is owned by the Apollo QVP metadata as a host-scheduling budget rather than a
-guest-visible protocol change. The full-system runner treats any SI0 `PFDI
-monitor timeout` report as a failed validation even when later boot markers
-are present.
+The Apollo QVP timing policy in `apollo-qvp-qbox-timing.inc` sets AP Linux
+and SI1 Zephyr online diagnostics to 3000 ms (previously 600 ms). The AP pack
+is generated with `PFDI_AP_INTERVAL_MS`; Zephyr consumes
+`PFDI_SI_CL1_PERIOD_MS` as `CONFIG_PFDI_MGMT_PERIOD_MS`. AP uses a periodic
+timerfd; SI1 waits that interval after each completed diagnostic/request.
+The SCP online report watchdogs are separate: AP retains 60 s, and SI1 uses
+25 s, preserving its previous 5 s / 600 ms deadline-to-period ratio.
+OoR and boot deadlines are unchanged. These are QVP simulation settings;
+FVP diagnostic periods and metadata are unchanged. Longer intervals reduce
+periodic diagnostic traffic but also delay observation of faults. They do
+not establish a hardware FTTI or diagnostic coverage claim.
+
+Use the workspace `scripts/test/measure_qbox_pfdi_load.py` against a managed
+full-system run to compare vCPU host-thread CPU time, context switches and
+SystemC progress. See `doc/qbox-pfdi-load.md` for method and measured results.
+The full-system runner treats any SI0 `PFDI monitor timeout` report as a failed
+validation even when later boot markers are present.
 
 The AP cluster-utility SBIST FCTLR windows are backed by the `apollo_sbist`
 SystemC model. Writing the force-failure bit injects the CPU-specific SBISTC
