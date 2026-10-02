@@ -453,6 +453,22 @@ reset-held timehandler from owning a global SystemC suspend request. TF-A
 releases the AP secondary CPUs sequentially, while CL1 Zephyr's reset voting
 lock may select any released physical MPID as logical CPU 0.
 
+Apollo QVP idle policy keeps the 125 MHz timer counters unchanged. Linux uses
+tickless idle and a 100 Hz scheduling tick (10 ms while a tick is required).
+The QVP DT advertises architectural WFI idle only. CPU/cluster PSCI powerdown
+wakeup is not modeled and those deep states are not advertised; the Linux
+PSCI cpuidle driver is therefore absent. The default scheduler idle path still
+stops the tick and enters WFI.
+SI CL1 also uses tickless operation with 100 ticks per second. SI CL0 programs
+one-shot alarm deadlines; its QVP firmware checks pending events with
+interrupts masked before WFI. QVP disables SCMI Performance Fast Channels,
+removing the 40 ms poll. Linux uses ordinary SCMI messages and MHU response
+interrupts for frequency changes, without the fast-switch capability.
+The MHU driver's active-transfer TX acknowledgment polling is unchanged.
+RSE WFI ignores a sticky M-profile event register while WFE still consumes it
+and wakes for events. These changes reduce idle execution and synchronization
+work without stretching explicit high-resolution timers or PFDI deadlines.
+
 The Apollo SCMI Performance model exposes one domain per four AP CPUs and the
 1.8, 2.0, and 2.5 GHz operating points used by the guest cpufreq contract.
 Each domain keeps independent limits and selected levels. These values model
