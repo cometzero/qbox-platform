@@ -28,6 +28,134 @@ model socket contract; it is isolated in `vp/backends/audio.lua`.
 
 The workspace `doc/soc_plan/` documents ownership, style, migration and validation.
 
+## Optional external TC397 UART
+
+Set `QBOX_APOLLO_VMCU_UART_ENDPOINT=127.0.0.1:44001` to connect AP DW UART2
+(`0x301c0000`, GIC SPI 332 / INTID 364) to an independently launched vMCU
+emulator. The endpoint must be IPv4 loopback with a decimal port in `1..65535`;
+an empty or malformed value fails Lua configuration. Leave the variable unset
+to retain the default UART2/3 loopback. AP CPUs must be enabled.
+
+The same option applies to `apollo-qvp-saturn-v.lua` and the AP-only
+`apollo-qvp-linux.lua`. `vp/options/vmcu.lua` validates the option;
+`vp/backends/vmcu.lua` binds `platform.ap_dw_uart_2.backend_socket` to
+`platform.vmcu_uart_socket.biflow_socket`. The existing `char_backend_socket`
+connects as a TCP client (`server=false`, `nowait=true`, `sigquit=false`).
+UART3 uses a write-only `/dev/null` file backend with an empty `read_file`, so
+it remains bound without growing a log or injecting an EOF byte. UART0/1,
+their DMA requests, PL011 consoles and audio remain unchanged.
+The aggregate Apollo build includes `char_backend_socket`.
+
+Start TC397 with a corresponding QEMU chardev, for example:
+
+```bash
+qemu-system-tricore -M KIT_AURIX_TC397B_TRB -display none -monitor none \
+  -kernel vmcu.elf \
+  -chardev socket,id=vmcu,host=127.0.0.1,port=44001,server=on,wait=off \
+  -serial chardev:vmcu
+```
+
+For the workspace Zephyr vMCU application, serial0 is the binary AP link and
+serial1 (ASCLIN1) is the shell. The root `run_qbox_yocto.sh --bsp` launcher starts
+both emulators and connects serial1 to an interactive tmux pane. The launcher
+uses a private unsigned BSP UKI copy to enable the AP peer through the
+`apollo.vmcu=1` boot argument. With `--no-vmcu`, UART2/3 remain available for
+loopback tests without a peer process. Details and validation are in the
+workspace `doc/vmcu/zephyr-implementation.md`.
+
+Run QBox with the endpoint variable in its environment after starting that
+listener. This is a byte transport between independently timed processes.
+The backend drops transmit bytes while disconnected; no startup, restart or
+delivery guarantee is implied. Firmware must frame messages, validate them,
+and detect missing heartbeats. AP reset does not flush TCP/backend ingress;
+protocol epochs must reject stale frames after reboot. Reconnect, latency and fault recovery require
+runtime tests. No CAN, SIL Kit, physical UART timing or PMIC control is added
+by this option. UART2/3 loopback tests must run with the option unset.
+
+The `apollo-vmcu-config` CTest evaluates both complete Lua profiles, rejects
+invalid endpoints/conflicting bindings, and checks that all unrelated
+descriptor fields remain unchanged. It is configuration evidence; runtime
+traffic and heartbeat results belong in the workspace `doc/vmcu/` records.
+
+## Optional SI CL0 safety UART and independent vMCU GPIO
+
+The Saturn-V full-system profile accepts two additional distinct loopback TCP
+endpoints. They are independent of the AP management UART and require no AP
+CPU to be running. The SI PL011 and PL061 remain mapped with endpoints unset,
+because SCP accesses their registers on every boot. The UART then uses a sink
+without input and the GPIO retains board pull defaults. No external socket or
+reset-driving adapter is instantiated without its endpoint.
+
+| Environment variable | QVP device | SI interrupt | TC397 side |
+| --- | --- | --- | --- |
+| `QBOX_APOLLO_VMCU_SAFETY_ENDPOINT` | PL011 `0x2a820000`, 64 KiB | INTID 41, SPI 9, View1 | ASCLIN2, third QEMU serial backend |
+| `QBOX_APOLLO_VMCU_GPIO_ENDPOINT` | PL061 `0x2a830000`, 64 KiB | INTID 42, SPI 10, View1 | PORT0 independent GPIO chardev |
+
+These addresses/interrupts are QVP extensions, not physical RD-Aspen assignments.
+`vp/extensions/si-cl0-vmcu.lua` owns their wiring. The existing SI console at
+`0x2a400000`, PMIC I2C at `0x2a800000`, and PMIC fault GPIO at `0x2a810000`
+retain their existing ownership. Safety firmware reports the existing SI CL0
+PFDI monitoring result over the safety UART; the QBox model does not manufacture
+an AP health decision. Both new interrupt sources support a driver using IRQs;
+the initial SCP safety application polls them.
+
+| PL061 pin | Direction from SoC | Signal | Board default |
+| --- | --- | --- | --- |
+| 0 | Output | `SOC_ERROR`, safety firmware toggles while ready | Low |
+| 1 | Output | `SOC_PWR_REQ` | Low |
+| 2 | Output | `IST_DONE_N` | High, inactive |
+| 3 | Input | `SOC_RESET_N` | High, reset inactive |
+| 4 | Input | `MCU_SOC_WAKE` | Low |
+
+`vmcu_gpio_bridge` translates the independent chardev's fixed eight-byte
+snapshots into real PL061 signal sockets. Frames contain `G P`, version 1,
+direction `I` (QBox to MCU) or `O` (MCU to QBox), LE16 levels, and LE16
+drive/valid mask. QBox owns mask `0x07`; MCU owns mask `0x18`. MCU undriven pins
+use the board pull defaults, so TC397 reset-time `OUT=0` with floating IOCR
+cannot reset Apollo. Out-of-contract masks and malformed frames do not renew
+the transport lease; receive framing uses at most seven retained bytes.
+
+Snapshots repeat every 100 ms of host time and follow local changes. QBox also
+responds to valid MCU snapshots to restore its levels after reconnect. After
+one second without a valid MCU snapshot, QBox releases MCU drive and restores
+reset-inactive/wake-low defaults. The existing socket backend has no connection
+notification: this is bounded transport-loss recovery, not immediate physical
+disconnect detection. Independent emulator clocks and host polling do not
+model electrical timing or synchronized simulation time.
+
+`SOC_RESET_N` is inverted once at the board bridge into the dedicated
+`host_reset_ctrl.vmcu_reset` input. The reset arbiter ORs it with existing AP
+reset sources and records the external-reset syndrome. Its existing AP cold
+reset fanout leaves SI CL0, SI CL1, PMIC and the external MCU running. Releasing
+the MCU request cannot clear another asserted reset source. The SCP vMCU service
+accepts a rising wake edge after a verified AP-core-only shutdown and uses the
+existing RSE BL2 reload, AP context reset and watchdog rearm path. SYSTOP, SI,
+RSE, PMIC and the MCU remain running. SC7, rail sequencing and physical
+power-state parity are not implemented. Full-system resets reset the added UART/PL061; AP-only
+resets preserve this SI safety channel.
+
+Focused checks are `vmcu_gpio_bridge-tests`, `zena_reset_ctrl-tests` and
+`apollo-vmcu-config`. They exercise inactive startup, fragmented framing,
+drive ownership, reset/wake levels, transport timeout/reconnect, wired-OR reset
+ownership, Lua maps and PMIC/console preservation. Whole-system runtime evidence
+is recorded separately in the workspace `doc/vmcu/` documents.
+
+The workspace `./run_qbox_yocto.sh --bsp --sil-kit` option starts the external
+TC397 Zephyr application, a native SIL Kit CAN participant and a vehicle restbus
+participant. The TC397 M_CAN model provides message RAM, filters, RX/TX FIFOs
+and interrupts to the real Zephyr driver. CAN frames cross a bounded socket
+transport; transmission completion comes from the SIL Kit acknowledgement.
+Neither SIL Kit nor TriCore is linked into the Apollo QBox process. The default
+profile does not require the SIL Kit SDK. This asynchronous simple-CAN profile
+does not model physical ACK, bus arbitration timing or synchronized FTTI.
+
+The MCU can query the SI-owned TPS6594 rail settings and live fault status over
+the safety UART, request AP recovery, and arm graceful AP shutdown. The AP UART
+peer drains its response before invoking Linux poweroff/PSCI. SI confirms all
+AP core power domains are off before driving IST_DONE_N low; SOC_PWR_REQ stays
+high until wake. PMIC readback does not establish rail gating or measured voltage.
+See `../../../../../doc/vmcu/can-and-services.md` for commands and runtime evidence.
+
 ## AutoSD monitor and optional QMP
 
 AutoSD launchers accept `--monitor-port PORT` and bind the monitor to IPv4
