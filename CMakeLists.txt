@@ -141,6 +141,7 @@ if(BUILD_TESTING)
         ras_ffh_stub
         reset_fanout
         signal_or
+        vmcu_gpio_bridge
         rse_atu
         rse_integrity_checker
         rse_kmu
@@ -299,6 +300,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     host_system_pll
     signal_fanout
     signal_or
+    vmcu_gpio_bridge
     reset_fanout
     rse_sysctrl
 )

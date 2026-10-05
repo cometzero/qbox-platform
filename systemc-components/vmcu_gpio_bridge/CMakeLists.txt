@@ -1,0 +1,2 @@
+gs_create_dymod(vmcu_gpio_bridge)
+target_compile_definitions(vmcu_gpio_bridge PUBLIC SC_ALLOW_DEPRECATED_IEEE_API)
