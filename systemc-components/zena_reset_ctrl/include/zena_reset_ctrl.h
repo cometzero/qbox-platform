@@ -56,6 +56,7 @@ class zena_reset_ctrl : public sc_core::sc_module
     bool m_si_watchdog_reset = false;
     bool m_ap_power_reset = false;
     bool m_safety_fault_reset = false;
+    bool m_vmcu_reset = false;
     bool m_ap_reset_output = false;
     std::array<uint32_t, 16> m_clock_ctrl{};
 
@@ -216,7 +217,7 @@ class zena_reset_ctrl : public sc_core::sc_module
         const bool safety_reset = m_safety_fault_reset &&
             (m_rgm_mask & RGM_EXP0RESET) != 0;
         const bool asserted = m_ap_ns_watchdog_reset || m_ap_s_watchdog_reset ||
-            m_ap_power_reset || safety_reset;
+            m_ap_power_reset || safety_reset || m_vmcu_reset;
         // Emit transitions only. A repeated or initial deassertion must not
         // enter reset_gpio's completion handshake without an assertion.
         if (asserted == m_ap_reset_output) {
@@ -287,6 +288,7 @@ public:
     TargetSignalSocket<bool> ap_power_reset;
     TargetSignalSocket<bool> si_watchdog_reset;
     TargetSignalSocket<bool> safety_fault_reset;
+    TargetSignalSocket<bool> vmcu_reset;
     TargetSignalSocket<bool> rse_watchdog_reset;
     TargetSignalSocket<bool> power_request;
     TargetSignalSocket<bool> reset_request;
@@ -305,6 +307,7 @@ public:
         , ap_power_reset("ap_power_reset")
         , si_watchdog_reset("si_watchdog_reset")
         , safety_fault_reset("safety_fault_reset")
+        , vmcu_reset("vmcu_reset")
         , rse_watchdog_reset("rse_watchdog_reset")
         , power_request("power_request")
         , reset_request("reset_request")
@@ -329,6 +332,11 @@ public:
             [this](bool value) { si_watchdog_changed(value); });
         safety_fault_reset.register_value_changed_cb(
             [this](bool value) { safety_fault_changed(value); });
+        vmcu_reset.register_value_changed_cb([this](bool value) {
+            if (value) m_rgm_syndrome |= RGM_EXTCOLDRESET;
+            m_vmcu_reset = value;
+            update_ap_reset();
+        });
         rse_watchdog_reset.register_value_changed_cb(
             [this](bool value) { rse_watchdog_changed(value); });
         power_request.register_value_changed_cb([this](bool value) {

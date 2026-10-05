@@ -112,6 +112,7 @@ TEST(ZenaResetCtrlTest, RgmAndPikPreserveResetOwnership)
     SignalSink power_ack("power_ack_sink");
     SignalSink reset_ack("reset_ack_sink");
     SignalSource safety_fault("safety_fault_source");
+    SignalSource vmcu("vmcu_source");
 
     auto broker = cci::cci_get_global_broker(cci::cci_originator("reset_test"));
     broker.set_preset_cci_value("expiry_watchdog.clock_frequency",
@@ -141,6 +142,7 @@ TEST(ZenaResetCtrlTest, RgmAndPikPreserveResetOwnership)
     rse_watchdog.signal.bind(dut.rse_watchdog_reset);
     ap_power.signal.bind(dut.ap_power_reset);
     safety_fault.signal.bind(dut.safety_fault_reset);
+    vmcu.signal.bind(dut.vmcu_reset);
     power_request.signal.bind(dut.power_request);
     reset_request.signal.bind(dut.reset_request);
     dut.ap_reset.bind(ap_reset.signal);
@@ -188,6 +190,21 @@ TEST(ZenaResetCtrlTest, RgmAndPikPreserveResetOwnership)
     EXPECT_TRUE(ap_reset.values.back());
     ap_power.signal->write(false);
     EXPECT_FALSE(ap_reset.values.back());
+
+    // The board RESET_N adapter supplies active-high vmcu_reset. It must OR
+    // with other AP causes, never clear them, and leave SI/RSE alone.
+    const auto si_events = si_reset.values.size();
+    const auto rse_events = rse_reset.values.size();
+    vmcu.signal->write(true);
+    EXPECT_TRUE(ap_reset.values.back());
+    ap_power.signal->write(true);
+    vmcu.signal->write(false);
+    EXPECT_TRUE(ap_reset.values.back());
+    ap_power.signal->write(false);
+    EXPECT_FALSE(ap_reset.values.back());
+    EXPECT_EQ(si_reset.values.size(), si_events);
+    EXPECT_EQ(rse_reset.values.size(), rse_events);
+    EXPECT_NE(access32(dut, false, 0x020, tlm::TLM_READ_COMMAND) & (1u << 5), 0u);
 
     // Mask changes must re-evaluate an already asserted SI watchdog input.
     safety_fault.signal->write(true);
