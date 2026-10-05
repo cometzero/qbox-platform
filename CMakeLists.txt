@@ -223,6 +223,7 @@ set(QBOX_APOLLO_REQUIRED_TARGETS
     host_scr
     loader
     char_backend_file
+    char_backend_socket
     char_backend_stdio
     dw-apb-i2c
     i2c-bus

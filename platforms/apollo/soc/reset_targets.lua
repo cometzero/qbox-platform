@@ -112,6 +112,9 @@ return function(options)
         targets[#targets + 1] = "&si_cl0_dw_i2c_0.reset"
         targets[#targets + 1] = "&si_cl0_pmic_gpio_cold_reset.reset"
         targets[#targets + 1] = "&si_cl0_pmic_gpio.reset"
+        targets[#targets + 1] = "&si_cl0_vmcu_uart.reset"
+        targets[#targets + 1] = "&si_cl0_vmcu_gpio_cold_reset.reset"
+        targets[#targets + 1] = "&si_cl0_vmcu_gpio.reset"
         for _, frame in ipairs({
             "si_cl0_ap_ns_mhu_pbx";
             "si_cl0_ap_ns_mhu_mbx";

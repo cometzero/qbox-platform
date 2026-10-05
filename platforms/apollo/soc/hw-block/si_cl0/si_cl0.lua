@@ -16,6 +16,7 @@ local options = dofile(dir .. "../../../vp/si/cl0-options.lua")
 local boot = dofile(dir .. "../../../vp/si/cl0-boot.lua")
 local console = dofile(dir .. "../../../vp/si/cl0-console.lua")
 local pmic_host = dofile(dir .. "../../../vp/extensions/si-cl0-pmic-host.lua")
+local vmcu = dofile(dir .. "../../../vp/extensions/si-cl0-vmcu.lua")
 
 local module = {}
 
@@ -34,6 +35,7 @@ function module.create(ctx)
     local boot = boot.create(ctx, hardware, runtime, irq_routes)
     local console = console.create(ctx, hardware, runtime, irq_routes)
     local pmic_host = pmic_host.create(ctx, hardware, runtime, irq_routes)
+    local vmcu = vmcu.create(ctx, hardware, runtime, irq_routes)
     local si_cl0 = {
         validate_irq_routes = irq_routes.validate_irq_routes;
         irq_route = irq_routes.irq_route;
@@ -72,6 +74,7 @@ function module.create(ctx)
         syscore.define_interrupt_controller(ctx, platform, instance)
         console.define(ctx, platform)
         io_peri.define(ctx, platform)
+        vmcu.define(ctx, platform)
         si_cl0.define_loader_and_cpu(ctx, platform, instance, runtime.si_cl0_image)
         print("si-cl0 image: " .. runtime.si_cl0_image)
         print("si-cl0 log:   " .. runtime.si_cl0_log)

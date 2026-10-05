@@ -1,3 +1,13 @@
+add_executable(apollo-vmcu-config-test apollo-vmcu-config-test.cc)
+target_link_libraries(apollo-vmcu-config-test PRIVATE lua)
+add_test(
+    NAME apollo-vmcu-config
+    COMMAND $<TARGET_FILE:apollo-vmcu-config-test>
+        ${CMAKE_CURRENT_SOURCE_DIR}/apollo-vmcu-config-test.lua
+        ${QBOX_PLATFORM_SOURCE_DIR}/platforms/apollo/)
+set_tests_properties(apollo-vmcu-config PROPERTIES
+    TIMEOUT 5 LABELS "qbox-platform-vmcu-config")
+
 if(NOT TARGET keystone)
     find_package(Git REQUIRED)
     file(GLOB KEYSTONE_PATCH_FILES

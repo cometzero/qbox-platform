@@ -15,6 +15,8 @@ SI_CONST.SI_IRQ = {
     cl0_watchdog_ws0 = 37;
     cl1_uart = 39;
     cl0_uart = 40;
+    cl0_vmcu_uart = 41; -- QVP extension, reserved in RD-Aspen.
+    cl0_vmcu_gpio = 42; -- QVP extension, reserved in RD-Aspen.
     cl1_hipc_pbx = 72;
     cl1_hipc_mbx = 73;
     cl1_pfdi = 82;
@@ -98,6 +100,12 @@ local SI_ACTIVE_ROUTES = {
         "View2", "shared", {1, 2, 3, 4});
     irq_route_definition(
         "si_cl0_uart", "si_cl0_uart.irq", "SPI", SI_CONST.SI_IRQ.cl0_uart,
+        "View1", "shared", {0});
+    irq_route_definition(
+        "si_cl0_vmcu_uart", "si_cl0_vmcu_uart.irq", "SPI", SI_CONST.SI_IRQ.cl0_vmcu_uart,
+        "View1", "shared", {0});
+    irq_route_definition(
+        "si_cl0_vmcu_gpio", "si_cl0_vmcu_gpio.irq", "SPI", SI_CONST.SI_IRQ.cl0_vmcu_gpio,
         "View1", "shared", {0});
     irq_route_definition(
         "si_cl1_hipc_pbx", "si_cl1_hipc_mhu_pbx.irq", "SPI", SI_CONST.SI_IRQ.cl1_hipc_pbx,

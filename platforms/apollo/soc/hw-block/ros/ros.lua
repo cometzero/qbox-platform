@@ -9,6 +9,7 @@ local catalog = dofile(dir .. "catalog.lua")
 local address_view = dofile(dir .. "address_view.lua")
 local virtio = dofile(dir .. "../../../vp/ros/virtio.lua")
 local loopback = dofile(dir .. "../../../vp/ros/loopback.lua")
+local vmcu = dofile(dir .. "../../../vp/backends/vmcu.lua")
 
 function ros.create(_ctx)
     local domain = {
@@ -22,6 +23,7 @@ function ros.create(_ctx)
         virtio.define(ctx, platform, map)
         io_peri.define(ctx, platform, map)
         loopback.connect(ctx, platform)
+        vmcu.connect(ctx, platform)
         pinctrl.define(platform)
     end
 

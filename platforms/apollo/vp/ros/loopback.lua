@@ -6,7 +6,7 @@ function loopback.connect(ctx, platform)
     end
     for i = 0, 3 do
         local uart = "ap_dw_uart_" .. i
-        if i == 0 or i == 2 then
+        if i == 0 or (i == 2 and not ctx.options.vmcu_uart_endpoint) then
             platform[uart].backend_socket = {
                 bind = "&ap_dw_uart_" .. (i + 1) .. ".backend_socket";
             }

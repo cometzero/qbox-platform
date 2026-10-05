@@ -84,6 +84,12 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             "&ap_rgic2lgic_messreg.reset";
             reset_targets;
         }
+        if platform.si_cl0_vmcu_uart then
+            -- External safety UART is SystemC too: clear its level before GIC.
+            ordered_targets[#ordered_targets] = string.gsub(
+                ordered_targets[#ordered_targets], "&si_cl0_vmcu_uart%.reset;?", "")
+            table.insert(ordered_targets, 2, "&si_cl0_vmcu_uart.reset")
+        end
         system_reset.reset_out.bind = table.concat(ordered_targets, ";")
     end
 

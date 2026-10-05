@@ -34,6 +34,7 @@ function config.create(apollo_dir)
     dofile(apollo_dir.."vp/options/artifacts.lua")(options, apollo_dir)
     dofile(apollo_dir.."vp/options/execution.lua")(options, apollo_dir)
     dofile(apollo_dir.."vp/options/models.lua")(options, apollo_dir)
+    dofile(apollo_dir.."vp/options/vmcu.lua")(options)
     dofile(apollo_dir.."soc/reset_targets.lua")(options)
     local monitor_enabled = options.getenv_bool_or("QBOX_APOLLO_MONITOR", false)
     local monitor_bind_address = options.getenv_or(
