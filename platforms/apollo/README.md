@@ -583,10 +583,19 @@ lock may select any released physical MPID as logical CPU 0.
 
 Apollo QVP idle policy keeps the 125 MHz timer counters unchanged. Linux uses
 tickless idle and a 100 Hz scheduling tick (10 ms while a tick is required).
-The QVP DT advertises architectural WFI idle only. CPU/cluster PSCI powerdown
-wakeup is not modeled and those deep states are not advertised; the Linux
-PSCI cpuidle driver is therefore absent. The default scheduler idle path still
-stops the tick and enters WFI.
+The QVP DT defaults to architectural WFI and does not advertise PSCI deep
+idle states. CPU/cluster sleep was validated with those DT states enabled;
+the implementation remains available for explicit re-enablement.
+A720AE powerdown WFI drives the core PPU; enabled pending GIC PPI/SPI requests
+wake sleeping cores independently of their CPU-interface mask. SCP handles
+cluster OFF/ON, PACTIVE and core OFF-lock/UNLK before warm reset release.
+The AP MMIO broadcast timer binds to the actual `irq_0`/`irq_1` sockets.
+GPIO callbacks retain source BQL ownership and defer cross-instance SystemC
+work, avoiding GIC MMIO reentrancy during concurrent AP wakeup.
+These are functional power-state transitions, not physical power, cache
+isolation or timing parity. Full SYS0 suspend and SI cluster powerdown remain
+outside this qualification. See the workspace `doc/qbox-psci-idle.md` for
+per-image runtime evidence and remaining qualification status.
 SI CL1 also uses tickless operation with 100 ticks per second. SI CL0 programs
 one-shot alarm deadlines; its QVP firmware checks pending events with
 interrupts masked before WFI. QVP disables SCMI Performance Fast Channels,
