@@ -3,6 +3,7 @@
  */
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -19,6 +20,14 @@ namespace {
 constexpr uint64_t PPU_PWPR = 0x000;
 constexpr uint64_t PPU_PMER = 0x004;
 constexpr uint64_t PPU_PWSR = 0x008;
+constexpr uint64_t PPU_DISR = 0x010;
+constexpr uint64_t PPU_UNLK = 0x01c;
+constexpr uint64_t PPU_IMR = 0x030;
+constexpr uint64_t PPU_ISR = 0x038;
+constexpr uint64_t PPU_IESR = 0x040;
+constexpr uint32_t ACTIVE_ON = 1u << 8;
+constexpr uint32_t ACTIVE_EDGE = 1u << 16;
+constexpr uint32_t DYNAMIC_MIN = 1u << 5;
 constexpr uint32_t PPU_PWPR_DYNAMIC_EN = 0x00000100;
 constexpr uint32_t PPU_PWPR_OFF_LOCK_EN = 0x00001000;
 constexpr uint32_t PPU_PWPR_OP_DYN_EN = 0x01000000;
@@ -33,6 +42,7 @@ public:
     TargetSignalSocket<bool> signal;
     std::vector<bool> values;
     std::vector<uint64_t> deltas;
+    std::function<void(bool)> on_write;
 
     explicit SignalSink(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
@@ -41,6 +51,9 @@ public:
         signal.register_value_changed_cb([this](bool value) {
             values.push_back(value);
             deltas.push_back(sc_core::sc_delta_count());
+            if (on_write) {
+                on_write(value);
+            }
         });
     }
 };
@@ -140,7 +153,7 @@ TEST(HostPpuTest, DynamicPolicyWriteUpdatesStatusBits)
     const auto status = read32(dut, PPU_PWSR);
     EXPECT_EQ(status & 0xfu, 0x8u);
     EXPECT_NE(status & PPU_PWSR_PWR_DYN_STATUS, 0u);
-    EXPECT_NE(status & PPU_PWSR_OFF_LOCK_STATUS, 0u);
+    EXPECT_EQ(status & PPU_PWSR_OFF_LOCK_STATUS, 0u);
     EXPECT_NE(status & PPU_PWSR_OP_DYN_STATUS, 0u);
     EXPECT_EQ(status & PPU_PWPR_OP_POLICY, 0x00050000u);
 
@@ -264,6 +277,153 @@ TEST(HostPpuTest, PowerOnTransitionSignalsLoadBeforeResetRelease)
     EXPECT_EQ(read32(dut, PPU_PWSR) & 0xfu, 0x0u);
     EXPECT_TRUE(reset_sink.values.back());
     external_reset.write(false);
+}
+
+TEST(HostPpuTest, DynamicSuspendWakeAndClusterHandshake)
+{
+    auto broker = cci::cci_get_global_broker(cci::cci_originator("idle_test"));
+    broker.set_preset_cci_value("idle_core.enable_powerdown", cci::cci_value(true));
+    broker.set_preset_cci_value("idle_core.assert_power_on_reset", cci::cci_value(true));
+    broker.set_preset_cci_value("idle_core.assert_power_on_load", cci::cci_value(true));
+    broker.set_preset_cci_value("idle_cluster.num_active_inputs", cci::cci_value(2u));
+    host_ppu core("idle_core");
+    host_ppu cluster("idle_cluster");
+    TlmInitiator core_bus("core_bus"), cluster_bus("cluster_bus");
+    SignalSource powerdown("powerdown"), wakeup("wakeup"), sibling("sibling");
+    SignalSink reset("reset"), load("load"), core_irq("core_irq"), cluster_irq("cluster_irq");
+    core_bus.socket.bind(core.target_socket);
+    cluster_bus.socket.bind(cluster.target_socket);
+    powerdown.signal.bind(core.powerdown);
+    wakeup.signal.bind(core.wakeup);
+    core.power_on_reset.bind(reset.signal);
+    core.power_on_load.bind(load.signal);
+    core.irq.bind(core_irq.signal);
+    core.devactive_out.bind(cluster.active_in[0]);
+    sibling.signal.bind(cluster.active_in[1]);
+    cluster.irq.bind(cluster_irq.signal);
+    // A real CPU reset clears its WFI output, but must not wake the PPU.
+    reset.on_write = [&powerdown](bool asserted) {
+        if (asserted) {
+            powerdown.write(false);
+        }
+    };
+    const auto settle = [] { sc_core::sc_start(sc_core::sc_time(10, sc_core::SC_NS)); };
+    sc_core::sc_start(sc_core::SC_ZERO_TIME);
+    write32(cluster, PPU_PWPR, 8);
+    write32(core, PPU_PWPR, 8);
+    settle();
+    ASSERT_EQ(load.values, (std::vector<bool>{true, false}));
+    ASSERT_FALSE(reset.values.back());
+    const auto cold_load_count = load.values.size();
+    write32(core, PPU_PWPR, PPU_PWPR_DYNAMIC_EN);
+    write32(core, PPU_IMR, 0x3f & ~DYNAMIC_MIN);
+    write32(cluster, PPU_IESR, 2u << 16); // PACTIVE8 falling edge
+
+    // A sibling keeps the cluster active while this core enters OFF.
+    sibling.write(true);
+    powerdown.write(true);
+    settle();
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 0u);
+    EXPECT_TRUE(reset.values.back());
+    EXPECT_EQ(read32(core, PPU_DISR) & ACTIVE_ON, 0u);
+    EXPECT_TRUE(core_irq.values.back());
+    EXPECT_NE(read32(core, PPU_ISR) & DYNAMIC_MIN, 0u);
+    EXPECT_NE(read32(cluster, PPU_DISR) & ACTIVE_ON, 0u);
+    EXPECT_EQ(read32(cluster, PPU_ISR) & ACTIVE_EDGE, 0u);
+    write32(core, PPU_ISR, DYNAMIC_MIN);
+    EXPECT_FALSE(core_irq.values.back());
+    EXPECT_EQ(read32(core, PPU_ISR) & DYNAMIC_MIN, 0u);
+
+    sibling.write(false);
+    settle();
+    EXPECT_EQ(read32(cluster, PPU_DISR) & ACTIVE_ON, 0u);
+    ASSERT_TRUE(cluster_irq.values.back());
+    EXPECT_NE(read32(cluster, PPU_ISR) & ACTIVE_EDGE, 0u);
+    write32(cluster, PPU_ISR, DYNAMIC_MIN); // unrelated W1C must preserve edge
+    EXPECT_TRUE(cluster_irq.values.back());
+    write32(cluster, PPU_ISR, ACTIVE_EDGE);
+    EXPECT_FALSE(cluster_irq.values.back());
+
+    // SCP locks the OFF core before powering down the static cluster PPU.
+    write32(core, PPU_PWPR, PPU_PWPR_DYNAMIC_EN | PPU_PWPR_OFF_LOCK_EN);
+    EXPECT_NE(read32(core, PPU_PWSR) & PPU_PWSR_OFF_LOCK_STATUS, 0u);
+    write32(cluster, PPU_PWPR, 0);
+    write32(cluster, PPU_IESR, 1u << 16); // wake demand must raise cluster IRQ
+    wakeup.write(true);
+    settle();
+    EXPECT_NE(read32(core, PPU_DISR) & ACTIVE_ON, 0u);
+    EXPECT_TRUE(cluster_irq.values.back());
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 0u);
+    EXPECT_TRUE(reset.values.back());
+
+    // Removing OFF_LOCK_EN alone must not release its latched status.
+    write32(core, PPU_PWPR, PPU_PWPR_DYNAMIC_EN);
+    settle();
+    EXPECT_NE(read32(core, PPU_PWSR) & PPU_PWSR_OFF_LOCK_STATUS, 0u);
+    EXPECT_TRUE(reset.values.back());
+    write32(cluster, PPU_PWPR, 8);
+    write32(cluster, PPU_ISR, ACTIVE_EDGE);
+    write32(core, PPU_UNLK, 1);
+    settle();
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 8u);
+    EXPECT_EQ(read32(core, PPU_PWSR) & PPU_PWSR_OFF_LOCK_STATUS, 0u);
+    EXPECT_FALSE(reset.values.back());
+    EXPECT_EQ(load.values.size(), cold_load_count); // warm resume skips loader
+
+    // A wake already high before WFI must survive the OFF/reset transition.
+    powerdown.write(true);
+    settle();
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 8u);
+    EXPECT_FALSE(reset.values.back());
+    EXPECT_EQ(load.values.size(), cold_load_count);
+
+    // A cluster lock arriving after wake was queued must prevent reset release.
+    wakeup.write(false);
+    powerdown.write(true);
+    settle();
+    ASSERT_TRUE(reset.values.back());
+    wakeup.write(true);
+    sc_core::sc_start(sc_core::sc_time(500, sc_core::SC_PS));
+    ASSERT_TRUE(reset.values.back()); // queued warm release waits 1 ns
+    write32(core, PPU_PWPR, PPU_PWPR_DYNAMIC_EN | PPU_PWPR_OFF_LOCK_EN);
+    settle();
+    EXPECT_TRUE(reset.values.back());
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 0u);
+    EXPECT_NE(read32(core, PPU_PWSR) & PPU_PWSR_OFF_LOCK_STATUS, 0u);
+    write32(core, PPU_PWPR, PPU_PWPR_DYNAMIC_EN);
+    write32(core, PPU_UNLK, 1);
+    settle();
+    EXPECT_FALSE(reset.values.back());
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 8u);
+    EXPECT_EQ(load.values.size(), cold_load_count);
+
+    // Static OFF cancels a queued warm wake; its delayed callback cannot run CPU.
+    wakeup.write(false);
+    powerdown.write(true);
+    settle();
+    ASSERT_TRUE(reset.values.back());
+    wakeup.write(true);
+    sc_core::sc_start(sc_core::sc_time(500, sc_core::SC_PS));
+    ASSERT_TRUE(reset.values.back());
+    write32(core, PPU_PWPR, 0);
+    settle();
+    EXPECT_TRUE(reset.values.back());
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 0u);
+    EXPECT_EQ(load.values.size(), cold_load_count);
+
+    // Static OFF is CPU_OFF, not suspend: a wake level cannot power it back on.
+    wakeup.write(false);
+    write32(core, PPU_PWPR, 0);
+    settle();
+    wakeup.write(true);
+    settle();
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 0u);
+    EXPECT_TRUE(reset.values.back());
+    write32(core, PPU_PWPR, 8);
+    settle();
+    EXPECT_EQ(read32(core, PPU_PWSR) & 0xf, 8u);
+    EXPECT_FALSE(reset.values.back());
+    EXPECT_EQ(load.values.size(), cold_load_count + 2);
 }
 
 int sc_main(int argc, char* argv[])

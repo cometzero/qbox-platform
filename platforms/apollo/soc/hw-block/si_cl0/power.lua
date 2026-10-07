@@ -133,6 +133,10 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             platform["si_cl0_ap_cluster" .. cluster .. "_ppu"] = {
                 moduletype = "host_ppu";
                 initial_power_status = 0x0;
+                num_active_inputs = SI_CONST.SI_CL0_AP_CORE_PER_CLUSTER_COUNT;
+                trace = host_ppu_trace;
+                trace_limit = host_ppu_trace_limit;
+                irq = {bind = "&si_cl0_gic.spi_in_" .. (228 + 5 * cluster)};
                 target_socket = {
                     address = cluster_base + SI_CONST.SI_CL0_AP_CLUSTER_PPU_OFFSET;
                     size = SI_CONST.SI_CL_PPU_SIZE;
@@ -184,6 +188,16 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                     initial_power_status = 0x0;
                     trace = host_ppu_trace;
                     trace_limit = host_ppu_trace_limit;
+                    enable_powerdown = cpu_active;
+                    irq = {bind = "&si_cl0_gic.spi_in_" .. (229 + 5 * cluster + core)};
+                    devactive_out = {bind = "&si_cl0_ap_cluster" .. cluster ..
+                        "_ppu.active_in_" .. core};
+                    powerdown = cpu_active and {
+                        bind = "&ap_cpu_" .. cpu_index .. ".powerdown_wfi_out";
+                    } or nil;
+                    wakeup = cpu_active and {
+                        bind = "&ap_gic.wake_request_out_" .. cpu_index;
+                    } or nil;
                     assert_power_on_reset = cpu_active;
                     assert_power_on_load = cpu_active and cpu_index == 0;
                     -- CPU0's load drives a +1 ps asynchronous cold-reset fanout.

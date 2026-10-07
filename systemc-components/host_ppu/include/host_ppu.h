@@ -11,6 +11,7 @@
 #include <deque>
 #include <iomanip>
 #include <iostream>
+#include <vector>
 
 #include <cci_configuration>
 #include <module_factory_registery.h>
@@ -39,11 +40,27 @@ class host_ppu : public sc_core::sc_module
     static constexpr uint32_t PPU_POWER_STATUS_OFF = 0x0;
     static constexpr uint32_t PPU_POWER_STATUS_ON = 0x8;
 
+    static constexpr uint32_t PPU_DISR = 0x10;
+    static constexpr uint32_t PPU_UNLK = 0x1c;
+    static constexpr uint32_t PPU_IMR = 0x30;
+    static constexpr uint32_t PPU_ISR = 0x38;
+    static constexpr uint32_t PPU_IESR = 0x40;
+    static constexpr uint32_t ACTIVE_ON = 1u << 8;
+    static constexpr uint32_t ACTIVE_EDGE = 1u << 16;
+    static constexpr uint32_t DYNAMIC_MIN = 1u << 5;
+    bool m_powerdown = false;
+    bool m_wakeup = false;
+    bool m_sleeping = false;
+    bool m_warm_pending = false;
+    uint64_t m_generation = 0;
+    std::vector<bool> m_active_inputs;
     std::array<uint8_t, REG_BYTES> m_regs{};
     unsigned int m_trace_count = 0;
     struct pending_power_transition {
         bool power_on;
         uint32_t final_status;
+        bool warm;
+        uint64_t generation;
     };
 
     std::deque<pending_power_transition> m_pending_power_transitions;
@@ -70,6 +87,8 @@ class host_ppu : public sc_core::sc_module
     void reset_registers()
     {
         m_regs.fill(0);
+        store32(PPU_IMR, 0x3f);
+        m_sleeping = m_warm_pending = false;
         store32(PPU_PWSR, p_initial_power_status.get_value() & PPU_POWER_MASK);
     }
 
@@ -102,7 +121,8 @@ class host_ppu : public sc_core::sc_module
             if (power_dynamic) {
                 status |= PPU_POWER_DYN_STATUS;
             }
-            if ((value & PPU_OFF_LOCK_ENABLE) != 0) {
+            if ((previous_status & PPU_OFF_LOCK_STATUS) ||
+                ((value & PPU_OFF_LOCK_ENABLE) && power_status_is_off(status))) {
                 status |= PPU_OFF_LOCK_STATUS;
             }
             if (op_dynamic) {
@@ -122,18 +142,96 @@ class host_ppu : public sc_core::sc_module
             } else {
                 store32(PPU_PWSR, status);
             }
+            if (!power_dynamic) {
+                m_sleeping = false;
+                m_warm_pending = false;
+            }
             observe_power_transition(previous_status, status);
+            evaluate_inputs();
             break;
         }
         case PPU_PMER:
             store32(PPU_PMER, value);
             break;
         case PPU_PWSR:
+        case PPU_DISR:
+            break;
+        case PPU_ISR:
+            store32(PPU_ISR, load32(PPU_ISR) & ~value);
+            update_irq();
+            break;
+        case PPU_IMR:
+            store32(PPU_IMR, value & 0x3f);
+            update_irq();
+            break;
+        case PPU_UNLK:
+            if (value & 1) {
+                store32(PPU_PWSR, load32(PPU_PWSR) & ~PPU_OFF_LOCK_STATUS);
+                evaluate_inputs();
+            }
             break;
         default:
             store32(offset, value);
             break;
         }
+    }
+
+    void update_irq()
+    {
+        const uint32_t pending = load32(PPU_ISR);
+        if (irq.size()) {
+            irq->write((pending & ACTIVE_EDGE) ||
+                       (pending & ~load32(PPU_IMR) & 0x3f));
+        }
+    }
+
+    void evaluate_inputs()
+    {
+        uint32_t status = load32(PPU_PWSR);
+        const uint32_t policy = load32(PPU_PWPR);
+        // Core PACTIVE remains a wake demand while reset is held. Resetting
+        // the CPU clears its WFI output; that must not itself wake the core.
+        bool active = m_sleeping ? m_wakeup :
+            (power_status_is_on(status) && (!m_powerdown || m_wakeup));
+        if (!m_active_inputs.empty()) {
+            active = std::any_of(m_active_inputs.begin(), m_active_inputs.end(),
+                                 [](bool value) { return value; });
+        }
+        const bool previous_active = (load32(PPU_DISR) & ACTIVE_ON) != 0;
+        store32(PPU_DISR, active ? ACTIVE_ON : 0);
+        if (active != previous_active) {
+            const uint32_t edge = (load32(PPU_IESR) >> 16) & 3;
+            if ((active && (edge & 1)) || (!active && (edge & 2))) {
+                store32(PPU_ISR, load32(PPU_ISR) | ACTIVE_EDGE);
+            }
+            if (devactive_out.size()) {
+                devactive_out->write(active);
+            }
+        }
+        if (p_enable_powerdown.get_value() &&
+            (policy & PPU_POWER_DYN_ENABLE) &&
+            !(policy & PPU_POWER_MASK)) {
+            if (m_powerdown && !m_sleeping && power_status_is_on(status)) {
+                m_sleeping = true;
+                status &= ~PPU_POWER_MASK;
+                if (policy & PPU_OFF_LOCK_ENABLE) {
+                    status |= PPU_OFF_LOCK_STATUS;
+                }
+                store32(PPU_PWSR, status);
+                store32(PPU_ISR, load32(PPU_ISR) | DYNAMIC_MIN);
+                trace_signal("dynamic-power-off", true);
+                write_power_on_reset(true);
+            }
+            if (m_sleeping && m_wakeup &&
+                !(status & PPU_OFF_LOCK_STATUS) && !m_warm_pending) {
+                m_warm_pending = true;
+                m_pending_power_transitions.push_back(
+                    {true, (status & ~PPU_POWER_MASK) | PPU_POWER_STATUS_ON,
+                     true, m_generation});
+                m_power_on_sequence_event.notify(sc_core::SC_ZERO_TIME);
+            }
+        }
+        update_irq();
     }
 
     static bool power_status_is_on(uint32_t status)
@@ -167,7 +265,7 @@ class host_ppu : public sc_core::sc_module
                 }
 
                 m_pending_power_transitions.push_back(
-                    {true, final_status});
+                    {true, final_status, false, m_generation});
                 m_power_on_sequence_event.notify(sc_core::SC_ZERO_TIME);
             });
     }
@@ -202,7 +300,7 @@ class host_ppu : public sc_core::sc_module
                 continue;
             }
 
-            if (p_assert_power_on_load.get_value()) {
+            if (!transition.warm && p_assert_power_on_load.get_value()) {
                 write_power_on_load(true);
                 wait_ns(p_power_on_load_pulse_width_ns.get_value());
                 write_power_on_load(false);
@@ -210,13 +308,37 @@ class host_ppu : public sc_core::sc_module
 
             if (p_assert_power_on_reset.get_value()) {
                 wait_ns(p_power_on_load_to_reset_delay_ns.get_value());
+                if (transition.generation != m_generation) {
+                    continue;
+                }
+                // A cluster-off handler may lock the core after wake was
+                // queued. UNLK must re-schedule it rather than bypass the lock.
+                if (transition.warm &&
+                    (!m_sleeping || (load32(PPU_PWSR) & PPU_OFF_LOCK_STATUS))) {
+                    m_warm_pending = false;
+                    continue;
+                }
+                if (transition.warm) {
+                    // The request has been consumed by the completed reset;
+                    // its GPIO deassert may still be queued by the bridge.
+                    m_powerdown = false;
+                    store32(PPU_PWSR, transition.final_status);
+                    m_sleeping = m_warm_pending = false;
+                    trace_signal("warm-resume", true);
+                    evaluate_inputs();
+                }
                 write_power_on_reset(false);
             }
 
             wait_ns(p_power_on_status_delay_ns.get_value());
-            if (power_status_is_on(load32(PPU_PWPR))) {
+            if (transition.generation != m_generation) {
+                continue;
+            }
+            if (transition.warm ? m_sleeping : power_status_is_on(load32(PPU_PWPR))) {
                 store32(PPU_PWSR, transition.final_status);
-                trace_signal("power-on-status", true);
+                m_sleeping = m_warm_pending = false;
+                trace_signal(transition.warm ? "warm-resume" : "power-on-status", true);
+                evaluate_inputs();
             }
         }
     }
@@ -305,6 +427,8 @@ class host_ppu : public sc_core::sc_module
 public:
     SC_HAS_PROCESS(host_ppu);
 
+    cci::cci_param<bool> p_enable_powerdown;
+    cci::cci_param<unsigned int> p_num_active_inputs;
     cci::cci_param<bool> p_trace;
     cci::cci_param<unsigned int> p_trace_limit;
     cci::cci_param<uint32_t> p_initial_power_status;
@@ -319,10 +443,17 @@ public:
     InitiatorSignalSocket<bool> power_on_reset;
     InitiatorSignalSocket<bool> power_on_load;
     TargetSignalSocket<bool> reset;
+    TargetSignalSocket<bool> powerdown;
+    TargetSignalSocket<bool> wakeup;
+    sc_core::sc_vector<TargetSignalSocket<bool>> active_in;
+    InitiatorSignalSocket<bool> devactive_out;
+    InitiatorSignalSocket<bool> irq;
 
     explicit host_ppu(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
         , m_power_transition_run_on_sysc("power_transition_run_on_sysc")
+        , p_enable_powerdown("enable_powerdown", false)
+        , p_num_active_inputs("num_active_inputs", 0)
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 64)
         , p_initial_power_status("initial_power_status", 0x00000000)
@@ -338,8 +469,32 @@ public:
         , power_on_reset("power_on_reset")
         , power_on_load("power_on_load")
         , reset("reset")
+        , powerdown("powerdown")
+        , wakeup("wakeup")
+        , active_in("active_in", p_num_active_inputs.get_value())
+        , devactive_out("devactive_out")
+        , irq("irq")
     {
         reset_registers();
+        m_active_inputs.resize(p_num_active_inputs.get_value(), false);
+        powerdown.register_value_changed_cb([this](bool value) {
+            m_power_transition_run_on_sysc.run_on_sysc([this, value] {
+                m_powerdown = value;
+                evaluate_inputs();
+            });
+        });
+        wakeup.register_value_changed_cb([this](bool value) {
+            m_power_transition_run_on_sysc.run_on_sysc([this, value] {
+                m_wakeup = value;
+                evaluate_inputs();
+            });
+        });
+        for (unsigned int i = 0; i < active_in.size(); ++i) {
+            active_in[i].register_value_changed_cb([this, i](bool value) {
+                m_active_inputs[i] = value;
+                evaluate_inputs();
+            });
+        }
         SC_THREAD(emit_power_on_sequence);
         target_socket.register_b_transport(this, &host_ppu::b_transport);
         target_socket.register_transport_dbg(this, &host_ppu::transport_dbg);
@@ -347,9 +502,11 @@ public:
             if (!asserted) {
                 return;
             }
+            ++m_generation;
             m_pending_power_transitions.clear();
             m_power_on_sequence_event.cancel();
             reset_registers();
+            update_irq();
             if (p_assert_power_on_reset.get_value()) {
                 write_power_on_reset(true);
             }

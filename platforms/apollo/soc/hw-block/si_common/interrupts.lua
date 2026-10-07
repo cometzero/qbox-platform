@@ -159,6 +159,20 @@ local SI_ACTIVE_ROUTES = {
         "si_cl0_ap_ras_cluster3", "si_cl0_ap_ras_cluster3.cluster_irq", "SPI",
         SI_CONST.SI_IRQ.cl0_ap_ras_cluster3, "View1", "shared", {0});
 }
+-- RD-Aspen SI expansion INTIDs: one cluster and four core PPUs per block.
+for cluster = 0,3 do
+    local prefix = "si_cl0_ap_cluster" .. cluster
+    table.insert(SI_ACTIVE_ROUTES, irq_route_definition(
+        prefix .. "_ppu", prefix .. "_ppu.irq", "SPI", 260 + 5 * cluster,
+        "View1", "shared", {0}))
+    for core = 0,3 do
+        local name = prefix .. "_core" .. core .. "_ppu"
+        table.insert(SI_ACTIVE_ROUTES, irq_route_definition(
+            name, name .. ".irq", "SPI", 261 + 5 * cluster + core,
+            "View1", "shared", {0}))
+    end
+end
+
 
 function interrupts.validate_irq_routes(routes)
     assert(type(routes) == "table", "SI IRQ routes must be a table")

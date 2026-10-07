@@ -78,6 +78,7 @@ public:
     QemuTargetSignalSocket virq_in;
     QemuTargetSignalSocket vfiq_in;
 
+    QemuInitiatorSignalSocket powerdown_wfi_out;
     QemuInitiatorSignalSocket irq_timer_phys_out;
     QemuInitiatorSignalSocket irq_timer_virt_out;
     QemuInitiatorSignalSocket irq_timer_hyp_out;
@@ -115,6 +116,7 @@ public:
         , fiq_in("fiq_in")
         , virq_in("virq_in")
         , vfiq_in("vfiq_in")
+        , powerdown_wfi_out("powerdown_wfi_out")
         , irq_timer_phys_out("irq_timer_phys_out")
         , irq_timer_virt_out("irq_timer_virt_out")
         , irq_timer_hyp_out("irq_timer_hyp_out")
@@ -168,6 +170,7 @@ public:
         virq_in.init(m_dev, 2);
         vfiq_in.init(m_dev, 3);
 
+        powerdown_wfi_out.init_named(m_dev, "powerdown-wfi", 0);
         irq_timer_phys_out.init(m_dev, 0);
         irq_timer_virt_out.init(m_dev, 1);
         irq_timer_hyp_out.init(m_dev, 2);
