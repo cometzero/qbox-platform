@@ -53,12 +53,9 @@ function timers.define(ctx, platform, hw)
                 size = (AP_ADDRESS.sys_counter_non_secure - AP_ADDRESS.sys_timctl) + AP_SIZE.sys_timer;
                 bind = "&system_router.initiator_socket";
             };
-            irq = {
-                -- frame 0 is the non-secure AP REFCLK frame.
-                {bind = "&ap_gic.spi_in_" .. AP_IRQ.sys_timer_non_secure};
-                -- frame 1 is the secure AP REFCLK frame.
-                {bind = "&ap_gic.spi_in_" .. AP_IRQ.sys_timer_secure};
-            };
+            -- sc_vector ports are named irq_0/irq_1, not irq.0/irq.1.
+            irq_0 = {bind = "&ap_gic.spi_in_" .. AP_IRQ.sys_timer_non_secure};
+            irq_1 = {bind = "&ap_gic.spi_in_" .. AP_IRQ.sys_timer_secure};
         }
     end
 
