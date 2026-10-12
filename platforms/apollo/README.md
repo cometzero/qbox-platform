@@ -311,6 +311,8 @@ system. The Linux entrypoint replaces firmware reset/domain connections
 after construction; the hardware block Lua files remain authoritative.
 The root shell script delegates to `scripts/run/run_qbox_linux.py`, which
 copies the DTB and calls `linux-boot/prepare.py` to build the SRAM payload.
+The source disk is used directly by default; `--copy-disk` creates a private
+run copy. Guest writes and AutoSD UKI installation affect the selected disk.
 The payload starts at `0x000f0000`, updates initramfs bounds in the in-memory
 DTB with libfdt, and enters Linux at non-secure EL2. The launcher defaults to
 four CPUs (`--cpus 1..16`) and records the final command line in

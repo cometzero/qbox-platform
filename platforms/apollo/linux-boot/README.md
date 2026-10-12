@@ -13,7 +13,11 @@ or the BSP initramfs with its two-partition BSP WIC. BSP uses
 `rdinit=/init` without `root=`; its WIC provides boot/misc block devices only.
 The product initramfs retains its normal dm-verity
 setup and read-only `rootro_a` root; writable state uses the WIC's overlay/data
-partitions. Each launch uses a private WIC copy.
+partitions. By default the launcher attaches the source disk directly, so guest
+writes persist there. `--copy-disk` creates a private `rootfs.wic` using
+`cp --reflink=auto --sparse=always`. AutoSD UKI preparation and boot-control
+inspection use the selected disk too; without `--copy-disk`, UKI installation
+updates the source disk's ESP.
 Initramfs images are loaded unchanged, without an appended init overlay.
 The root launcher's `--autosd` mode also accepts an AutoSD nightly disk and
 its original dracut initramfs via a prepared JSON manifest. It uses the same
