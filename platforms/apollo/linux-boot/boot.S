@@ -2,9 +2,7 @@
 /* Minimal reset payload; the native QEMU PSCI service owns secondary CPUs. */
 .section .text.boot, "ax"
 .global _start
-.ifndef BOOT_ENTRY
 .equ BOOT_ENTRY, 0x80200000
-.endif
 _start:
     msr daifset, #15
     /* Permit non-secure AArch64 EL2 and its GIC system-register interface. */

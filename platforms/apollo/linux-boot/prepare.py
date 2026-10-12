@@ -19,12 +19,7 @@ def command(*args):
 
 
 def prepare(args):
-    firmware = getattr(args, "firmware", False)
     addresses = dict(ADDRESSES)
-    if firmware:
-        addresses["kernel"] = 0x80080000
-        if args.initrd:
-            raise ValueError("firmware mode embeds initrd in the on-disk UKI")
     kernel = args.kernel.resolve(strict=True)
     source_dtb = args.dtb.resolve(strict=True)
     out = args.output_dir.resolve()
@@ -33,7 +28,7 @@ def prepare(args):
         header = stream.read(64)
     if len(header) != 64 or header[56:60] != b"ARM\x64":
         raise ValueError("--kernel must be an uncompressed arm64 Linux Image")
-    if struct.unpack_from("<Q", header, 8)[0] != (0x80000 if firmware else 0):
+    if struct.unpack_from("<Q", header, 8)[0] != 0:
         raise ValueError("Image text_offset does not match the selected boot placement")
     image_size = max(kernel.stat().st_size, struct.unpack_from("<Q", header, 16)[0])
     if addresses["kernel"] + image_size > addresses["dtb"]:
@@ -65,7 +60,6 @@ def prepare(args):
     libc = tfa / "lib/libc"
     prefix = os.environ.get("CROSS_COMPILE", "aarch64-linux-gnu-")
     command(prefix + "as", "-march=armv8-a", "--defsym",
-            f"BOOT_ENTRY={addresses['kernel']}", "--defsym",
             f"DTB_CAPACITY={capacity}", "--defsym",
             f"INITRD_START={addresses['initrd'] if initrd else 0}", "--defsym",
             f"INITRD_SIZE={initrd_size}",
@@ -87,14 +81,12 @@ def prepare(args):
     command(prefix + "objcopy", "-O", "binary", elf, boot)
     return {"boot_stub": str(boot), "kernel": str(kernel), "dtb": str(dtb),
             "initrd": str(initrd) if initrd else None,
-            "addresses": addresses, "firmware": firmware}
+            "addresses": addresses}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel", type=Path, required=True)
-    parser.add_argument("--firmware", action="store_true",
-                        help="load Apollo U-Boot Linux-header image at 0x80080000")
     parser.add_argument("--dtb", type=Path, required=True)
     parser.add_argument("--initrd", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)

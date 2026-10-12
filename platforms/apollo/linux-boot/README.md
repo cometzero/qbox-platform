@@ -15,17 +15,10 @@ The product initramfs retains its normal dm-verity
 setup and read-only `rootro_a` root; writable state uses the WIC's overlay/data
 partitions. By default the launcher attaches the source disk directly, so guest
 writes persist there. `--copy-disk` creates a private `rootfs.wic` using
-`cp --reflink=auto --sparse=always`. AutoSD UKI preparation and boot-control
-inspection use the selected disk too; without `--copy-disk`, UKI installation
-updates the source disk's ESP.
+`cp --reflink=auto --sparse=always`.
 Initramfs images are loaded unchanged, without an appended init overlay.
-The root launcher's `--autosd` mode also accepts an AutoSD nightly disk and
-its original dracut initramfs via a prepared JSON manifest. It uses the same
-reset payload and deployed Apollo kernel, with root UUID and OSTree deployment
-arguments extracted from the image's BLS entry. Required drivers, EROFS and
-fs-verity are built into that kernel; the AutoSD kernel modules cannot be
-loaded across kernel ABIs. This direct boot does not run AutoSD UKI boot
-selection or qualify Secure Boot, updates or rollback.
+AutoSD boots through the full-system `run_qbox_autosd.sh` launcher; this
+AP-only launcher supports product and BSP Linux images.
 BSP uses `rdinit=/init` and runs the image's original selftests. On failure,
 the original init opens `nexios-bsp-failed#`; on success it opens `nexios-bsp#`.
 Both are bootable interactive shells. The launcher's `bsp_selftest` result
@@ -70,7 +63,7 @@ This profile runs no TF-A/RSE/SI firmware; the full-system SRAM layout is
 unchanged. SRAM is outside Linux's ordinary RAM map, so no reset-payload
 reserved-memory node is added.
 The runner reads default bootargs
-from the DTB; a CPU-count override changes `nr_cpus`, and product/AutoSD boots
+from the DTB; a CPU-count override changes `nr_cpus`, and product boots
 supply their root arguments. Explicit bootargs replace the command line.
 The root launcher records the final command line in `launch.json.bootargs`;
 QBox consumes the DTB, not a separate bootargs environment variable.

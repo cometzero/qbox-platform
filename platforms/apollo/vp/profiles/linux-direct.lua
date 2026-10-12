@@ -110,17 +110,15 @@ return function(ctx)
         assert(path ~= "", "Missing Linux boot artifact: "..name)
         return path
     end
-    local firmware = ctx.getenv_or("QBOX_LINUX_FIRMWARE", "false") == "true"
     platform.linux_loader = {
         moduletype = "loader";
         initiator_socket = {bind = "&ap_router.target_socket"};
         {bin_file = required("QBOX_LINUX_BOOT_STUB"); address = boot_stub_address};
-        {bin_file = required("QBOX_LINUX_KERNEL"); address = firmware and 0x80080000 or 0x80200000};
+        {bin_file = required("QBOX_LINUX_KERNEL"); address = 0x80200000};
         {bin_file = required("QBOX_LINUX_DTB"); address = 0x88000000};
     }
     local initrd = ctx.getenv_or("QBOX_LINUX_INITRD", "")
     if initrd ~= "" then
-        assert(not firmware, "EFI firmware mode takes its initrd from the on-disk UKI")
         table.insert(platform.linux_loader, {bin_file = initrd; address = 0x90000000})
     end
     dofile(ctx.apollo_dir.."vp/mocks/domains.lua").define(ctx, platform)

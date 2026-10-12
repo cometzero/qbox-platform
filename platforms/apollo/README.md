@@ -270,21 +270,15 @@ to force a repeat, initialize the build environment and run
 ### Direct Linux profile
 
 The workspace `./run_qbox_linux.sh` launches `apollo-qvp-linux.lua` with the
-deployed Apollo kernel and a private copy of the Yocto root filesystem.
+deployed Apollo kernel and the Yocto root filesystem.
 The matching product initramfs sets up dm-verity and the normal writable
-overlay/data partitions; the deployed WIC is never modified.
-`./run_qbox_linux.sh --bsp` boots the BSP initramfs and attaches a private copy
-of `nexios-bsp-initramfs-apollo-qvp.wic` as `/dev/vda` (boot and misc partitions).
+overlay/data partitions; guest writes affect the selected WIC.
+`./run_qbox_linux.sh --bsp` boots the BSP initramfs and attaches
+ `nexios-bsp-initramfs-apollo-qvp.wic` as `/dev/vda` (boot and misc partitions).
 The root remains the initramfs; the BSP WIC is not a product root filesystem.
 `--rootfs PATH` overrides the disk source for either mode.
-The opt-in `--autosd MANIFEST --uki UKI` path loads U-Boot at `0x80080000`
-and obtains Linux/initrd from the disk UKI through UKIBoot/EFI. The default
-direct Linux entry remains `0x80200000`; its generated boot stub is unchanged.
-Regular and OSTree first-boot smoke tests observed EFI, slot A success and
-valid bootctl CRC. This does not implement whole-platform guest reset:
-`efi_reboot_support=NOT_IMPLEMENTED`, and a repeated U-Boot banner terminates
-the supervisor with `UNSUPPORTED_REBOOT`. OTA/rollback and Secure Boot are
-not qualified by these first-boot tests.
+AutoSD uses the full-system `run_qbox_autosd.sh` launcher. This direct Linux
+profile supports only product and BSP boot, with Linux entry `0x80200000`.
 The direct Linux path runs the original `/init` without an init overlay. Selftest failures enter
 the original `nexios-bsp-failed#` UART shell and remain FAIL in `bsp_selftest`;
 they do not prevent an AP boot smoke PASS. Network/SSH setup is not reached
@@ -312,7 +306,7 @@ after construction; the hardware block Lua files remain authoritative.
 The root shell script delegates to `scripts/run/run_qbox_linux.py`, which
 copies the DTB and calls `linux-boot/prepare.py` to build the SRAM payload.
 The source disk is used directly by default; `--copy-disk` creates a private
-run copy. Guest writes and AutoSD UKI installation affect the selected disk.
+run copy. Guest writes affect the selected disk.
 The payload starts at `0x000f0000`, updates initramfs bounds in the in-memory
 DTB with libfdt, and enters Linux at non-secure EL2. The launcher defaults to
 four CPUs (`--cpus 1..16`) and records the final command line in
