@@ -2,6 +2,7 @@
 -- AP-only firmware substitutes and Linux loader; no SI/RSE firmware executes.
 return function(ctx)
     local options = ctx.options
+    local boot_stub_address = 0x000f0000 -- AP shared SRAM, above SDS and BL2 work areas.
     local common = dofile(ctx.apollo_dir.."apollo-qvp-common.lua")
     assert(options.enable_ap_cpus, "Linux profile requires QBOX_RDASPEN_ENABLE_AP_CPUS=true")
     assert(not ctx.config.runtime_injection.enabled,
@@ -65,16 +66,26 @@ return function(ctx)
     for i=0,options.AP_NUM_CPUS-1 do
         local cpu = platform["ap_cpu_"..i]
         cpu.start_in_reset = false
-        cpu.rvbar = 0x80000000
+        cpu.rvbar = boot_stub_address
         cpu.psci_conduit = "smc"
         cpu.linux_smc_stub_address = 0x0f000000
         cpu.ras_uncontainable_interrupt = nil
     end
 
-    -- One WIC disk for either product or BSP. BSP still uses initramfs as root.
-    for i=1,3 do platform["ap_virtioblk_"..i] = nil end
-    if ctx.getenv_or("QBOX_RDASPEN_ROOTFS", "") == "" then
-        platform.ap_virtioblk_0 = nil
+    -- Keep DT-described slots readable; DeviceID zero means no virtio device.
+    local first_empty = ctx.getenv_or("QBOX_RDASPEN_ROOTFS", "") == "" and 0 or 1
+    for i=first_empty,3 do
+        local mem = platform["ap_virtioblk_"..i].mem
+        platform["ap_virtioblk_"..i] = {
+            moduletype = "gs_memory";
+            target_socket = {address = mem.address; size = mem.size;
+                             bind = mem.bind};
+            init_mem = true;
+            read_only = true;
+            dmi_allow = false;
+            load = {data = {0x74726976, 2, 0, 0}; offset = 0};
+            log_level = 0;
+        }
     end
 
     -- AP and RoS use one local decode in the firmware-free profile. No ATU setup
@@ -103,7 +114,7 @@ return function(ctx)
     platform.linux_loader = {
         moduletype = "loader";
         initiator_socket = {bind = "&ap_router.target_socket"};
-        {bin_file = required("QBOX_LINUX_BOOT_STUB"); address = 0x80000000};
+        {bin_file = required("QBOX_LINUX_BOOT_STUB"); address = boot_stub_address};
         {bin_file = required("QBOX_LINUX_KERNEL"); address = firmware and 0x80080000 or 0x80200000};
         {bin_file = required("QBOX_LINUX_DTB"); address = 0x88000000};
     }

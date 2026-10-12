@@ -309,8 +309,13 @@ are not replaced; select another `--session` name when necessary.
 `apollo-qvp-common.lua` shares AP/RoS and board construction with the full
 system. The Linux entrypoint replaces firmware reset/domain connections
 after construction; the hardware block Lua files remain authoritative.
-The direct-boot payload enters Linux at non-secure EL2, with four CPUs by
-default (`--cpus 1..16`). See `linux-boot/README.md` for the boot ABI.
+The root shell script delegates to `scripts/run/run_qbox_linux.py`, which
+copies the DTB and calls `linux-boot/prepare.py` to build the SRAM payload.
+The payload starts at `0x000f0000`, updates initramfs bounds in the in-memory
+DTB with libfdt, and enters Linux at non-secure EL2. The launcher defaults to
+four CPUs (`--cpus 1..16`) and records the final command line in
+`launch.json.bootargs`. The payload helper does not configure CPUs or disks.
+See `linux-boot/README.md` for the toolchain requirements and boot ABI.
 
 RSE, SI CL0 and CL1 firmware do not execute in this profile. SystemC MHU
 responders supply mock SCMI and RSE responses; unknown SMC services go through

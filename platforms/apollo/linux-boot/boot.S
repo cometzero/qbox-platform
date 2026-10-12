@@ -45,6 +45,15 @@ _start:
     msr cntfrq_el0, x4
     ldr x4, =0x30c50830
     msr sctlr_el2, x4
+    /* AP SRAM stack; libfdt updates only the in-memory handoff DTB. */
+    ldr x4, =0x00100000
+    mov sp, x4
+    ldr x0, =0x88000000
+    ldr x1, =DTB_CAPACITY
+    ldr x2, =INITRD_START
+    ldr x3, =INITRD_SIZE
+    bl boot_fixup_fdt
+    cbnz w0, fdt_failed
     /* Linux arm64 boot protocol: MMU off, x0 DTB, x1..x3 zero, EL2h. */
     ldr x0, =0x88000000
     mov x1, xzr
@@ -57,4 +66,21 @@ _start:
     dsb sy
     isb
     eret
+fdt_failed:
+    adr x6, fdt_error
+    ldr x7, =0x1a400000
+3:
+    ldrb w5, [x6], #1
+    cbz w5, 5f
+4:
+    ldr w4, [x7, #0x18]
+    tbnz w4, #5, 4b
+    str w5, [x7]
+    b 3b
+5:
+    wfe
+    b 5b
+fdt_error:
+    .asciz "LINUX_BOOT_FDT_FAILED\n"
+.balign 8
 .ltorg
