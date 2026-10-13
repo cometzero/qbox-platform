@@ -1,7 +1,39 @@
+local RSE_CC3XX_SECURE_BASE = 0x50154000
+local RSE_DOUBLE_REGISTER_WINDOW_SIZE = 0x00002000
+local RSE_OTP_WRAPPER_SECURE_BASE = 0x58111000
+local RSE_UART_WINDOW_SIZE = 0x00010000
+local RSE_CPU0_SECCTRL_SECURE_BASE = 0x50011000
+local RSE_REGISTER_WINDOW_SIZE = 0x00001000
+local RSE_NSACFG_NON_SECURE_BASE = 0x40080000
+local RSE_SACFG_SECURE_BASE = 0x50080000
+local RSE_KMU_BUILD_CONFIG = 0x003D0005
+local RSE_KMU_HW_SLOT_CONFIG = 0x00D60100
+local RSE_KMU_HW_SLOT_EXPORT_BASE = 0x50154400
+local RSE_KMU_SECURE_BASE = 0x5009E000
+local RSE_LCM_SECURE_BASE = 0x500A0000
+local RSE_LCM_SIZE = 0x00011000
+local RSE_SAM_BUILD_CONFIG = 0x00000700
+local RSE_SAM_SECURE_BASE = 0x5009F000
+local RSE_MPC_BLOCK_CONFIG = 0x00000007
+local RSE_MPC_VM0_SECURE_BASE = 0x50083000
+local RSE_MPC_VM1_SECURE_BASE = 0x50084000
+local RSE_SIC_SECURE_BASE = 0x50140000
+local RSE_MPC_SIC_SECURE_BASE = 0x50151000
+local RSE_INTEGRITY_CHECKER_BUILD_CONFIG = 0x00000109
+local RSE_INTEGRITY_CHECKER_SECURE_BASE = 0x5015C000
+local RSE_TIMER0_SECURE_BASE = 0x58000000
+local RSE_TIMER1_SECURE_BASE = 0x58001000
+local RSE_TIMER2_SECURE_BASE = 0x58002000
+local RSE_TIMER3_SECURE_BASE = 0x58003000
+local RSE_TIMER0_NON_SECURE_BASE = 0x48000000
+local RSE_TIMER1_NON_SECURE_BASE = 0x48001000
+local RSE_TIMER2_NON_SECURE_BASE = 0x48002000
+local RSE_TIMER3_NON_SECURE_BASE = 0x48003000
+
 -- RSE protection and crypto register contracts for local or remote execution.
 local module = {}
 
-function module.create(ctx, hardware, runtime, _interrupts)
+function module.create(ctx, runtime)
     local cc3xx_backend = ctx.options.cc3xx_backend
     local cc3xx_stats_file = ctx.options.cc3xx_stats_file
     local cc3xx_stats_interval = ctx.options.cc3xx_stats_interval
@@ -23,9 +55,6 @@ function module.create(ctx, hardware, runtime, _interrupts)
     local rse_otp = ctx.options.rse_otp
     local sam_trace = ctx.options.sam_trace
     local sam_trace_limit = ctx.options.sam_trace_limit
-    local RSE_ADDRESS = hardware.RSE_ADDRESS
-    local RSE_SIZE = hardware.RSE_SIZE
-    local RSE_HW = hardware.RSE_HW
     local RSE_RUNTIME_ADDRESS = runtime.addresses
     local function rse_cc3xx_component(target_bind, initiator_bind)
         local component = {
@@ -40,8 +69,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
             stats_file = cc3xx_stats_file;
             stats_interval = cc3xx_stats_interval;
             target_socket = {
-                address = RSE_ADDRESS.cc3xx_secure;
-                size = RSE_SIZE.double_register_window;
+                address = RSE_CC3XX_SECURE_BASE;
+                size = RSE_DOUBLE_REGISTER_WINDOW_SIZE;
                 bind = target_bind;
             };
             initiator_socket = {bind = initiator_bind};
@@ -50,7 +79,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
 
         if cc3xx_backend == "qemu-native" then
             component.args = {"&qemu_inst"}
-            component.size = RSE_SIZE.double_register_window
+            component.size = RSE_DOUBLE_REGISTER_WINDOW_SIZE
         end
 
         return component
@@ -65,8 +94,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
         platform.rse_otp_wrapper = {
             moduletype = "gs_memory";
             target_socket = {
-                address = RSE_ADDRESS.otp_wrapper_secure;
-                size = RSE_SIZE.uart_window;
+                address = RSE_OTP_WRAPPER_SECURE_BASE;
+                size = RSE_UART_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -78,8 +107,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
         platform.rse_cpu0_secctrl_regs = {
             moduletype = "gs_memory";
             target_socket = {
-                address = RSE_ADDRESS.cpu0_secctrl_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_CPU0_SECCTRL_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             init_mem = true;
@@ -91,8 +120,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
         platform.rse_nsacfg_regs = {
             moduletype = "rse_protection_ctrl";
             target_socket = {
-                address = RSE_ADDRESS.nsacfg_non_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_NSACFG_NON_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -103,8 +132,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
         platform.rse_sacfg_regs = {
             moduletype = "rse_protection_ctrl";
             target_socket = {
-                address = RSE_ADDRESS.sacfg_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_SACFG_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -120,12 +149,12 @@ function module.create(ctx, hardware, runtime, _interrupts)
                 trace_limit = kmu_trace_limit;
                 trace_filter = kmu_trace_filter;
                 otp_image = rse_otp;
-                build_config = RSE_HW.kmu_build_config;
-                hw_slot_config = RSE_HW.kmu_hw_slot_config;
-                hw_slot_export_address = RSE_ADDRESS.kmu_hw_slot_export;
+                build_config = RSE_KMU_BUILD_CONFIG;
+                hw_slot_config = RSE_KMU_HW_SLOT_CONFIG;
+                hw_slot_export_address = RSE_KMU_HW_SLOT_EXPORT_BASE;
                 target_socket = {
-                    address = RSE_ADDRESS.kmu_secure;
-                    size = RSE_SIZE.register_window;
+                    address = RSE_KMU_SECURE_BASE;
+                    size = RSE_REGISTER_WINDOW_SIZE;
                     bind = "&rse_router.initiator_socket";
                 };
                 initiator_socket = {bind = "&rse_router.target_socket"};
@@ -144,13 +173,13 @@ function module.create(ctx, hardware, runtime, _interrupts)
             lcs = rse_lcm_lcs;
             tp_mode = rse_lcm_tp_mode;
             sp_enable = rse_lcm_sp_enable;
-            otp_size = RSE_SIZE.uart_window;
+            otp_size = RSE_UART_WINDOW_SIZE;
             otp_writeback = getenv_or("QBOX_RDASPEN_RSE_OTP_WRITEBACK", "false") == "true";
             otp_lock_after_provision =
                 getenv_or("QBOX_RDASPEN_RSE_OTP_LOCK_AFTER_PROVISION", "true") == "true";
             target_socket = {
-                address = RSE_ADDRESS.lcm_secure;
-                size = RSE_SIZE.lcm;
+                address = RSE_LCM_SECURE_BASE;
+                size = RSE_LCM_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -163,10 +192,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "rse_sam";
             trace = sam_trace;
             trace_limit = sam_trace_limit;
-            build_config = RSE_HW.sam_build_config;
+            build_config = RSE_SAM_BUILD_CONFIG;
             target_socket = {
-                address = RSE_ADDRESS.sam_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_SAM_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -178,10 +207,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "rse_protection_ctrl";
             profile = 1;
             blk_max = 1;
-            blk_cfg = RSE_HW.mpc_block_config;
+            blk_cfg = RSE_MPC_BLOCK_CONFIG;
             target_socket = {
-                address = RSE_ADDRESS.mpc_vm0_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_MPC_VM0_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -194,10 +223,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "rse_protection_ctrl";
             profile = 1;
             blk_max = 1;
-            blk_cfg = RSE_HW.mpc_block_config;
+            blk_cfg = RSE_MPC_BLOCK_CONFIG;
             target_socket = {
-                address = RSE_ADDRESS.mpc_vm1_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_MPC_VM1_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -208,8 +237,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
         platform.rse_sic_regs = {
             moduletype = "rse_protection_ctrl";
             target_socket = {
-                address = RSE_ADDRESS.sic_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_SIC_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -222,10 +251,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "rse_protection_ctrl";
             profile = 1;
             blk_max = 127;
-            blk_cfg = RSE_HW.mpc_block_config;
+            blk_cfg = RSE_MPC_BLOCK_CONFIG;
             target_socket = {
-                address = RSE_ADDRESS.mpc_sic_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_MPC_SIC_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -245,10 +274,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "rse_integrity_checker";
             trace = integrity_checker_trace;
             trace_limit = integrity_checker_trace_limit;
-            build_config = RSE_HW.integrity_checker_build_config;
+            build_config = RSE_INTEGRITY_CHECKER_BUILD_CONFIG;
             target_socket = {
-                address = RSE_ADDRESS.integrity_checker_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_INTEGRITY_CHECKER_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             log_level = 0;
@@ -266,12 +295,12 @@ function module.create(ctx, hardware, runtime, _interrupts)
                 trace_limit = kmu_trace_limit;
                 trace_filter = kmu_trace_filter;
                 otp_image = rse_otp;
-                build_config = RSE_HW.kmu_build_config;
-                hw_slot_config = RSE_HW.kmu_hw_slot_config;
-                hw_slot_export_address = RSE_ADDRESS.kmu_hw_slot_export;
+                build_config = RSE_KMU_BUILD_CONFIG;
+                hw_slot_config = RSE_KMU_HW_SLOT_CONFIG;
+                hw_slot_export_address = RSE_KMU_HW_SLOT_EXPORT_BASE;
                 target_socket = {
-                    address = RSE_ADDRESS.kmu_secure;
-                    size = RSE_SIZE.register_window;
+                    address = RSE_KMU_SECURE_BASE;
+                    size = RSE_REGISTER_WINDOW_SIZE;
                     bind = "&cpu_0.router.initiator_socket";
                 };
                 initiator_socket = {bind = "&remote_crypto_router.target_socket"};
@@ -285,6 +314,50 @@ function module.create(ctx, hardware, runtime, _interrupts)
         platform.rse_cc3xx = rse_local_crypto and
             rse_cc3xx_component("&remote_crypto_router.initiator_socket",
                                 "&remote_main_router.target_socket") or nil
+    end
+
+    function block.define_timer_protection(ctx, platform)
+        local rse_timer_policy_masks = {1, 2, 4, 32}
+        local rse_timer_secure_bases = {
+            RSE_TIMER0_SECURE_BASE;
+            RSE_TIMER1_SECURE_BASE;
+            RSE_TIMER2_SECURE_BASE;
+            RSE_TIMER3_SECURE_BASE;
+        }
+        local rse_timer_non_secure_bases = {
+            RSE_TIMER0_NON_SECURE_BASE;
+            RSE_TIMER1_NON_SECURE_BASE;
+            RSE_TIMER2_NON_SECURE_BASE;
+            RSE_TIMER3_NON_SECURE_BASE;
+        }
+        for timer = 0,3 do
+            assert(
+                platform["rse_timer_" .. timer .. "_ppc"] == nil,
+                "duplicate object: platform." .. ("rse_timer_" .. timer .. "_ppc"))
+            platform["rse_timer_" .. timer .. "_ppc"] = {
+                moduletype = "rse_ppc_filter";
+                args = {
+                    "&platform.rse_sacfg_regs";
+                    "&platform.rse_nsacfg_regs";
+                };
+                policy_mask = rse_timer_policy_masks[timer + 1];
+                target_socket = {
+                    address = rse_timer_secure_bases[timer + 1];
+                    size = RSE_REGISTER_WINDOW_SIZE;
+                    bind = "&rse_router.initiator_socket";
+                    aliases = {
+                        ns = {
+                            address = rse_timer_non_secure_bases[timer + 1];
+                            size = RSE_REGISTER_WINDOW_SIZE;
+                        };
+                    };
+                };
+                initiator_socket = {
+                    bind = "&rse_cpu_pass.target_socket_" .. (timer + 2);
+                };
+                log_level = 0;
+            }
+        end
     end
 
     return block

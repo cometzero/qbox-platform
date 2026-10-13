@@ -1,13 +1,25 @@
+local RSE_ITCM_SECURE_BASE = 0x10000000
+local RSE_ITCM_SIZE = 0x00008000
+local RSE_ITCM_NON_SECURE_BASE = 0x00000000
+local RSE_ITCM_CPU0_SECURE_BASE = 0x1A000000
+local RSE_ITCM_CPU0_NON_SECURE_BASE = 0x0A000000
+local RSE_DTCM_SECURE_BASE = 0x30000000
+local RSE_DTCM_SIZE = 0x00008000
+local RSE_DTCM_NON_SECURE_BASE = 0x20000000
+local RSE_DTCM_CPU0_SECURE_BASE = 0x34000000
+local RSE_DTCM_CPU0_NON_SECURE_BASE = 0x24000000
+local RSE_VM0_SECURE_BASE = 0x31000000
+local RSE_TRAM_SECURE_BASE = 0x5015D000
+local RSE_REGISTER_WINDOW_SIZE = 0x00001000
+
 local module = {}
 
-function module.create(ctx, hardware, _runtime, _interrupts)
+function module.create(ctx)
     local rse_dtcm_dmi = ctx.options.rse_dtcm_dmi
     local rse_itcm_dmi = ctx.options.rse_itcm_dmi
     local rse_split_cpu0_dtcm_alias = ctx.options.rse_split_cpu0_dtcm_alias
     local rse_split_cpu0_itcm_alias = ctx.options.rse_split_cpu0_itcm_alias
     local rse_vm_dmi = ctx.options.rse_vm_dmi
-    local RSE_ADDRESS = hardware.RSE_ADDRESS
-    local RSE_SIZE = hardware.RSE_SIZE
     local function rse_tcm_aliases(
         split_cpu0_alias, ns_address, cpu0_s_address, cpu0_ns_address, size)
         local aliases = {
@@ -22,25 +34,13 @@ function module.create(ctx, hardware, _runtime, _interrupts)
         return aliases
     end
 
+    local rse_vmaddrwidth = ctx.options.rse_vmaddrwidth
+    local RSE_VM_SIZE = 2 ^ rse_vmaddrwidth
+    local RSE_VM1_SECURE_BASE = RSE_VM0_SECURE_BASE + RSE_VM_SIZE
+
     local block = {}
 
     function block.define(ctx, platform)
-        assert(
-            platform.rse_rom == nil,
-            "duplicate object: platform.rse_rom")
-        platform.rse_rom = {
-            moduletype = "gs_memory";
-            read_only = true;
-            shared_memory = true;
-            shared_memory_prefix = "rse_rom_";
-            target_socket = {
-                address = RSE_ADDRESS.rom_secure;
-                size = RSE_SIZE.rom;
-                bind = "&rse_router.initiator_socket";
-            };
-            log_level = 0;
-        }
-
         assert(
             platform.rse_itcm == nil,
             "duplicate object: platform.rse_itcm")
@@ -50,15 +50,15 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             shared_memory_prefix = "rse_itcm_";
             dmi_allow = rse_itcm_dmi;
             target_socket = {
-                address = RSE_ADDRESS.itcm_secure;
-                size = RSE_SIZE.itcm;
+                address = RSE_ITCM_SECURE_BASE;
+                size = RSE_ITCM_SIZE;
                 bind = "&rse_router.initiator_socket";
                 aliases = rse_tcm_aliases(
                     rse_split_cpu0_itcm_alias,
-                    RSE_ADDRESS.itcm_non_secure,
-                    RSE_ADDRESS.itcm_cpu0_secure,
-                    RSE_ADDRESS.itcm_cpu0_non_secure,
-                    RSE_SIZE.itcm);
+                    RSE_ITCM_NON_SECURE_BASE,
+                    RSE_ITCM_CPU0_SECURE_BASE,
+                    RSE_ITCM_CPU0_NON_SECURE_BASE,
+                    RSE_ITCM_SIZE);
             };
             init_mem = true;
             log_level = 0;
@@ -74,13 +74,13 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                 shared_memory_prefix = "rse_itcm_cpu0_";
                 dmi_allow = rse_itcm_dmi;
                 target_socket = {
-                    address = RSE_ADDRESS.itcm_cpu0_secure;
-                    size = RSE_SIZE.itcm;
+                    address = RSE_ITCM_CPU0_SECURE_BASE;
+                    size = RSE_ITCM_SIZE;
                     bind = "&rse_router.initiator_socket";
                     aliases = {
                         cpu0_ns = {
-                            address = RSE_ADDRESS.itcm_cpu0_non_secure;
-                            size = RSE_SIZE.itcm;
+                            address = RSE_ITCM_CPU0_NON_SECURE_BASE;
+                            size = RSE_ITCM_SIZE;
                         };
                     };
                 };
@@ -98,15 +98,15 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             shared_memory_prefix = "rse_dtcm_";
             dmi_allow = rse_dtcm_dmi;
             target_socket = {
-                address = RSE_ADDRESS.dtcm_secure;
-                size = RSE_SIZE.dtcm;
+                address = RSE_DTCM_SECURE_BASE;
+                size = RSE_DTCM_SIZE;
                 bind = "&rse_router.initiator_socket";
                 aliases = rse_tcm_aliases(
                     rse_split_cpu0_dtcm_alias,
-                    RSE_ADDRESS.dtcm_non_secure,
-                    RSE_ADDRESS.dtcm_cpu0_secure,
-                    RSE_ADDRESS.dtcm_cpu0_non_secure,
-                    RSE_SIZE.dtcm);
+                    RSE_DTCM_NON_SECURE_BASE,
+                    RSE_DTCM_CPU0_SECURE_BASE,
+                    RSE_DTCM_CPU0_NON_SECURE_BASE,
+                    RSE_DTCM_SIZE);
             };
             init_mem = true;
             log_level = 0;
@@ -122,13 +122,13 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                 shared_memory_prefix = "rse_dtcm_cpu0_";
                 dmi_allow = rse_dtcm_dmi;
                 target_socket = {
-                    address = RSE_ADDRESS.dtcm_cpu0_secure;
-                    size = RSE_SIZE.dtcm;
+                    address = RSE_DTCM_CPU0_SECURE_BASE;
+                    size = RSE_DTCM_SIZE;
                     bind = "&rse_router.initiator_socket";
                     aliases = {
                         cpu0_ns = {
-                            address = RSE_ADDRESS.dtcm_cpu0_non_secure;
-                            size = RSE_SIZE.dtcm;
+                            address = RSE_DTCM_CPU0_NON_SECURE_BASE;
+                            size = RSE_DTCM_SIZE;
                         };
                     };
                 };
@@ -146,8 +146,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             shared_memory_prefix = "rse_vm0_";
             dmi_allow = rse_vm_dmi;
             target_socket = {
-                address = RSE_ADDRESS.vm0_secure;
-                size = RSE_SIZE.vm;
+                address = RSE_VM0_SECURE_BASE;
+                size = RSE_VM_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             init_mem = true;
@@ -163,8 +163,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             shared_memory_prefix = "rse_vm1_";
             dmi_allow = rse_vm_dmi;
             target_socket = {
-                address = RSE_ADDRESS.vm1_secure;
-                size = RSE_SIZE.vm;
+                address = RSE_VM1_SECURE_BASE;
+                size = RSE_VM_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             init_mem = true;
@@ -176,8 +176,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
         platform.rse_tram = {
             moduletype = "gs_memory";
             target_socket = {
-                address = RSE_ADDRESS.tram_secure;
-                size = RSE_SIZE.register_window;
+                address = RSE_TRAM_SECURE_BASE;
+                size = RSE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             init_mem = true;

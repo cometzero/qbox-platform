@@ -1,6 +1,6 @@
 local module = {}
 
-function module.create(ctx, _hardware, _runtime, _interrupts)
+function module.create(ctx)
     local rse_log = ctx.options.rse_log
     local rse_uart_read_file = ctx.options.rse_uart_read_file
     local uart_poll_interval_ms = ctx.options.uart_poll_interval_ms

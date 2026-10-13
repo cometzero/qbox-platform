@@ -1,6 +1,6 @@
 local module = {}
 
-function module.create(ctx, _hardware, _runtime, _interrupts)
+function module.create(ctx)
     local qemu_args = ctx.options.qemu_args
     local RSE_QEMU = {
         accel_env = "QBOX_RDASPEN_RSE_ACCEL";

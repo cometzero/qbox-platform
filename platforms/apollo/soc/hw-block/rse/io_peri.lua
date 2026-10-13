@@ -1,24 +1,34 @@
+local RSE_HOST_UART0_IRQ = 0
+local RSE_GPIO0_SECURE_BASE = 0x50100000
+local RSE_GPIO1_SECURE_BASE = 0x50101000
+local RSE_GPIO0_NON_SECURE_BASE = 0x40100000
+local RSE_GPIO1_NON_SECURE_BASE = 0x40101000
+local RSE_REGISTER_WINDOW_SIZE = 0x00001000
+local RSE_GPIO_COMBINED_IRQ = 34
+local RSE_DMA350_SECURE_BASE = 0x50002000
+local RSE_DOUBLE_REGISTER_WINDOW_SIZE = 0x00002000
+local RSE_HOST_UART0_SECURE_BASE = 0x70000000 + 0x0FF00000
+local RSE_UART_WINDOW_SIZE = 0x00010000
+local RSE_HOST_UART0_NON_SECURE_BASE = 0x60000000 + 0x0FF00000
+
 local module = {}
 
-function module.create(ctx, hardware, runtime, _interrupts)
+function module.create(ctx, runtime)
     local dma350_trace = ctx.options.dma350_trace
     local dma350_trace_filter = ctx.options.dma350_trace_filter
     local dma350_trace_limit = ctx.options.dma350_trace_limit
-    local RSE_ADDRESS = hardware.RSE_ADDRESS
-    local RSE_SIZE = hardware.RSE_SIZE
-    local RSE_IRQ = hardware.RSE_IRQ
     local RSE_RUNTIME_ADDRESS = runtime.addresses
 
     local block = {}
 
     function block.define(ctx, platform)
         local rse_gpio_secure_bases = {
-            RSE_ADDRESS.gpio0_secure;
-            RSE_ADDRESS.gpio1_secure;
+            RSE_GPIO0_SECURE_BASE;
+            RSE_GPIO1_SECURE_BASE;
         }
         local rse_gpio_non_secure_bases = {
-            RSE_ADDRESS.gpio0_non_secure;
-            RSE_ADDRESS.gpio1_non_secure;
+            RSE_GPIO0_NON_SECURE_BASE;
+            RSE_GPIO1_NON_SECURE_BASE;
         }
         for gpio = 0,1 do
             local gpio_name = "rse_gpio_" .. gpio
@@ -54,12 +64,12 @@ function module.create(ctx, hardware, runtime, _interrupts)
                 ppc_register_offset = 0x10;
                 target_socket = {
                     address = rse_gpio_secure_bases[gpio + 1];
-                    size = RSE_SIZE.register_window;
+                    size = RSE_REGISTER_WINDOW_SIZE;
                     bind = "&rse_router.initiator_socket";
                     aliases = {
                         ns = {
                             address = rse_gpio_non_secure_bases[gpio + 1];
-                            size = RSE_SIZE.register_window;
+                            size = RSE_REGISTER_WINDOW_SIZE;
                         };
                     };
                 };
@@ -76,7 +86,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
             num_inputs = 2;
             signal_out = {
                 bind = "&rse_cpu_pass.target_signal_socket_" ..
-                    RSE_IRQ.gpio_combined;
+                    RSE_GPIO_COMBINED_IRQ;
             };
         }
         assert(
@@ -89,8 +99,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
             trace_filter = dma350_trace_filter;
             trace_address_min = RSE_RUNTIME_ADDRESS.dma350_trace_min;
             target_socket = {
-                address = RSE_ADDRESS.dma350_secure;
-                size = RSE_SIZE.double_register_window;
+                address = RSE_DMA350_SECURE_BASE;
+                size = RSE_DOUBLE_REGISTER_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
             };
             initiator_socket = {bind = "&rse_router.target_socket"};
@@ -103,17 +113,17 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "Pl011";
             dylib_path = "uart-pl011";
             target_socket = {
-                address = RSE_ADDRESS.host_uart0_secure;
-                size = RSE_SIZE.uart_window;
+                address = RSE_HOST_UART0_SECURE_BASE;
+                size = RSE_UART_WINDOW_SIZE;
                 bind = "&rse_router.initiator_socket";
                 aliases = {
                     ns_atu_logical = {
-                        address = RSE_ADDRESS.host_uart0_non_secure;
-                        size = RSE_SIZE.uart_window;
+                        address = RSE_HOST_UART0_NON_SECURE_BASE;
+                        size = RSE_UART_WINDOW_SIZE;
                     };
                 };
             };
-            irq = {bind = "&rse_cpu_pass.target_signal_socket_0"};
+            irq = {bind = "&rse_cpu_pass.target_signal_socket_" .. RSE_HOST_UART0_IRQ};
             backend_socket = {bind = "&rse_uart_file.biflow_socket"};
         }
     end
