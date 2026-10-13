@@ -123,5 +123,6 @@ return function(ctx)
     end
     dofile(ctx.apollo_dir.."vp/mocks/domains.lua").define(ctx, platform)
     print("Apollo QVP Linux-only profile: SystemC domain mocks enabled")
+    dofile(ctx.apollo_dir.."vp/diagnostics.lua").configure(ctx, platform)
     return platform
 end

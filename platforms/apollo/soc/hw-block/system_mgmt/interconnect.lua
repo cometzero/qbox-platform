@@ -11,10 +11,8 @@ local interconnect = {}
 
 function interconnect.define_si(ctx, platform)
     local options = ctx.options
-    local atu_trace_address_min = tonumber(options.getenv_or(
-        "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MIN", "0"))
-    local atu_trace_address_max = tonumber(options.getenv_or(
-        "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MAX", "0"))
+    local atu_trace_address_min = options.atu_trace_address_min
+    local atu_trace_address_max = options.atu_trace_address_max
     assert(platform.host_si_atu == nil, "duplicate Apollo object: host_si_atu")
     platform.host_si_atu = {
         moduletype = "rse_atu";
@@ -35,10 +33,8 @@ end
 
 function interconnect.define_ap(ctx, platform)
     local options = ctx.options
-    local atu_trace_address_min = tonumber(options.getenv_or(
-        "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MIN", "0"))
-    local atu_trace_address_max = tonumber(options.getenv_or(
-        "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MAX", "0"))
+    local atu_trace_address_min = options.atu_trace_address_min
+    local atu_trace_address_max = options.atu_trace_address_max
     assert(platform.host_ap_atu == nil, "duplicate Apollo object: host_ap_atu")
     platform.host_ap_atu = {
         moduletype = "rse_atu";
@@ -68,10 +64,8 @@ end
 
 function interconnect.define_smd(ctx, platform)
     local options = ctx.options
-    local atu_trace_address_min = tonumber(options.getenv_or(
-        "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MIN", "0"))
-    local atu_trace_address_max = tonumber(options.getenv_or(
-        "QBOX_RDASPEN_ATU_TRACE_ADDRESS_MAX", "0"))
+    local atu_trace_address_min = options.atu_trace_address_min
+    local atu_trace_address_max = options.atu_trace_address_max
     assert(platform.host_smdexp2smd_atu == nil, "duplicate Apollo object: host_smdexp2smd_atu")
     platform.host_smdexp2smd_atu = {
         moduletype = "rse_atu";

@@ -46,4 +46,12 @@ function testing.define_endpoints(ctx, platform, policy)
     end
 end
 
+function testing.connect_faults(ctx, platform, policy)
+    if policy.fault_event_test_enabled then
+        local port = ctx.options.smmu_backend == "systemc-mmu720ae" and
+            "irq_eventq" or "irq_out_0"
+        platform.ap_smmu_0[port] = {bind = "&ap_smmu_event_fanout.signal_in"}
+    end
+end
+
 return testing

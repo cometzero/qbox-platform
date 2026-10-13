@@ -45,7 +45,6 @@ function ap_si_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_NS_SCMI_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -67,7 +66,6 @@ function ap_si_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_NS_SCMI_MHU_MBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -96,7 +94,6 @@ function ap_si_mailbox.define(ctx, platform)
         system_power_reset_pulse_width_ns = SYSTEM_POWER_RESET_PULSE_WIDTH_NS;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_SCMI_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -104,7 +101,7 @@ function ap_si_mailbox.define(ctx, platform)
         };
         initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_SCMI_MHU_PBX_SPI};
-        system_reset = {bind = options.ap_system_reset_bind_targets()};
+        system_reset = {bind = options.ap_system_reset_targets};
         log_level = 0;
     } or nil
 
@@ -119,7 +116,6 @@ function ap_si_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_SCMI_MHU_MBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -139,7 +135,6 @@ function ap_si_mailbox.define(ctx, platform)
         channel_count = AP_SI_CL1_MHU_CHANNEL_COUNT;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_CL1_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -159,7 +154,6 @@ function ap_si_mailbox.define(ctx, platform)
         channel_count = AP_SI_CL1_MHU_CHANNEL_COUNT;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_CL1_MHU_MBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -184,7 +178,6 @@ function ap_si_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_PFDI_MONITOR_MHU_PBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -209,7 +202,6 @@ function ap_si_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_SI_PFDI_MONITOR_MHU_MBX_PHYS_BASE;
             size = HOST_AP_SI_MHU_FRAME_SIZE;

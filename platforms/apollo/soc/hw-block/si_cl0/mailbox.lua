@@ -39,7 +39,6 @@ local module = {}
 
 function module.create(ctx, _runtime)
     local mhu_trace = ctx.options.mhu_trace
-    local mhu_trace_file = ctx.options.mhu_trace_file
     local mhu_trace_limit = ctx.options.mhu_trace_limit
 
 
@@ -59,7 +58,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_AP_NS_MHU_PBX_BASE;
                 size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -83,7 +81,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_AP_NS_MHU_MBX_BASE;
                 size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -107,7 +104,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_AP_SCMI_MHU_PBX_BASE;
                 size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -131,7 +127,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_AP_SCMI_MHU_MBX_BASE;
                 size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -155,7 +150,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_AP_PFDI_MHU_PBX_BASE;
                 size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -179,7 +173,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_AP_PFDI_MHU_MBX_BASE;
                 size = HOST_AP_SI_MHU_FRAME_SIZE;
@@ -203,7 +196,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_RSE_MHU_PBX_BASE;
                 size = RSE_MHU_FRAME_SIZE;
@@ -226,7 +218,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_RSE_MHU_MBX_BASE;
                 size = RSE_MHU_FRAME_SIZE;
@@ -255,7 +246,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_PFDI_MHU_PBX_BASE;
                 size = SI_CL0_PFDI_MHU_SIZE;
@@ -283,7 +273,6 @@ function module.create(ctx, _runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = SI_CL0_PFDI_MHU_MBX_BASE;
                 size = SI_CL0_PFDI_MHU_SIZE;

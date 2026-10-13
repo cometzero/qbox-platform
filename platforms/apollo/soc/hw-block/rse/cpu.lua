@@ -47,7 +47,7 @@ function module.create(ctx)
             "duplicate object: platform.cpu_0")
         platform.cpu_0 = {
             moduletype = "ApolloRseCPU";
-            args = {"&qemu_inst"};
+            args = {ctx.instances.rse_local};
             router = {
                 broadcast_invalidation = true;
             };
@@ -67,13 +67,6 @@ function module.create(ctx)
                     num_irq = RSE_NVIC_NUM_IRQ;
                 };
             };
-        }
-        assert(
-            platform.rse_nvic_cold_reset == nil,
-            "duplicate object: platform.rse_nvic_cold_reset")
-        platform.rse_nvic_cold_reset = {
-            moduletype = "qemu_device_cold_reset";
-            args = {"&cpu_0.cpu.nvic"};
         }
     end
 
@@ -116,6 +109,40 @@ function module.create(ctx)
             };
             init_mem = true;
             log_level = 0;
+        }
+    end
+
+    function block.define_instance(ctx, platform)
+        assert(
+            platform.qemu_inst_mgr == nil,
+            "duplicate object: platform.qemu_inst_mgr")
+        platform.qemu_inst_mgr = {
+            moduletype = "QemuInstanceManager";
+        }
+
+        assert(
+            platform.qemu_inst == nil,
+            "duplicate object: platform.qemu_inst")
+        platform.qemu_inst = {
+            moduletype = "QemuInstance";
+            args = {"&platform.qemu_inst_mgr", "AARCH64"};
+        }
+    end
+
+    function block.define_local_instance(ctx, platform)
+        assert(
+            platform.qemu_inst_mgr == nil,
+            "duplicate object: platform.qemu_inst_mgr")
+        platform.qemu_inst_mgr = {
+            moduletype = "QemuInstanceManager";
+        }
+
+        assert(
+            platform.qemu_inst == nil,
+            "duplicate object: platform.qemu_inst")
+        platform.qemu_inst = {
+            moduletype = "QemuInstance";
+            args = {"&qemu_inst_mgr", "AARCH64"};
         }
     end
 

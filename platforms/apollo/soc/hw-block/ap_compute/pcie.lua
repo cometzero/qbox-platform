@@ -16,18 +16,18 @@ local AP_GPEX_SPIS = {300; 301; 302; 303}
 
 local pcie = {}
 
-function pcie.define(ctx, platform, policy)
+function pcie.define(ctx, platform)
     local options = ctx.options
 
     assert(platform.ap_gpex_0 == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
         platform.ap_gpex_0 = {
             moduletype = "qemu_gpex";
-            args = {"&platform.ap_qemu_inst"};
+            args = {ctx.instances.ap};
             request_origin_id = ctx.request_context.origin.ap_gpex;
             request_domain_id = ctx.request_context.domain.ap;
             requester_id = AP_GPEX_REQUESTER_ID;
-            pci_requester_id = not policy.pcie_irq_test_enabled;
+            pci_requester_id = true;
             bus_master = {bind = "&system_router.target_socket"};
             pio_iface = {
                 address = AP_GPEX_PIO_BASE;
@@ -61,7 +61,7 @@ function pcie.define(ctx, platform, policy)
     if options.enable_ap_cpus then
         platform.ap_pcie_epc = {
             moduletype = "qemu_pcie_epc";
-            args = {"&platform.ap_qemu_inst"};
+            args = {ctx.instances.ap};
             request_origin_id = ctx.request_context.origin.ap_pcie_epc;
             request_domain_id = ctx.request_context.domain.ap;
             regs = {
@@ -79,13 +79,12 @@ function pcie.define(ctx, platform, policy)
     end
 
     -- Only x2 port-group 2 supports x1+x1 bifurcation; group 3 stays x2.
-    if options.enable_ap_cpus and not policy.pcie_irq_test_enabled then
-        local bifurcation = ctx.getenv_or("QBOX_APOLLO_PCIE_BIFURCATION", "none")
+    if options.enable_ap_cpus then
+        local bifurcation = options.pcie_bifurcation
         assert(bifurcation == "none" or bifurcation == "port2",
                "QBOX_APOLLO_PCIE_BIFURCATION must be none or port2")
         local split2 = bifurcation == "port2"
         local widths = {4, 4, split2 and 1 or 2, 2}
-        if policy.pcie_ep_loopback then widths[2] = nil end
         if split2 then widths[5] = 1 end
         for slot = 1, 5 do
             local width = widths[slot]
@@ -94,7 +93,7 @@ function pcie.define(ctx, platform, policy)
                 assert(platform[port_name] == nil, "duplicate Apollo object")
                 platform[port_name] = {
                     moduletype = "qemu_pcie_root_port";
-                    args = {"&platform.ap_qemu_inst", "&platform.ap_gpex_0"};
+                    args = {ctx.instances.ap, "&platform.ap_gpex_0"};
                     addr = string.format("%02x.0", slot);
                     chassis = slot;
                     slot = slot;

@@ -20,7 +20,6 @@ function module.create(ctx, _runtime)
             trace = host_ppu_trace;
             trace_limit = host_ppu_trace_limit;
             assert_power_on_load = true;
-            power_on_load = {bind = "&si_cl1_loader.reset"};
             power_on_load_pulse_width_ns = 0;
             target_socket = {
                 address = HOST_SI_CL1_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;

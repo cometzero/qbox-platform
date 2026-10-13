@@ -7,7 +7,7 @@ local ap_rse_mailbox = {}
 
 function ap_rse_mailbox.define(ctx, platform)
     local options = ctx.options
-    local ap_rse_ps_proxy = options.getenv_bool_or("QBOX_RDASPEN_RSE_PS_PROXY", false)
+    local ap_rse_ps_proxy = options.rse_ps_proxy
     local ap_rse_mhu_protocol = ap_rse_ps_proxy and "rse-ps-proxy" or "doorbell-bridge"
     local ap_rse_mhu_pbx_pair = ap_rse_ps_proxy and "ap_rse_ps_proxy" or "ap_s_to_rse"
     local ap_rse_mhu_mbx_pair = ap_rse_ps_proxy and "ap_rse_ps_proxy" or "rse_to_ap_s"
@@ -23,7 +23,6 @@ function ap_rse_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_RSE_MHU_PHYS_BASE;
             size = MHU_V3_FRAME_SIZE;
@@ -45,7 +44,6 @@ function ap_rse_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_AP_RSE_MHU_PHYS_BASE + MHU_V3_FRAME_SIZE;
             size = MHU_V3_FRAME_SIZE;

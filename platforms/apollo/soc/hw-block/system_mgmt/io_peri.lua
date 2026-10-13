@@ -7,12 +7,11 @@ local io_peri = {}
 
 function io_peri.define(ctx, platform)
     local options = ctx.options
-    local smd_gpio_init_inputs = ctx.getenv_number_or(
-        "QBOX_APOLLO_SMD_GPIO_INIT_INPUTS", "0")
+    local smd_gpio_init_inputs = options.smd_gpio_init_inputs
     assert(platform.host_smd_gpio == nil, "duplicate Apollo object: host_smd_gpio")
     platform.host_smd_gpio = {
         moduletype = "qemu_pl061";
-        args = {"&platform.qemu_inst"};
+        args = {ctx.instances.rse};
         init_inputs = smd_gpio_init_inputs;
         pullups = 0;
         pulldowns = 0;
@@ -26,11 +25,7 @@ function io_peri.define(ctx, platform)
         } or nil;
     }
 
-    assert(platform.host_smd_gpio_cold_reset == nil, "duplicate Apollo object: host_smd_gpio_cold_reset")
-    platform.host_smd_gpio_cold_reset = {
-        moduletype = "qemu_device_cold_reset";
-        args = {"&platform.host_smd_gpio"};
-    }
+
 end
 
 return io_peri

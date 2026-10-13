@@ -65,26 +65,6 @@ local system = {}
 function system.define_reset(ctx, platform)
     local options = ctx.options
 
-    assert(platform.ap_cold_reset_fanout == nil, "duplicate Apollo object")
-    if options.enable_ap_cpus then
-        platform.ap_cold_reset_fanout = {
-            moduletype = "reset_fanout";
-            trace = options.getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
-            reset_out = {bind = options.ap_cold_reset_bind_targets()};
-            log_level = 0;
-        }
-    end
-
-    assert(platform.apollo_system_reset_fanout == nil, "duplicate Apollo object")
-    if options.enable_ap_cpus then
-        platform.apollo_system_reset_fanout = {
-            moduletype = "reset_fanout";
-            trace = options.getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
-            reset_out = {bind = options.apollo_system_reset_bind_targets()};
-            log_level = 0;
-        }
-    end
-
     assert(platform.ap_ns_watchdog_ws1_fanout == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
         platform.ap_ns_watchdog_ws1_fanout = {
@@ -141,7 +121,7 @@ function system.define_watchdog(ctx, platform)
     if options.enable_ap_cpus then
         platform.ap_watchdog_0 = {
             moduletype = "zena_watchdog";
-            trace = options.getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
+            trace = options.reset_trace;
             clock_frequency = AP_ARCH_TIMER_FREQUENCY_HZ;
             control = {
                 address = AP_NS_WDOG_CONTROL_BASE;
@@ -166,7 +146,7 @@ function system.define_timers(ctx, platform)
     if options.enable_ap_cpus then
         platform.ap_timer_mem = {
             moduletype = "qemu_arm_arch_timer_mmio";
-            args = {"&platform.ap_qemu_inst"};
+            args = {ctx.instances.ap};
             cntfrq = AP_ARCH_TIMER_FREQUENCY_HZ;
             nr_frames = AP_ARCH_TIMER_FRAME_COUNT;
             view_size = AP_SYS_TIMER_SIZE;
@@ -201,7 +181,7 @@ function system.define_timers(ctx, platform)
     if options.enable_ap_cpus then
         platform.ap_secure_wdog = {
             moduletype = "zena_watchdog";
-            trace = options.getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false);
+            trace = options.reset_trace;
             clock_frequency = AP_ARCH_TIMER_FREQUENCY_HZ;
             control = {
                 address = AP_SECURE_WDOG_CONTROL_BASE;
@@ -224,19 +204,21 @@ end
 
 function system.define_interrupts(ctx, platform)
     local options = ctx.options
+    local redist_regions = {}
+    for i = 1, options.AP_GIC_NUM_CPUS do redist_regions[i] = 1 end
 
     assert(platform.ap_gic == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
         platform.ap_gic = {
             moduletype = "arm_gicv3";
-            args = {"&platform.ap_qemu_inst"};
+            args = {ctx.instances.ap};
             dist_iface = {
                 address = AP_GIC_DIST_BASE;
                 size = AP_REGISTER_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             num_cpus = options.AP_GIC_NUM_CPUS;
-            redist_region = options.repeat_value(1, options.AP_GIC_NUM_CPUS);
+            redist_region = redist_regions;
             has_security_extensions = true;
             has_lpi = true;
             revision = AP_GIC_REVISION;
@@ -269,10 +251,8 @@ function system.define_interrupts(ctx, platform)
         backend_redist_stride = AP_GIC_REDIST_SIZE;
         backend_redist_count = options.AP_GIC_NUM_CPUS;
         backend_socket = {bind = "&ap_router.target_socket"};
-        trace = ctx.getenv_bool_or(
-            "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE", false);
-        trace_limit = ctx.getenv_number_or(
-            "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE_LIMIT", "256");
+        trace = options.ap_gic_multiview_trace;
+        trace_limit = options.ap_gic_multiview_trace_limit;
         view0_dist = {
             address = AP_GIC_VIEW0_DIST_BASE;
             size = AP_GIC_VIEW0_DIST_SIZE;
@@ -308,7 +288,7 @@ function system.define_interrupts(ctx, platform)
     if options.enable_ap_cpus then
         platform.ap_gic_its = {
             moduletype = "arm_gicv3_its";
-            args = {"&platform.ap_qemu_inst", "&platform.ap_gic"};
+            args = {ctx.instances.ap, "&platform.ap_gic"};
             has_gicv4_1 = true;
             gicv4_1_svpet = AP_GIC_ITS_SVPET;
             gicv4_1_cte_size = AP_GIC_ITS_CTE_SIZE;
@@ -342,9 +322,6 @@ end
 local function ap_smmu_component(ctx)
     local options = ctx.options
     local event_irq_target = "&ap_gic.spi_in_" .. AP_SMMU_EVENT_SPI
-    if options.getenv_bool_or("QBOX_APOLLO_FAULT_EVENT_TEST", false) then
-        event_irq_target = "&ap_smmu_event_fanout.signal_in"
-    end
 
     if options.smmu_backend == "systemc-mmu720ae" then
         return {
@@ -366,7 +343,7 @@ local function ap_smmu_component(ctx)
 
     return {
         moduletype = "arm_smmuv3";
-        args = {"&platform.ap_qemu_inst", "&platform.ap_gpex_0"};
+        args = {ctx.instances.ap, "&platform.ap_gpex_0"};
         mem = {
             address = AP_SMMU_BASE;
             size = AP_SMMU_SIZE;
@@ -377,7 +354,7 @@ local function ap_smmu_component(ctx)
     }
 end
 
-function system.define_iommu(ctx, platform, policy)
+function system.define_iommu(ctx, platform)
     local options = ctx.options
     if not options.enable_ap_cpus then
         return
@@ -391,11 +368,52 @@ function system.define_iommu(ctx, platform, policy)
             moduletype = "smmuv3_tbu";
             args = {"&platform.ap_smmu_0"};
             topology_id = 0x40;
-            requester_id_from_context = not policy.pcie_irq_test_enabled;
+            requester_id_from_context = true;
             upstream_socket = {};
             downstream_socket = {bind = "&system_router.target_socket"};
         }
     end
 end
+
+
+function system.define_cpu_reset(ctx, platform)
+    local options = ctx.options
+    assert(platform.ap_reset_gpio == nil, "duplicate Apollo object")
+    if options.enable_ap_cpus then
+        platform.ap_reset_gpio = {
+            moduletype = "reset_gpio";
+            args = {"&platform.ap_qemu_inst"};
+            reset_out = {bind = options.ap_cpu_reset_bind_targets(options.AP_NUM_CPUS)};
+            log_level = 0;
+        }
+    end
+
+end
+
+function system.define_system_reset(ctx, platform)
+    local options = ctx.options
+    assert(platform.ap_cold_reset_fanout == nil, "duplicate Apollo object")
+    if options.enable_ap_cpus then
+        platform.ap_cold_reset_fanout = {
+            moduletype = "reset_fanout";
+            trace = options.reset_trace;
+            reset_out = {bind = options.ap_cold_reset_bind_targets()};
+            log_level = 0;
+        }
+    end
+
+    assert(platform.apollo_system_reset_fanout == nil, "duplicate Apollo object")
+    if options.enable_ap_cpus then
+        platform.apollo_system_reset_fanout = {
+            moduletype = "reset_fanout";
+            trace = options.reset_trace;
+            reset_out = {bind = options.apollo_system_reset_bind_targets()};
+            log_level = 0;
+        }
+    end
+
+end
+
+
 
 return system

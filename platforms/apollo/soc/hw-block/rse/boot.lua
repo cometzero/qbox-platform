@@ -12,11 +12,6 @@ function module.create(ctx)
     local boot_flash_dmi_ranges = ctx.options.boot_flash_dmi_ranges
     local boot_flash_trace = ctx.options.boot_flash_trace
     local boot_flash_trace_limit = ctx.options.boot_flash_trace_limit
-    local flash_defer_backing_flush_interval = ctx.options.flash_defer_backing_flush_interval
-    local flash_stats_interval = ctx.options.flash_stats_interval
-    local flash_writeback = ctx.options.flash_writeback
-    local rse_boot_flash_stats_file = ctx.options.rse_boot_flash_stats_file
-    local rse_flash = ctx.options.rse_flash
     local rse_flash_backend = ctx.options.rse_flash_backend
     local rse_local_boot_flash = ctx.options.rse_local_boot_flash
 
@@ -37,33 +32,17 @@ function module.create(ctx)
                 program_ff_erases_sector = true;
                 size = RSE_BOOT_FLASH_SIZE;
                 sector_size = RSE_FLASH_SECTOR_SIZE;
-                backing_file = flash_writeback and rse_flash or "";
-                defer_backing_write = true;
-                defer_backing_flush_interval = flash_defer_backing_flush_interval;
-                stats_file = rse_boot_flash_stats_file;
-                stats_interval = flash_stats_interval;
                 target_socket = {
                     address = RSE_BOOT_FLASH_SECURE_BASE;
                     size = RSE_BOOT_FLASH_SIZE;
                     bind = "&rse_router.initiator_socket";
                 };
-                load = {bin_file = rse_flash, offset = 0};
                 log_level = 0;
             }
         end
     end
 
     function block.define_local(ctx, platform)
-        assert(
-            platform.rse_pflash_cold_reset == nil,
-            "duplicate object: platform.rse_pflash_cold_reset")
-        if rse_local_boot_flash and rse_flash_backend == "qemu-cfi-local" then
-            platform.rse_pflash_cold_reset = {
-                moduletype = "qemu_device_cold_reset";
-                args = {"&rse_boot_flash_qemu"};
-            }
-        end
-
         assert(
             platform.rse_boot_flash == nil,
             "duplicate object: platform.rse_boot_flash")
@@ -78,17 +57,11 @@ function module.create(ctx)
                 program_ff_erases_sector = true;
                 size = RSE_BOOT_FLASH_SIZE;
                 sector_size = RSE_FLASH_SECTOR_SIZE;
-                backing_file = flash_writeback and rse_flash or "";
-                defer_backing_write = true;
-                defer_backing_flush_interval = flash_defer_backing_flush_interval;
-                stats_file = rse_boot_flash_stats_file;
-                stats_interval = flash_stats_interval;
                 target_socket = {
                     address = RSE_BOOT_FLASH_SECURE_BASE;
                     size = RSE_BOOT_FLASH_SIZE;
                     bind = "&cpu_0.router.initiator_socket";
                 };
-                load = {bin_file = rse_flash, offset = 0};
                 log_level = 0;
             }
         end
@@ -97,12 +70,14 @@ function module.create(ctx)
             platform.rse_boot_flash_qemu == nil,
             "duplicate object: platform.rse_boot_flash_qemu")
         if rse_local_boot_flash and rse_flash_backend == "qemu-cfi-local" then
+            assert(platform.rse_pflash_cold_reset == nil, "duplicate RSE flash reset")
+            platform.rse_pflash_cold_reset = {
+                moduletype = "qemu_device_cold_reset";
+                args = {"&rse_boot_flash_qemu"};
+            }
             platform.rse_boot_flash_qemu = {
                 moduletype = "pflash_cfi";
-                args = {"&qemu_inst", 1};
-                blkdev_str = "file=" .. rse_flash ..
-                    ",format=raw,if=none,cache=writeback" ..
-                    (flash_writeback and "" or ",snapshot=on");
+                args = {ctx.instances.rse_local, 1};
                 num_blocks = RSE_BOOT_FLASH_SIZE / RSE_FLASH_SECTOR_SIZE;
                 sector_length = RSE_FLASH_SECTOR_SIZE;
                 width = 1;
@@ -116,9 +91,6 @@ function module.create(ctx)
                 local_cpu = "platform.rse_cpu_pass.cpu_0.cpu";
                 program_ff_erases_sector = true;
                 io_mode_only = true;
-                defer_backing_write = true;
-                defer_backing_flush_interval = 65536;
-                defer_backing_flush_delay_ms = 25;
                 target_socket = {
                     address = RSE_BOOT_FLASH_SECURE_BASE;
                     size = RSE_BOOT_FLASH_SIZE;

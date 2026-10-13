@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: BSD-3-Clause
--- Ordered hardware reset fanout. Keep acknowledgement sources before AP release.
+-- Hardware reset fanout. Keep acknowledgement sources before AP release.
 return function(options)
     local AP_CORES_PER_CLUSTER = 4
     function options.ap_cpu_reset_bind_targets(count)
@@ -23,7 +23,6 @@ return function(options)
             "&dma350_1.reset";
             "&pinctrl_peri0.reset";
             "&pinctrl_peri1.reset";
-            "&ap_bl2_reset_loader.reset";
             "&host_ap_bl2_header_sram.reset";
             "&ap_reset_gpio.reset_in";
             "&host_ap_si_ns_scmi_mhu_pbx.reset";
@@ -44,7 +43,6 @@ return function(options)
 
         for i=0,5 do
             targets[#targets + 1] = "&ap_dw_i2c_"..i..".reset"
-            targets[#targets + 1] = "&ap_dw_i2c_"..i.."_eeprom.reset"
         end
         for i=0,3 do
             targets[#targets + 1] = "&ap_dw_ssi_"..i..".reset"
@@ -54,9 +52,6 @@ return function(options)
             targets[#targets + 1] = "&ap_dw_i2s_"..i..".reset"
         end
 
-        if options.getenv_bool_or("QBOX_APOLLO_RUNTIME_INJECTION", false) then
-            targets[#targets + 1] = "&ap_i2c5_irq_fault.reset"
-        end
 
         return table.concat(targets, ";")
     end
@@ -109,12 +104,6 @@ return function(options)
         targets[#targets + 1] = "&si_cl0_ni710ae_secondary_nci.reset"
         targets[#targets + 1] = "&si_cl0_ni710ae_mhu_nci.reset"
         targets[#targets + 1] = "&si_cl0_qemu_inst.reset"
-        targets[#targets + 1] = "&si_cl0_dw_i2c_0.reset"
-        targets[#targets + 1] = "&si_cl0_pmic_gpio_cold_reset.reset"
-        targets[#targets + 1] = "&si_cl0_pmic_gpio.reset"
-        targets[#targets + 1] = "&si_cl0_vmcu_uart.reset"
-        targets[#targets + 1] = "&si_cl0_vmcu_gpio_cold_reset.reset"
-        targets[#targets + 1] = "&si_cl0_vmcu_gpio.reset"
         for _, frame in ipairs({
             "si_cl0_ap_ns_mhu_pbx";
             "si_cl0_ap_ns_mhu_mbx";
@@ -144,10 +133,11 @@ return function(options)
         end
         targets[#targets + 1] = "&si_cl0_pfdi_mhu_pbx.reset"
         targets[#targets + 1] = "&si_cl0_pfdi_mhu_mbx.reset"
+        targets[#targets + 1] = "&si_cl0_uart.reset"
+        targets[#targets + 1] = "&si_cl1_uart.reset"
+        targets[#targets + 1] = "&si_gic_multiview.reset"
+        targets[#targets + 1] = "&ap_rgic2lgic_messreg.reset"
 
-        if options.getenv_bool_or("QBOX_APOLLO_RUNTIME_INJECTION", false) then
-            targets[#targets + 1] = "&apollo_runtime_injection.reset"
-        end
 
 
         return table.concat(targets, ";")

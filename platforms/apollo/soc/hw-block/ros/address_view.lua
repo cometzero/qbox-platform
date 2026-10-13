@@ -1,5 +1,4 @@
 local address_view = {}
-local ROS_BLOCK_DEVICE_COUNT = 4
 
 local function visit_dwc_targets(platform, visitor)
     for i = 0, 5 do
@@ -35,19 +34,6 @@ function address_view.bind_ap_view_targets(platform, bind_ap_target)
         bind_ap_target(platform.dma350_0.target_socket)
         platform.dma350_0.initiator_socket = {bind = "&ap_router.target_socket"}
     end
-    for i = 0, (ROS_BLOCK_DEVICE_COUNT-1) do
-        local virtio = platform["ap_virtioblk_" .. i]
-        if virtio ~= nil and virtio.mem ~= nil then
-            bind_ap_target(virtio.mem)
-        end
-    end
-
-    if platform.ap_virtionet_0 ~= nil and platform.ap_virtionet_0.mem ~= nil then
-        bind_ap_target(platform.ap_virtionet_0.mem)
-    end
-    if platform.ap_virtiorng_0 ~= nil and platform.ap_virtiorng_0.mem ~= nil then
-        bind_ap_target(platform.ap_virtiorng_0.mem)
-    end
     if platform.ap_rtc_0 ~= nil and platform.ap_rtc_0.mem ~= nil then
         bind_ap_target(platform.ap_rtc_0.mem)
     end
@@ -66,19 +52,6 @@ function address_view.lower_decode_priorities(platform, lower_decode_priority, p
     end
     if platform.dma350_0 then
         lower_decode_priority(platform.dma350_0.target_socket, priority)
-    end
-    for i = 0, (ROS_BLOCK_DEVICE_COUNT-1) do
-        local virtio = platform["ap_virtioblk_" .. i]
-        if virtio ~= nil and virtio.mem ~= nil then
-            lower_decode_priority(virtio.mem, priority)
-        end
-    end
-
-    if platform.ap_virtionet_0 ~= nil and platform.ap_virtionet_0.mem ~= nil then
-        lower_decode_priority(platform.ap_virtionet_0.mem, priority)
-    end
-    if platform.ap_virtiorng_0 ~= nil and platform.ap_virtiorng_0.mem ~= nil then
-        lower_decode_priority(platform.ap_virtiorng_0.mem, priority)
     end
     if platform.ap_rtc_0 ~= nil and platform.ap_rtc_0.mem ~= nil then
         lower_decode_priority(platform.ap_rtc_0.mem, priority)

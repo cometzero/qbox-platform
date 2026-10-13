@@ -24,7 +24,6 @@ function module.create(ctx, _runtime)
                 bind = "&si_cl0_router.initiator_socket";
             };
             irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_UART_SPI};
-            backend_socket = {bind = "&si_cl0_console_file.biflow_socket"};
         }
     end
 

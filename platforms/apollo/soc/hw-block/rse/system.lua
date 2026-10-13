@@ -33,7 +33,6 @@ function module.create(ctx, runtime)
     local RSE_RUNTIME_ADDRESS = runtime.addresses
 
     local mhu_trace = ctx.options.mhu_trace
-    local mhu_trace_file = ctx.options.mhu_trace_file
     local mhu_trace_limit = ctx.options.mhu_trace_limit
 
     local rse_flash_backend = ctx.options.rse_flash_backend
@@ -122,7 +121,7 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_lsc_clock")
         platform.rse_lsc_clock = {
             moduletype = "qemu_clock_source";
-            args = {"&qemu_inst"};
+            args = {ctx.instances.rse_local};
             frequency_hz = rse_lsc_input_hz;
         }
 
@@ -147,7 +146,7 @@ function module.create(ctx, runtime)
             moduletype = "qemu_sse_counter_mirror";
             dylib_path = "qemu_sse_counter";
             args = {
-                "&qemu_inst";
+                ctx.instances.rse_local;
                 "&rse_lsc_clock";
                 rse_smd_counter_mirror and
                     "&platform.css_system_counter" or
@@ -160,7 +159,7 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_timer_0")
         platform.rse_timer_0 = {
             moduletype = "qemu_sse_timer";
-            args = {"&qemu_inst", "&rse_lsc_counter"};
+            args = {ctx.instances.rse_local, "&rse_lsc_counter"};
             irq = {bind = "&cpu_0.cpu.nvic.irq_in_" .. RSE_TIMER0_IRQ};
         }
 
@@ -169,7 +168,7 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_timer_1")
         platform.rse_timer_1 = {
             moduletype = "qemu_sse_timer";
-            args = {"&qemu_inst", "&rse_lsc_counter"};
+            args = {ctx.instances.rse_local, "&rse_lsc_counter"};
             irq = {bind = "&cpu_0.cpu.nvic.irq_in_" .. RSE_TIMER1_IRQ};
         }
 
@@ -178,7 +177,7 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_timer_2")
         platform.rse_timer_2 = {
             moduletype = "qemu_sse_timer";
-            args = {"&qemu_inst", "&rse_lsc_counter"};
+            args = {ctx.instances.rse_local, "&rse_lsc_counter"};
             irq = {bind = "&cpu_0.cpu.nvic.irq_in_" .. RSE_TIMER2_IRQ};
         }
 
@@ -187,7 +186,7 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_timer_3")
         platform.rse_timer_3 = {
             moduletype = "qemu_sse_timer";
-            args = {"&qemu_inst", "&rse_lsc_counter"};
+            args = {ctx.instances.rse_local, "&rse_lsc_counter"};
             irq = {bind = "&cpu_0.cpu.nvic.irq_in_" .. RSE_TIMER3_IRQ};
         }
 
@@ -205,7 +204,6 @@ function module.create(ctx, runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = RSE_MHU0_SENDER_SECURE_BASE;
                 size = RSE_LOCAL_MHU_FRAME_SIZE;
@@ -226,7 +224,6 @@ function module.create(ctx, runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = RSE_MHU0_RECEIVER_SECURE_BASE;
                 size = RSE_LOCAL_MHU_FRAME_SIZE;
@@ -249,7 +246,6 @@ function module.create(ctx, runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = RSE_MHU2_SENDER_SECURE_BASE;
                 size = RSE_LOCAL_MHU_FRAME_SIZE;
@@ -271,7 +267,6 @@ function module.create(ctx, runtime)
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
-            trace_file = mhu_trace_file;
             target_socket = {
                 address = RSE_MHU2_RECEIVER_SECURE_BASE;
                 size = RSE_LOCAL_MHU_FRAME_SIZE;
@@ -284,7 +279,15 @@ function module.create(ctx, runtime)
         }
     end
 
-    function block.define_reset(ctx, platform)
+    block.define_reset = module.define_reset
+    return block
+end
+
+
+    function module.define_reset(ctx, platform)
+        local rse_local_boot_flash = ctx.options.rse_local_boot_flash
+        local rse_flash_backend = ctx.options.rse_flash_backend
+        local rse_smd_counter_mirror = ctx.options.rse_smd_counter_mirror
         local rse_sys_rss_reset_targets = {
             "&rse_cpu_pass.cpu_0.cpu.reset";
             "&rse_cpu_pass.rse_nvic_cold_reset.reset";
@@ -327,7 +330,6 @@ function module.create(ctx, runtime)
         }
     end
 
-    return block
-end
+
 
 return module

@@ -30,7 +30,7 @@ function io_peri.define(ctx, platform, hw)
     if options.enable_ap_cpus then
         platform.ap_rtc_0 = {
             moduletype = "pl031";
-            args = {"&platform.ap_qemu_inst"};
+            args = {ctx.instances.ap};
             mem = {
                 address = ROS_RTC_BASE;
                 size = ROS_MMIO_SIZE;

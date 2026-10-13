@@ -21,7 +21,6 @@ local module = {}
 function module.create(ctx, runtime)
 
     local mhu_trace = runtime.mhu_trace
-    local mhu_trace_file = runtime.mhu_trace_file
     local mhu_trace_limit = runtime.mhu_trace_limit
 
     local block = {}
@@ -37,7 +36,6 @@ function module.create(ctx, runtime)
             protocol = "doorbell-bridge";
             channel_count = SI_CL1_MHU_CHANNELS;
             trace = mhu_trace;
-            trace_file = mhu_trace_file;
             trace_limit = mhu_trace_limit;
             target_socket = {
                 address = SI_CL1_HIPC_PBX_BASE;
@@ -59,7 +57,6 @@ function module.create(ctx, runtime)
             protocol = "doorbell-bridge";
             channel_count = SI_CL1_MHU_CHANNELS;
             trace = mhu_trace;
-            trace_file = mhu_trace_file;
             trace_limit = mhu_trace_limit;
             target_socket = {
                 address = SI_CL1_HIPC_MBX_BASE;
@@ -89,7 +86,6 @@ function module.create(ctx, runtime)
             init_shmem = true;
             requester_hold_enable = true;
             trace = mhu_trace;
-            trace_file = mhu_trace_file;
             trace_limit = mhu_trace_limit;
             target_socket = {
                 address = SI_CL1_PFDI_PBX_BASE;
@@ -124,7 +120,6 @@ function module.create(ctx, runtime)
             scmi_channel_count = SI_CL1_PFDI_CORE_COUNT;
             init_shmem = false;
             trace = mhu_trace;
-            trace_file = mhu_trace_file;
             trace_limit = mhu_trace_limit;
             target_socket = {
                 address = SI_CL1_PFDI_MBX_BASE;

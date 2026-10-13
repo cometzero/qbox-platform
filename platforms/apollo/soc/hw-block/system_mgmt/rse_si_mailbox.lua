@@ -20,7 +20,6 @@ function rse_si_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_RSE_SI_MHU_PHYS_BASE;
             size = RSE_MHU_FRAME_SIZE;
@@ -41,7 +40,6 @@ function rse_si_mailbox.define(ctx, platform)
         init_shmem = false;
         trace = options.mhu_trace;
         trace_limit = options.mhu_trace_limit;
-        trace_file = options.mhu_trace_file;
         target_socket = {
             address = HOST_RSE_SI_MHU_PHYS_BASE + RSE_MHU_FRAME_SIZE;
             size = RSE_MHU_FRAME_SIZE;

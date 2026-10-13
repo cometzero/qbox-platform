@@ -35,7 +35,6 @@ local module = {}
 
 function module.create(ctx, _runtime)
     local AP_NUM_CPUS = ctx.options.AP_NUM_CPUS
-    local ap_cpu_index = ctx.options.ap_cpu_index
     local enable_ap_cpus = ctx.options.enable_ap_cpus
     local host_ppu_trace = ctx.options.host_ppu_trace
     local host_ppu_trace_limit = ctx.options.host_ppu_trace_limit
@@ -68,14 +67,11 @@ function module.create(ctx, _runtime)
             trace_limit = host_ppu_trace_limit;
             assert_power_on_reset = true;
             assert_power_on_load = true;
-            power_on_load = {bind = "&si_cl0_loader.reset"};
             power_on_reset = {bind = "&si_cl0_cpu_0.reset"};
             power_on_load_pulse_width_ns = 0;
             power_on_load_to_reset_delay_ns = 0;
-            power_on_status_delay_ns = ctx.getenv_number_or(
-                "QBOX_APOLLO_FULL_SI_CL0_PPU_ON_DELAY_NS", "0");
-            access_latency_ns = ctx.getenv_number_or(
-                "QBOX_APOLLO_FULL_SI_CL0_PPU_ACCESS_LATENCY_NS", "100");
+            power_on_status_delay_ns = ctx.options.si_cl0_ppu_on_delay_ns;
+            access_latency_ns = ctx.options.si_cl0_ppu_access_latency_ns;
             target_socket = {
                 address = HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CORE0_PPU_OFFSET;
                 size = HOST_SI_CONTROL_WINDOW_SIZE;
@@ -210,7 +206,7 @@ function module.create(ctx, _runtime)
             }
 
             for core = 0,(SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
-                local cpu_index = ap_cpu_index(cluster, core)
+                local cpu_index = cluster * SI_CL0_AP_CORE_PER_CLUSTER_COUNT + core
                 local cpu_active = enable_ap_cpus and cpu_index < AP_NUM_CPUS
                 assert(
                     platform["si_cl0_ap_cluster" .. cluster .. "_core" .. core .. "_ppu"] == nil,

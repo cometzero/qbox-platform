@@ -24,7 +24,7 @@ function cpu.define(ctx, platform)
             }
             local cpu = {
                 moduletype = "cpu_arm_cortexA720AE";
-                args = {"&platform.ap_qemu_inst"};
+                args = {ctx.instances.ap};
                 mem = {bind = "&system_router.target_socket"};
                 has_el3 = true;
                 has_el2 = true;
@@ -51,17 +51,12 @@ function cpu.define(ctx, platform)
                     bind = "&si_cl0_ap_ras_cluster" .. math.floor(i / 4) ..
                         ".cpu_fault_" .. (i % 4);
                 };
-                psci_conduit = options.getenv_or("QBOX_RDASPEN_AP_PSCI_CONDUIT", "disabled");
-                mp_affinity = options.mp_affinity(i);
+                psci_conduit = options.ap_psci_conduit;
+                mp_affinity = math.floor(i / 4) * 0x10000 + (i % 4) * 0x100;
                 start_powered_off = i ~= 0;
                 start_in_reset = true;
                 reset_power_on = true;
                 cntfrq_hz = AP_ARCH_TIMER_FREQUENCY_HZ;
-                trace_pc = options.ap_pc_trace;
-                trace_pc_file = options.ap_pc_trace_file;
-                trace_pc_interval = options.ap_pc_trace_interval;
-                trace_pc_limit = options.ap_pc_trace_limit;
-                trace_exception_state = options.ap_exception_trace;
                 construction_priority = -200 + i;
                 request_origin_id = ctx.request_context.origin.ap_cpu_base + i;
                 request_domain_id = ctx.request_context.domain.ap;
@@ -90,18 +85,41 @@ function cpu.define(ctx, platform)
     end
 end
 
-function cpu.define_reset(ctx, platform)
+function cpu.define_instance(ctx, platform, policy)
     local options = ctx.options
-    assert(platform.ap_reset_gpio == nil, "duplicate Apollo object")
+
+    assert(platform.ap_qemu_inst_mgr == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
-        platform.ap_reset_gpio = {
-            moduletype = "reset_gpio";
-            args = {"&platform.ap_qemu_inst"};
-            reset_out = {bind = options.ap_cpu_reset_bind_targets(options.AP_NUM_CPUS)};
-            log_level = 0;
+        platform.ap_qemu_inst_mgr = {
+            moduletype = "QemuInstanceManager";
+            construction_priority = -300;
         }
     end
 
+    assert(platform.ap_qemu_inst == nil, "duplicate Apollo object")
+    if options.enable_ap_cpus then
+        platform.ap_qemu_inst = {
+            moduletype = "QemuInstance";
+            args = {"&platform.ap_qemu_inst_mgr", "AARCH64"};
+            managed_start_in_reset_release = true;
+            construction_priority = -299;
+        }
+    end
+end
+
+function cpu.define_initiator(ctx, platform)
+    local options = ctx.options
+
+    assert(platform.ap_global_peripheral_initiator == nil, "duplicate Apollo object")
+    if options.enable_ap_cpus then
+        platform.ap_global_peripheral_initiator = {
+            moduletype = "global_peripheral_initiator";
+            args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
+            request_origin_id = ctx.request_context.origin.ap_global_peripheral;
+            request_domain_id = ctx.request_context.domain.ap;
+            global_initiator = {bind = "&system_router.target_socket"};
+        }
+    end
 end
 
 return cpu

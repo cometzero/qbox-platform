@@ -37,19 +37,11 @@ function module.create(ctx, runtime)
                 "duplicate object: platform." .. (gpio_name))
             platform[gpio_name] = {
                 moduletype = "qemu_pl061";
-                args = {"&platform.qemu_inst"};
-                init_inputs = ctx.getenv_number_or(
-                    "QBOX_APOLLO_RSE_GPIO" .. gpio .. "_INIT_INPUTS", "0");
+                args = {ctx.instances.rse};
+                init_inputs = ctx.options.rse_gpio_init_inputs[gpio];
                 pullups = 0;
                 pulldowns = 0;
                 irq = {bind = "&rse_gpio_irq_or.signal_in_" .. gpio};
-            }
-            assert(
-                platform[gpio_name .. "_cold_reset"] == nil,
-                "duplicate object: platform." .. (gpio_name .. "_cold_reset"))
-            platform[gpio_name .. "_cold_reset"] = {
-                moduletype = "qemu_device_cold_reset";
-                args = {"&platform." .. gpio_name};
             }
             assert(
                 platform[gpio_name .. "_ppc"] == nil,
@@ -124,7 +116,6 @@ function module.create(ctx, runtime)
                 };
             };
             irq = {bind = "&rse_cpu_pass.target_signal_socket_" .. RSE_HOST_UART0_IRQ};
-            backend_socket = {bind = "&rse_uart_file.biflow_socket"};
         }
     end
 

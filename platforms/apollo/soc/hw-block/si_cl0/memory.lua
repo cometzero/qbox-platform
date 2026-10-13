@@ -9,9 +9,7 @@ local HOST_SI_SRAM_WINDOW_SIZE = 0x01000000
 local module = {}
 
 function module.create(ctx, _runtime)
-    local host_si_cl0_sram_map_file = ctx.options.host_si_cl0_sram_map_file
     local host_si_sram_dmi = ctx.options.host_si_sram_dmi
-    local host_sram_shared_memory_enabled = ctx.options.host_sram_shared_memory_enabled
 
     local block = {}
 
@@ -27,10 +25,6 @@ function module.create(ctx, _runtime)
                 size = HOST_SI_SRAM_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
             };
-            map_file = host_si_cl0_sram_map_file;
-            shared_memory = host_sram_shared_memory_enabled(host_si_cl0_sram_map_file);
-            shared_memory_prefix = "ra-si0-";
-            init_mem = host_si_cl0_sram_map_file == "";
             log_level = 0;
         }
 

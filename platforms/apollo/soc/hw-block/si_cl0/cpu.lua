@@ -67,6 +67,24 @@ function module.create(ctx, runtime)
         platform.si_cl0_gic.vfiq_out_0 = {bind = "&si_cl0_cpu_0.vfiq_in"}
     end
 
+    function block.define_qemu_instance(ctx, platform)
+        assert(
+            platform.si_cl0_qemu_inst_mgr == nil,
+            "duplicate object: platform.si_cl0_qemu_inst_mgr")
+        platform.si_cl0_qemu_inst_mgr = {
+            moduletype = "QemuInstanceManager";
+        }
+        assert(
+            platform.si_cl0_qemu_inst == nil,
+            "duplicate object: platform.si_cl0_qemu_inst")
+        platform.si_cl0_qemu_inst = {
+            moduletype = "QemuInstance";
+            args = {"&platform.si_cl0_qemu_inst_mgr", "AARCH64"};
+            managed_start_in_reset_release = true;
+        }
+        return "&platform.si_cl0_qemu_inst"
+    end
+
     return block
 end
 

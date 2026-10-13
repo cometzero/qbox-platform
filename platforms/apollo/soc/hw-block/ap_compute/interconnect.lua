@@ -24,7 +24,7 @@ function interconnect.enable_ap_router(ctx, platform)
     print("Apollo QVP AP router enabled...")
 
     local hipc_shared_base, hipc_shared_size =
-        ctx.modules.si_cl1.hipc_shared_window()
+        ctx.hardware.si_cl1.interconnect.hipc_shared_window()
 
     -- AP logical view
     platform.ap_router = {
@@ -133,16 +133,6 @@ function interconnect.enable_ap_router(ctx, platform)
         platform.host_ap_atu.translation_socket.priority = 10
     end
 
-    if platform.ap_global_peripheral_initiator ~= nil then
-        platform.ap_global_peripheral_initiator.global_initiator = {
-            bind = "&ap_router.target_socket";
-        }
-    end
-    if platform.ap_bl2_reset_loader ~= nil then
-        platform.ap_bl2_reset_loader.initiator_socket = {
-            bind = "&ap_router.target_socket";
-        }
-    end
     if platform.ap_gpex_0 ~= nil then
         if options.smmu_backend == "systemc-mmu720ae" then
             platform.ap_gpex_0.bus_master = {
@@ -198,7 +188,7 @@ function interconnect.enable_ap_router(ctx, platform)
     end
 
     -- RoS and AP peripherals
-    ctx.ros.bind_ap_view_targets(platform, bind_ap_target)
+    ctx.hardware.ros.address_view.bind_ap_view_targets(platform, bind_ap_target)
     bind_ap_socket(platform.ap_watchdog_0, "control")
     bind_ap_socket(platform.ap_watchdog_0, "refresh")
     bind_ap_socket(platform.ap_secure_uart, "target_socket")
@@ -221,21 +211,6 @@ function interconnect.enable_ap_router(ctx, platform)
         if cpu ~= nil then
             cpu.mem = {bind = "&ap_router.target_socket"}
         end
-    end
-end
-
-function interconnect.define_initiator(ctx, platform)
-    local options = ctx.options
-
-    assert(platform.ap_global_peripheral_initiator == nil, "duplicate Apollo object")
-    if options.enable_ap_cpus then
-        platform.ap_global_peripheral_initiator = {
-            moduletype = "global_peripheral_initiator";
-            args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
-            request_origin_id = ctx.request_context.origin.ap_global_peripheral;
-            request_domain_id = ctx.request_context.domain.ap;
-            global_initiator = {bind = "&system_router.target_socket"};
-        }
     end
 end
 

@@ -1,6 +1,31 @@
 -- SPDX-License-Identifier: BSD-3-Clause
 -- Host models policy, evaluated once before hardware construction.
 return function(options, apollo_dir)
+    options.cc3xx_trace_skip = tonumber(options.getenv_or("QBOX_RDASPEN_CC3XX_TRACE_SKIP", "0"))
+    options.rse_otp_writeback = options.getenv_or("QBOX_RDASPEN_RSE_OTP_WRITEBACK", "false") == "true"
+    options.rse_otp_lock_after_provision =
+        options.getenv_or("QBOX_RDASPEN_RSE_OTP_LOCK_AFTER_PROVISION", "true") == "true"
+    options.rse_gpio_init_inputs = {}
+    for gpio = 0,1 do
+        options.rse_gpio_init_inputs[gpio] = options.getenv_number_or(
+            "QBOX_APOLLO_RSE_GPIO" .. gpio .. "_INIT_INPUTS", "0")
+    end
+    options.ap_psci_conduit = options.getenv_or("QBOX_RDASPEN_AP_PSCI_CONDUIT", "disabled")
+    options.pcie_bifurcation = options.getenv_or("QBOX_APOLLO_PCIE_BIFURCATION", "none")
+    options.reset_trace = options.getenv_bool_or("QBOX_APOLLO_RESET_TRACE", false)
+    options.ap_gic_multiview_trace = options.getenv_bool_or(
+        "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE", false)
+    options.ap_gic_multiview_trace_limit = options.getenv_number_or(
+        "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE_LIMIT", "256")
+    options.fault_event_test_enabled = options.getenv_bool_or("QBOX_APOLLO_FAULT_EVENT_TEST", false)
+    options.si_cl0_ppu_on_delay_ns = options.getenv_number_or(
+        "QBOX_APOLLO_FULL_SI_CL0_PPU_ON_DELAY_NS", "0")
+    options.si_cl0_ppu_access_latency_ns = options.getenv_number_or(
+        "QBOX_APOLLO_FULL_SI_CL0_PPU_ACCESS_LATENCY_NS", "100")
+    options.smd_gpio_init_inputs = options.getenv_number_or("QBOX_APOLLO_SMD_GPIO_INIT_INPUTS", "0")
+    options.rse_ps_proxy = options.getenv_bool_or("QBOX_RDASPEN_RSE_PS_PROXY", false)
+    options.atu_trace_address_min = tonumber(options.getenv_or("QBOX_RDASPEN_ATU_TRACE_ADDRESS_MIN", "0"))
+    options.atu_trace_address_max = tonumber(options.getenv_or("QBOX_RDASPEN_ATU_TRACE_ADDRESS_MAX", "0"))
     options.cc3xx_trace = options.getenv_or("QBOX_RDASPEN_CC3XX_TRACE", "false") == "true"
     options.cc3xx_trace_limit = tonumber(options.getenv_or("QBOX_RDASPEN_CC3XX_TRACE_LIMIT", "64"))
     options.cc3xx_trace_filter = options.getenv_or("QBOX_RDASPEN_CC3XX_TRACE_FILTER", "all")

@@ -158,4 +158,36 @@ virtio.map = {
     ROS_VIRTIO_RNG_INTID = ROS_VIRTIO_RNG_INTID;
 }
 
+function virtio.bind_ap_view_targets(platform, bind_ap_target)
+    for i = 0, (4-1) do
+        local virtio = platform["ap_virtioblk_" .. i]
+        if virtio ~= nil and virtio.mem ~= nil then
+            bind_ap_target(virtio.mem)
+        end
+    end
+
+    if platform.ap_virtionet_0 ~= nil and platform.ap_virtionet_0.mem ~= nil then
+        bind_ap_target(platform.ap_virtionet_0.mem)
+    end
+    if platform.ap_virtiorng_0 ~= nil and platform.ap_virtiorng_0.mem ~= nil then
+        bind_ap_target(platform.ap_virtiorng_0.mem)
+    end
+end
+
+function virtio.lower_decode_priorities(platform, lower_decode_priority, priority)
+    for i = 0, (4-1) do
+        local virtio = platform["ap_virtioblk_" .. i]
+        if virtio ~= nil and virtio.mem ~= nil then
+            lower_decode_priority(virtio.mem, priority)
+        end
+    end
+
+    if platform.ap_virtionet_0 ~= nil and platform.ap_virtionet_0.mem ~= nil then
+        lower_decode_priority(platform.ap_virtionet_0.mem, priority)
+    end
+    if platform.ap_virtiorng_0 ~= nil and platform.ap_virtiorng_0.mem ~= nil then
+        lower_decode_priority(platform.ap_virtiorng_0.mem, priority)
+    end
+end
+
 return virtio

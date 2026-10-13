@@ -35,12 +35,10 @@ local module = {}
 
 function module.create(ctx, runtime)
     local cc3xx_backend = ctx.options.cc3xx_backend
-    local cc3xx_stats_file = ctx.options.cc3xx_stats_file
     local cc3xx_stats_interval = ctx.options.cc3xx_stats_interval
     local cc3xx_trace = ctx.options.cc3xx_trace
     local cc3xx_trace_filter = ctx.options.cc3xx_trace_filter
     local cc3xx_trace_limit = ctx.options.cc3xx_trace_limit
-    local getenv_or = ctx.options.getenv_or
     local integrity_checker_trace = ctx.options.integrity_checker_trace
     local integrity_checker_trace_limit = ctx.options.integrity_checker_trace_limit
     local kmu_trace = ctx.options.kmu_trace
@@ -52,7 +50,6 @@ function module.create(ctx, runtime)
     local rse_lcm_sp_enable = ctx.options.rse_lcm_sp_enable
     local rse_lcm_tp_mode = ctx.options.rse_lcm_tp_mode
     local rse_local_crypto = ctx.options.rse_local_crypto
-    local rse_otp = ctx.options.rse_otp
     local sam_trace = ctx.options.sam_trace
     local sam_trace_limit = ctx.options.sam_trace_limit
     local RSE_RUNTIME_ADDRESS = runtime.addresses
@@ -62,11 +59,9 @@ function module.create(ctx, runtime)
                 "qemu_cc3xx" or "cc3xx";
             trace = cc3xx_trace;
             trace_limit = cc3xx_trace_limit;
-            trace_skip = tonumber(getenv_or(
-                "QBOX_RDASPEN_CC3XX_TRACE_SKIP", "0"));
+            trace_skip = ctx.options.cc3xx_trace_skip;
             trace_filter = cc3xx_trace_filter;
             trace_address_min = RSE_RUNTIME_ADDRESS.cc3xx_trace_min;
-            stats_file = cc3xx_stats_file;
             stats_interval = cc3xx_stats_interval;
             target_socket = {
                 address = RSE_CC3XX_SECURE_BASE;
@@ -78,7 +73,7 @@ function module.create(ctx, runtime)
         }
 
         if cc3xx_backend == "qemu-native" then
-            component.args = {"&qemu_inst"}
+            component.args = {ctx.instances.rse_local}
             component.size = RSE_DOUBLE_REGISTER_WINDOW_SIZE
         end
 
@@ -148,7 +143,6 @@ function module.create(ctx, runtime)
                 trace = kmu_trace;
                 trace_limit = kmu_trace_limit;
                 trace_filter = kmu_trace_filter;
-                otp_image = rse_otp;
                 build_config = RSE_KMU_BUILD_CONFIG;
                 hw_slot_config = RSE_KMU_HW_SLOT_CONFIG;
                 hw_slot_export_address = RSE_KMU_HW_SLOT_EXPORT_BASE;
@@ -169,14 +163,12 @@ function module.create(ctx, runtime)
             moduletype = "rse_lcm";
             trace = lcm_trace;
             trace_limit = lcm_trace_limit;
-            otp_image = rse_otp;
             lcs = rse_lcm_lcs;
             tp_mode = rse_lcm_tp_mode;
             sp_enable = rse_lcm_sp_enable;
             otp_size = RSE_UART_WINDOW_SIZE;
-            otp_writeback = getenv_or("QBOX_RDASPEN_RSE_OTP_WRITEBACK", "false") == "true";
             otp_lock_after_provision =
-                getenv_or("QBOX_RDASPEN_RSE_OTP_LOCK_AFTER_PROVISION", "true") == "true";
+                ctx.options.rse_otp_lock_after_provision;
             target_socket = {
                 address = RSE_LCM_SECURE_BASE;
                 size = RSE_LCM_SIZE;
@@ -294,7 +286,6 @@ function module.create(ctx, runtime)
                 trace = kmu_trace;
                 trace_limit = kmu_trace_limit;
                 trace_filter = kmu_trace_filter;
-                otp_image = rse_otp;
                 build_config = RSE_KMU_BUILD_CONFIG;
                 hw_slot_config = RSE_KMU_HW_SLOT_CONFIG;
                 hw_slot_export_address = RSE_KMU_HW_SLOT_EXPORT_BASE;
