@@ -34,11 +34,56 @@ AP IRQ values are file-local `UPPER_SNAKE_CASE` constants next to the device
 construction code. AP `_SPI` values retain their zero-based SPI socket numbers;
 CPU `_INTID` values retain architectural PPI numbers.
 
-Shared values and inputs to derived address expressions remain in the existing
-`ap_compute/map.lua` and SI `hardware.lua` files for later work. Shared SI IRQ
-assignments, validation and CL0/CL1 helper access remain unchanged in
-`si_common/interrupts.lua`. This stage does not introduce a hardware-record
-schema or change the SoC composition API.
+SI IRQ constants live with each consuming CPU, device or VP extension.
+SPI constants are architectural INTID minus 32; PPI constants retain INTIDs.
+CL1 and AP no longer obtain IRQ helpers through CL0. The former common route
+table and startup validation are removed. `tests/test_apollo_soc_layout.py`
+checks actual composed connections, GIC ownership, SPI bounds/duplicates and
+CPU PPIs, including external vMCU configurations and negative mutations.
+This is test-time validation, not a replacement startup validator.
+
+System management uses `system.lua` for PPU/SCR/reset and the shared CSS
+counter, `interconnect.lua` for its three ATUs, `memory.lua` for shared SRAM
+and AP/RSE pointer-access memory, and `io_peri.lua` for GPIO and its cold reset.
+MHU definitions remain in `rse_si_mailbox.lua`, `ap_si_mailbox.lua` and
+`ap_rse_mailbox.lua`. Each file owns its local address/IRQ constants;
+`constants.lua` and the unused, inaccurate `ownership` table are removed.
+The aggregator preserves object definition order. AP/SI routing finalization,
+mailbox reset properties and the single CSS counter provider remain unchanged.
+
+RSE uses `cpu.lua`, `system.lua`, `security.lua`, `memory.lua`, `boot.lua`,
+`io_peri.lua` and `interconnect.lua`, composed by `rse.lua`. Hardware constants
+are local to each consuming file; shared values are temporarily duplicated.
+Option-dependent VM size and VM1 base are calculated during creation.
+`system.lua` owns timers, mailboxes and SYS/RSS versus AON reset fanouts;
+device reset adapters stay with the CPU, GPIO or flash definitions.
+Boot ROM and flash devices live in the SoC `boot.lua`; firmware image loading
+and diagnostics remain in `vp/rse/boot.lua`. Existing CCI paths are unchanged.
+
+AP compute uses CPU, system, safety (FMU/SBIST), memory, boot, I/O, PCIe and
+interconnect modules. `system.lua` owns GIC/ITS, SMMU/TBU, timers, watchdogs
+and SID, with separate definition functions preserving composition order.
+`map.lua` is removed; each consumer owns its constants, with temporary
+copies for shared values. Active GIC geometry follows the configured CPU count.
+CPU reset stays with CPU definitions; common fanouts remain in `system.lua`.
+`interconnect.lua` replaces `address_view.lua` and still connects the final AP
+view after RoS and system management exist. Mailbox/PPU ownership and global
+reset targets are unchanged. VP code retains firmware loading and test devices.
+
+SI CL0 combines GIC/multiview, timer/watchdog, SCR/system ID and PLL definitions
+in `system.lua`. SMCF monitors belong to `safety.lua`; power, mailbox, memory,
+CPU, I/O and interconnect remain separate. `hardware.lua` is removed and each
+consumer declares its constants, retaining shared address arithmetic locally.
+The protected CPU path, GIC view priorities, PPU load/reset timing and `define()`/`enable()` phases are preserved.
+Firmware loading and PMIC/vMCU execution extensions remain under `vp/`.
+
+SI CL1 keeps CPU, system, power, mailbox, memory, I/O and interconnect modules.
+`system.lua` owns the GIC distributor/redistributors and the ordered SI reset
+finalization formerly in `power.lua`. PPU definitions stay in `power.lua` and
+CL0-controlled PPU definitions stay with CL0. `hardware.lua` is removed;
+constants belong to consumers. The public HIPC window query delegates to
+`interconnect.lua`. Four-core topology, IRQ bindings, reset order and
+VP firmware loading are unchanged.
 
 ## Optional external TC397 UART
 
