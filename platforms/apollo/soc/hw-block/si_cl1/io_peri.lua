@@ -1,8 +1,9 @@
+local SI_CL1_UART_BASE = 0x2A410000
+local SI_CL1_UART_SIZE = 0x00010000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, interrupts)
-    local SI_CL1_UART_BASE = hardware.SI_CL1_UART_BASE
-    local SI_CL1_UART_SIZE = hardware.SI_CL1_UART_SIZE
     local irq_routes = interrupts
 
     local block = {}

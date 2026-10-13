@@ -1,3 +1,14 @@
+local SI_GIC_BACKEND_DIST_BASE = 0x30f00000
+local SI_GIC_BACKEND_REDIST_BASE = 0x30f40000
+local SI_GIC_DIST_CFGID_OFFSET = 0x0000F000
+local SI_GIC_DIST_CFGID_SIZE = 0x00000008
+local SI_GIC_DIST_IVIEWR_OFFSET = 0x0000F600
+local SI_GIC_DIST_IVIEWR_SIZE = 0x00000400
+local SI_GIC_REDIST_PWRR_OFFSET = 0x00000024
+local SI_GIC_REDIST_VIEWR_OFFSET = 0x0000002C
+local SI_GIC_REDIST_FLUSHR_OFFSET = 0x00000030
+local SI_GIC_REDIST_REGISTER_SIZE = 0x00000004
+
 local module = {}
 
 function module.create(ctx, hardware, runtime, _interrupts)
@@ -15,8 +26,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "gicx00_multiview";
             trace = si_gic_trace;
             trace_limit = si_gic_trace_limit;
-            backend_dist_base = SI_CONST.SI_GIC_BACKEND_DIST_BASE;
-            backend_redist_base = SI_CONST.SI_GIC_BACKEND_REDIST_BASE;
+            backend_dist_base = SI_GIC_BACKEND_DIST_BASE;
+            backend_redist_base = SI_GIC_BACKEND_REDIST_BASE;
             backend_redist_stride = SI_CONST.SI_GICR_SIZE;
             backend_redist_count = SI_CONST.SI_GIC_BACKEND_REDIST_COUNT;
             view_redist_stride = SI_CONST.SI_GICR_SIZE;
@@ -24,14 +35,14 @@ function module.create(ctx, hardware, runtime, _interrupts)
             view2_redist_first = SI_CONST.SI_GIC_VIEW2_REDIST_FIRST;
             spi_count = SI_CONST.SI_GIC_SPI_COUNT;
             view0_dist_cfgid = {
-                address = SI_CONST.SI_CL0_GICD_VIEW0_BASE + SI_CONST.SI_GIC_DIST_CFGID_OFFSET;
-                size = SI_CONST.SI_GIC_DIST_CFGID_SIZE;
+                address = SI_CONST.SI_CL0_GICD_VIEW0_BASE + SI_GIC_DIST_CFGID_OFFSET;
+                size = SI_GIC_DIST_CFGID_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
             view0_dist_iviewr = {
-                address = SI_CONST.SI_CL0_GICD_VIEW0_BASE + SI_CONST.SI_GIC_DIST_IVIEWR_OFFSET;
-                size = SI_CONST.SI_GIC_DIST_IVIEWR_SIZE;
+                address = SI_CONST.SI_CL0_GICD_VIEW0_BASE + SI_GIC_DIST_IVIEWR_OFFSET;
+                size = SI_GIC_DIST_IVIEWR_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -47,20 +58,20 @@ function module.create(ctx, hardware, runtime, _interrupts)
         end
 
         platform.si_gic_multiview.view0_redist_0_pwrr = {
-            address = SI_CONST.SI_CL0_GICR_VIEW0_BASES[1] + SI_CONST.SI_GIC_REDIST_PWRR_OFFSET;
-            size = SI_CONST.SI_GIC_REDIST_REGISTER_SIZE;
+            address = SI_CONST.SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_PWRR_OFFSET;
+            size = SI_GIC_REDIST_REGISTER_SIZE;
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
         }
         platform.si_gic_multiview.view0_redist_0_viewr = {
-            address = SI_CONST.SI_CL0_GICR_VIEW0_BASES[1] + SI_CONST.SI_GIC_REDIST_VIEWR_OFFSET;
-            size = SI_CONST.SI_GIC_REDIST_REGISTER_SIZE;
+            address = SI_CONST.SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_VIEWR_OFFSET;
+            size = SI_GIC_REDIST_REGISTER_SIZE;
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
         }
         platform.si_gic_multiview.view0_redist_0_flushr = {
-            address = SI_CONST.SI_CL0_GICR_VIEW0_BASES[1] + SI_CONST.SI_GIC_REDIST_FLUSHR_OFFSET;
-            size = SI_CONST.SI_GIC_REDIST_REGISTER_SIZE;
+            address = SI_CONST.SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_FLUSHR_OFFSET;
+            size = SI_GIC_REDIST_REGISTER_SIZE;
             bind = "&si_cl0_router.initiator_socket";
             priority = 0;
         }

@@ -1,3 +1,5 @@
+local AP_SDS_MEM_SIZE = 0x00000DC0
+
 local boot = {}
 
 local AP_BOOT = {
@@ -18,7 +20,6 @@ local AP_BOOT = {
 function boot.define(ctx, platform, hw)
     local options = ctx.options
     local AP_ADDRESS = hw.AP_ADDRESS
-    local AP_SIZE = hw.AP_SIZE
 
     local AP_BL2_RESET = {
         data_phys_base = AP_ADDRESS.shared_sram + AP_BOOT.bl2_data_offset;
@@ -33,7 +34,7 @@ function boot.define(ctx, platform, hw)
     }
 
     local HOST_AP_SDS_REGION_DATA = {
-        0x1007AA7A, AP_SIZE.sds_mem,
+        0x1007AA7A, AP_SDS_MEM_SIZE,
         0x01000001, 0x00000011, 0x00000000, 0x00000000,
         0x01000002, 0x00000011, 0x00000000, 0x00000000,
         0x01000003, 0x00000011, 0x00000000, 0x00000000,

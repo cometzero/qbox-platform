@@ -1,13 +1,14 @@
+local SI_CL1_GICR0_BASE = 0x30260000
+local SI_CL1_GICR_STRIDE = 0x00020000
+local SI_CL1_GICR_SIZE = 0x00020000
+local SI_CL1_AFFINITY_BASE = 0x00010000
+local SI_CL1_AFFINITY_STRIDE = 0x00000100
+
 local module = {}
 
 function module.create(ctx, hardware, runtime, _interrupts)
     local SI_CL1_CPU_COUNT = hardware.SI_CL1_CPU_COUNT
-    local SI_CL1_GICR0_BASE = hardware.SI_CL1_GICR0_BASE
-    local SI_CL1_GICR_STRIDE = hardware.SI_CL1_GICR_STRIDE
-    local SI_CL1_GICR_SIZE = hardware.SI_CL1_GICR_SIZE
     local ARCH_TIMER_FREQUENCY_HZ = hardware.ARCH_TIMER_FREQUENCY_HZ
-    local SI_CL1_AFFINITY_BASE = hardware.SI_CL1_AFFINITY_BASE
-    local SI_CL1_AFFINITY_STRIDE = hardware.SI_CL1_AFFINITY_STRIDE
 
     local block = {}
 

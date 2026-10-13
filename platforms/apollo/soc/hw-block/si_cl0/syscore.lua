@@ -1,3 +1,24 @@
+local SI_CL0_GICD_VIEW1_BASE = 0x30100000
+local SI_CL0_GICR_VIEW1_BASE = 0x30140000
+local SI_GICD_SIZE = 0x00010000
+local SI_CL0_SCR_BASE = 0x2A6B0000
+local SI_CL0_SCR_SIZE = 0x00010000
+local SI_CL0_TIMER_CNTCTL_BASE = 0x2A6F0000
+local SI_CL0_TIMER_CNTCTL_SIZE = 0x00010000
+local SI_CL0_TIMER_CNT_BASE = 0x2A720000
+local SI_CL0_TIMER_CNT_SIZE = 0x00010000
+local SI_CL0_WDOG_CONTROL_BASE = 0x2A700000
+local SI_CL0_WDOG_REFRESH_BASE = 0x2A710000
+local SI_CL0_WDOG_SIZE = 0x00010000
+local SI_CL0_PLL_SIZE = 0x00001000
+local SI_CL0_ATW4_SYSTEM_ID_SIZE = 0x00010000
+local SI_CL0_CLUSTER_UTILITY_MGI_STRIDE = 0x04000000
+local SI_CL0_CLUSTER_UTILITY_MGI_SIZE = 0x00010000
+local SI_CL0_ATW16_SMCF_SMD_MGI_SIZE = 0x00010000
+local SI_CL0_SMCF_SMD_MGI_PHYS_BASE = 0x20000D8100000
+local SI_CL0_AP_CLUSTER_MGI_PHYS_BASE = 0x140200000
+local SI_CL0_SYSTEM_ID_PHYS_BASE = 0x20000D0400000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, interrupts)
@@ -14,19 +35,19 @@ function module.create(ctx, hardware, _runtime, interrupts)
             moduletype = "arm_gicv3";
             args = {qemu_instance};
             dist_iface = {
-                address = SI_CONST.SI_CL0_GICD_VIEW1_BASE;
-                size = SI_CONST.SI_GICD_SIZE;
+                address = SI_CL0_GICD_VIEW1_BASE;
+                size = SI_GICD_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 10;
                 aliases = {
                     view0_functional = {
                         address = SI_CONST.SI_CL0_GICD_VIEW0_BASE;
-                        size = SI_CONST.SI_GICD_SIZE;
+                        size = SI_GICD_SIZE;
                     };
                 };
             };
             redist_iface_0 = {
-                address = SI_CONST.SI_CL0_GICR_VIEW1_BASE;
+                address = SI_CL0_GICR_VIEW1_BASE;
                 size = SI_CONST.SI_GICR_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 10;
@@ -62,8 +83,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             cl0_c0_config_2 = 0x01200000;
             cl0_c0_config_3 = 0x00000000;
             target_socket = {
-                address = SI_CONST.SI_CL0_SCR_BASE;
-                size = SI_CONST.SI_CL0_SCR_SIZE;
+                address = SI_CL0_SCR_BASE;
+                size = SI_CL0_SCR_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -77,8 +98,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             moduletype = "host_gtimer";
             args = {"&platform.css_system_counter"};
             target_socket = {
-                address = SI_CONST.SI_CL0_TIMER_CNTCTL_BASE;
-                size = SI_CONST.SI_CL0_TIMER_CNTCTL_SIZE;
+                address = SI_CL0_TIMER_CNTCTL_BASE;
+                size = SI_CL0_TIMER_CNTCTL_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -95,8 +116,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             irq = {bind = irq_routes.spi_target(
                 ctx, "si_cl0_system_timer", "View1")};
             target_socket = {
-                address = SI_CONST.SI_CL0_TIMER_CNT_BASE;
-                size = SI_CONST.SI_CL0_TIMER_CNT_SIZE;
+                address = SI_CL0_TIMER_CNT_BASE;
+                size = SI_CL0_TIMER_CNT_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -110,14 +131,14 @@ function module.create(ctx, hardware, _runtime, interrupts)
             moduletype = "zena_watchdog";
             clock_frequency = SI_CONST.SI_CL0_WDOG_CLOCK_HZ;
             control = {
-                address = SI_CONST.SI_CL0_WDOG_CONTROL_BASE;
-                size = SI_CONST.SI_CL0_WDOG_SIZE;
+                address = SI_CL0_WDOG_CONTROL_BASE;
+                size = SI_CL0_WDOG_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
             refresh = {
-                address = SI_CONST.SI_CL0_WDOG_REFRESH_BASE;
-                size = SI_CONST.SI_CL0_WDOG_SIZE;
+                address = SI_CL0_WDOG_REFRESH_BASE;
+                size = SI_CL0_WDOG_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -134,7 +155,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
             lock_mask = 0x00000001;
             target_socket = {
                 address = SI_CONST.SI_CL0_SMD_EXPANSION_PHYS_BASE;
-                size = SI_CONST.SI_CL0_PLL_SIZE;
+                size = SI_CL0_PLL_SIZE;
                 bind = "&smd_router.initiator_socket";
                 priority = 0;
             };
@@ -151,8 +172,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             data_values_per_monitor = 12;
             data_width_bits = 32;
             target_socket = {
-                address = SI_CONST.SI_CL0_SMCF_SMD_MGI_PHYS_BASE;
-                size = SI_CONST.SI_CL0_ATW16_SMCF_SMD_MGI_SIZE;
+                address = SI_CL0_SMCF_SMD_MGI_PHYS_BASE;
+                size = SI_CL0_ATW16_SMCF_SMD_MGI_SIZE;
                 bind = "&smd_router.initiator_socket";
                 priority = 0;
             };
@@ -169,9 +190,9 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 data_values_per_monitor = 12;
                 data_width_bits = 32;
                 target_socket = {
-                    address = SI_CONST.SI_CL0_AP_CLUSTER_MGI_PHYS_BASE +
-                        (i * SI_CONST.SI_CL0_CLUSTER_UTILITY_MGI_STRIDE);
-                    size = SI_CONST.SI_CL0_CLUSTER_UTILITY_MGI_SIZE;
+                    address = SI_CL0_AP_CLUSTER_MGI_PHYS_BASE +
+                        (i * SI_CL0_CLUSTER_UTILITY_MGI_STRIDE);
+                    size = SI_CL0_CLUSTER_UTILITY_MGI_SIZE;
                     bind = "&system_router.initiator_socket";
                     priority = 0;
                 };
@@ -196,8 +217,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             cidr2 = 0x00000005;
             cidr3 = 0x000000b1;
             target_socket = {
-                address = SI_CONST.SI_CL0_SYSTEM_ID_PHYS_BASE;
-                size = SI_CONST.SI_CL0_ATW4_SYSTEM_ID_SIZE;
+                address = SI_CL0_SYSTEM_ID_PHYS_BASE;
+                size = SI_CL0_ATW4_SYSTEM_ID_SIZE;
                 bind = "&smd_router.initiator_socket";
                 priority = 0;
             };

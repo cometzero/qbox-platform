@@ -1,3 +1,8 @@
+local SI_CL0_SRAM_SIZE = 0x00800000
+local HOST_SI_CL_UTIL_SIZE = 0x00800000
+local HOST_SI_CL0_SRAM_PHYS_BASE = 0x4000120000000
+local HOST_SI_SRAM_WINDOW_SIZE = 0x01000000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, _interrupts)
@@ -16,8 +21,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             moduletype = "gs_memory";
             dmi_allow = host_si_sram_dmi;
             target_socket = {
-                address = SI_CONST.HOST_SI_CL0_SRAM_PHYS_BASE;
-                size = SI_CONST.HOST_SI_SRAM_WINDOW_SIZE;
+                address = HOST_SI_CL0_SRAM_PHYS_BASE;
+                size = HOST_SI_SRAM_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             map_file = host_si_cl0_sram_map_file;
@@ -34,7 +39,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             moduletype = "gs_memory";
             target_socket = {
                 address = SI_CONST.HOST_SI_CL0_CL_UTIL_BASE;
-                size = SI_CONST.HOST_SI_CL_UTIL_SIZE;
+                size = HOST_SI_CL_UTIL_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 20;
             };
@@ -52,7 +57,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             dmi = true;
             target_socket = {
                 address = SI_CONST.SI_CL0_SRAM_BASE;
-                size = SI_CONST.SI_CL0_SRAM_SIZE;
+                size = SI_CL0_SRAM_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
             };
             log_level = 0;

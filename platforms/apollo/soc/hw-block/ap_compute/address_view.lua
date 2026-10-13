@@ -1,3 +1,15 @@
+local AP_HOST_FMU_CL0_BASE = 0x20000D2000000
+local AP_HOST_FMU_CL1_BASE = 0x20000D2100000
+local AP_HOST_FMU_CL2_BASE = 0x20000D2200000
+local AP_HOST_FMU_CL3_BASE = 0x20000D2300000
+local AP_MHU_POINTER_ACCESS_BASE = 0x0FFFE0000
+local AP_PFDI_MONITOR_MHU_PBX_BASE = 0x40110000
+local AP_HOST_PFDI_MONITOR_MHU_PBX_BASE = 0x400003B380000
+local AP_HIPC_ALIAS_BASE = 0x00100000
+local AP_FMU_MODELED_SIZE = 0x00050000
+local AP_MHU_POINTER_ACCESS_SIZE = 0x00020000
+local AP_PFDI_MONITOR_MHU_SIZE = 0x00030000
+
 local address_view = {}
 
 function address_view.enable_ap_router(ctx, platform, hw)
@@ -18,7 +30,7 @@ function address_view.enable_ap_router(ctx, platform, hw)
 
     platform.ap_hipc_alias = {
         moduletype = "addrtr";
-        mapped_base_addr = AP_ADDRESS.hipc_alias;
+        mapped_base_addr = AP_HIPC_ALIAS_BASE;
         target_socket = {
             address = hipc_shared_base;
             size = hipc_shared_size;
@@ -32,10 +44,10 @@ function address_view.enable_ap_router(ctx, platform, hw)
 
     platform.ap_to_system_rse_carveout_bridge = {
         moduletype = "addrtr";
-        mapped_base_addr = AP_ADDRESS.mhu_pointer_access;
+        mapped_base_addr = AP_MHU_POINTER_ACCESS_BASE;
         target_socket = {
-            address = AP_ADDRESS.mhu_pointer_access;
-            size = AP_SIZE.mhu_pointer_access;
+            address = AP_MHU_POINTER_ACCESS_BASE;
+            size = AP_MHU_POINTER_ACCESS_SIZE;
             bind = "&ap_router.initiator_socket";
             relative_addresses = false;
             priority = 0;
@@ -46,10 +58,10 @@ function address_view.enable_ap_router(ctx, platform, hw)
 
     platform.ap_to_system_pfdi_monitor_mhu_bridge = {
         moduletype = "addrtr";
-        mapped_base_addr = AP_ADDRESS.host_pfdi_monitor_mhu_pbx;
+        mapped_base_addr = AP_HOST_PFDI_MONITOR_MHU_PBX_BASE;
         target_socket = {
-            address = AP_ADDRESS.pfdi_monitor_mhu_pbx;
-            size = AP_SIZE.pfdi_monitor_mhu;
+            address = AP_PFDI_MONITOR_MHU_PBX_BASE;
+            size = AP_PFDI_MONITOR_MHU_SIZE;
             bind = "&ap_router.initiator_socket";
             relative_addresses = false;
             priority = 0;
@@ -73,13 +85,13 @@ function address_view.enable_ap_router(ctx, platform, hw)
 
     local smd_fmu_aliases = {
         { local_base = AP_ADDRESS.fmu_cl0;
-          physical_base = AP_ADDRESS.host_fmu_cl0 };
+          physical_base = AP_HOST_FMU_CL0_BASE };
         { local_base = AP_ADDRESS.fmu_cl1;
-          physical_base = AP_ADDRESS.host_fmu_cl1 };
+          physical_base = AP_HOST_FMU_CL1_BASE };
         { local_base = AP_ADDRESS.fmu_cl2;
-          physical_base = AP_ADDRESS.host_fmu_cl2 };
+          physical_base = AP_HOST_FMU_CL2_BASE };
         { local_base = AP_ADDRESS.fmu_cl3;
-          physical_base = AP_ADDRESS.host_fmu_cl3 };
+          physical_base = AP_HOST_FMU_CL3_BASE };
     }
     for i, route in ipairs(smd_fmu_aliases) do
         platform["smd_ap_cl" .. (i - 1) .. "_ni710ae_fmu_alias"] = {
@@ -87,7 +99,7 @@ function address_view.enable_ap_router(ctx, platform, hw)
             mapped_base_addr = route.local_base;
             target_socket = {
                 address = route.physical_base;
-                size = AP_SIZE.fmu_modeled;
+                size = AP_FMU_MODELED_SIZE;
                 bind = "&smd_router.initiator_socket";
                 relative_addresses = false;
             };

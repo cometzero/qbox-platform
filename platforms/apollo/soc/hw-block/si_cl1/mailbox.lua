@@ -1,16 +1,17 @@
+local SI_CL1_HIPC_PBX_BASE = 0x39000000
+local SI_CL1_HIPC_MBX_BASE = 0x39040000
+local SI_CL1_PFDI_PBX_BASE = 0x39200000
+local SI_CL1_PFDI_MBX_BASE = 0x39240000
+local SI_CL1_HIPC_MHU_SIZE = 0x00030000
+local SI_CL1_PFDI_MHU_SIZE = 0x00020000
+local SI_CL1_PFDI_MHU_CHANNEL_BASE = 2
+
 local module = {}
 
 function module.create(ctx, hardware, runtime, interrupts)
     local SI_CL1_SCMI_SHMEM_BASE = hardware.SI_CL1_SCMI_SHMEM_BASE
-    local SI_CL1_HIPC_PBX_BASE = hardware.SI_CL1_HIPC_PBX_BASE
-    local SI_CL1_HIPC_MBX_BASE = hardware.SI_CL1_HIPC_MBX_BASE
-    local SI_CL1_PFDI_PBX_BASE = hardware.SI_CL1_PFDI_PBX_BASE
-    local SI_CL1_PFDI_MBX_BASE = hardware.SI_CL1_PFDI_MBX_BASE
-    local SI_CL1_HIPC_MHU_SIZE = hardware.SI_CL1_HIPC_MHU_SIZE
-    local SI_CL1_PFDI_MHU_SIZE = hardware.SI_CL1_PFDI_MHU_SIZE
     local SI_CL1_MHU_CHANNELS = hardware.SI_CL1_MHU_CHANNELS
     local SI_CL1_SCMI_MSG_SIZE_PER_CORE = hardware.SI_CL1_SCMI_MSG_SIZE_PER_CORE
-    local SI_CL1_PFDI_MHU_CHANNEL_BASE = hardware.SI_CL1_PFDI_MHU_CHANNEL_BASE
     local SI_CL1_PFDI_CORE_COUNT = hardware.SI_CL1_PFDI_CORE_COUNT
     local irq_routes = interrupts
     local mhu_trace = runtime.mhu_trace

@@ -28,6 +28,18 @@ model socket contract; it is isolated in `vp/backends/audio.lua`.
 
 The workspace `doc/soc_plan/` documents ownership, style, migration and validation.
 
+AP compute and SI CL0/CL1 are incrementally moving hardware definitions into
+the Lua module that consumes them. Single-owner addresses, window sizes and
+AP IRQ values are file-local `UPPER_SNAKE_CASE` constants next to the device
+construction code. AP `_SPI` values retain their zero-based SPI socket numbers;
+CPU `_INTID` values retain architectural PPI numbers.
+
+Shared values and inputs to derived address expressions remain in the existing
+`ap_compute/map.lua` and SI `hardware.lua` files for later work. Shared SI IRQ
+assignments, validation and CL0/CL1 helper access remain unchanged in
+`si_common/interrupts.lua`. This stage does not introduce a hardware-record
+schema or change the SoC composition API.
+
 ## Optional external TC397 UART
 
 Set `QBOX_APOLLO_VMCU_UART_ENDPOINT=127.0.0.1:44001` to connect AP DW UART2

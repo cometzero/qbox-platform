@@ -1,3 +1,11 @@
+local AP_GIC_DIST_BASE = 0x20800000
+local AP_GIC_VIEW0_DIST_BASE = 0x20000000
+local AP_GIC_VIEW0_REDIST_BASE = 0x20080000
+local AP_GIC_ITS_BASE = 0x20840000
+local AP_GIC_VIEW0_DIST_SIZE = 0x00080000
+local AP_GIC_VIEW0_REDIST_SIZE = 0x00040000
+local AP_GIC_ITS_SIZE = 0x00040000
+
 local interrupts = {}
 
 function interrupts.define(ctx, platform, hw)
@@ -12,7 +20,7 @@ function interrupts.define(ctx, platform, hw)
             moduletype = "arm_gicv3";
             args = {"&platform.ap_qemu_inst"};
             dist_iface = {
-                address = AP_ADDRESS.gic_dist;
+                address = AP_GIC_DIST_BASE;
                 size = AP_SIZE.register_window;
                 bind = "&system_router.initiator_socket";
             };
@@ -33,7 +41,7 @@ function interrupts.define(ctx, platform, hw)
     assert(platform.ap_gic_multiview == nil, "duplicate Apollo object")
     platform.ap_gic_multiview = {
         moduletype = "gicx00_multiview";
-        backend_dist_base = AP_ADDRESS.gic_dist;
+        backend_dist_base = AP_GIC_DIST_BASE;
         backend_redist_base = AP_ADDRESS.gic_redist;
         backend_redist_stride = AP_SIZE.gic_redist;
         backend_redist_count = AP_HW.gic_active_redist_regions;
@@ -43,8 +51,8 @@ function interrupts.define(ctx, platform, hw)
         trace_limit = ctx.getenv_number_or(
             "QBOX_APOLLO_FULL_AP_GIC_MULTIVIEW_TRACE_LIMIT", "256");
         view0_dist = {
-            address = AP_ADDRESS.gic_view0_dist;
-            size = AP_SIZE.gic_view0_dist;
+            address = AP_GIC_VIEW0_DIST_BASE;
+            size = AP_GIC_VIEW0_DIST_SIZE;
             bind = "&ap_router.initiator_socket";
             priority = 0;
         };
@@ -52,9 +60,9 @@ function interrupts.define(ctx, platform, hw)
 
     for i = 0, (AP_HW.gic_view0_redist_regions-1) do
         platform.ap_gic_multiview["view0_redist_" .. i] = {
-            address = AP_ADDRESS.gic_view0_redist +
-                (i * AP_SIZE.gic_view0_redist);
-            size = AP_SIZE.gic_view0_redist;
+            address = AP_GIC_VIEW0_REDIST_BASE +
+                (i * AP_GIC_VIEW0_REDIST_SIZE);
+            size = AP_GIC_VIEW0_REDIST_SIZE;
             bind = "&ap_router.initiator_socket";
             priority = 0;
         }
@@ -82,8 +90,8 @@ function interrupts.define(ctx, platform, hw)
             gicv4_1_svpet = AP_HW.gic_its_svpet;
             gicv4_1_cte_size = AP_HW.gic_its_cte_size;
             mem = {
-                address = AP_ADDRESS.gic_its;
-                size = AP_SIZE.gic_its;
+                address = AP_GIC_ITS_BASE;
+                size = AP_GIC_ITS_SIZE;
                 bind = "&system_router.initiator_socket";
             };
         }

@@ -1,10 +1,22 @@
+-- GIC SPI constants are zero-based SPI socket indices (not architectural INTIDs).
+local AP_GPEX_PIO_BASE = 0x60200000
+local AP_GPEX_MMIO_BASE = 0x60300000
+local AP_GPEX_ECAM_BASE = 0x43B50000
+local AP_GPEX_MMIO_HIGH_BASE = 0x400000000
+local AP_PCIE_EPC_BASE = 0x30300000
+local AP_PCIE_EPC_OUTBOUND_BASE = 0x30400000
+local AP_GPEX_PIO_SIZE = 0x00100000
+local AP_GPEX_MMIO_SIZE = 0x1FD00000
+local AP_GPEX_ECAM_SIZE = 0x10000000
+local AP_GPEX_MMIO_HIGH_SIZE = 0x200000000
+local AP_PCIE_EPC_SIZE = 0x1000
+local AP_PCIE_EPC_OUTBOUND_SIZE = 0x400000
+local AP_GPEX_SPIS = {300; 301; 302; 303}
+
 local pcie = {}
 
 function pcie.define(ctx, platform, hw, policy)
     local options = ctx.options
-    local AP_ADDRESS = hw.AP_ADDRESS
-    local AP_SIZE = hw.AP_SIZE
-    local AP_IRQ = hw.AP_IRQ
     local AP_HW = hw.AP_HW
 
     assert(platform.ap_gpex_0 == nil, "duplicate Apollo object")
@@ -18,29 +30,29 @@ function pcie.define(ctx, platform, hw, policy)
             pci_requester_id = not policy.pcie_irq_test_enabled;
             bus_master = {bind = "&system_router.target_socket"};
             pio_iface = {
-                address = AP_ADDRESS.gpex_pio;
-                size = AP_SIZE.gpex_pio;
+                address = AP_GPEX_PIO_BASE;
+                size = AP_GPEX_PIO_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             mmio_iface = {
-                address = AP_ADDRESS.gpex_mmio;
-                size = AP_SIZE.gpex_mmio;
+                address = AP_GPEX_MMIO_BASE;
+                size = AP_GPEX_MMIO_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             ecam_iface = {
-                address = AP_ADDRESS.gpex_ecam;
-                size = AP_SIZE.gpex_ecam;
+                address = AP_GPEX_ECAM_BASE;
+                size = AP_GPEX_ECAM_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             mmio_iface_high = {
-                address = AP_ADDRESS.gpex_mmio_high;
-                size = AP_SIZE.gpex_mmio_high;
+                address = AP_GPEX_MMIO_HIGH_BASE;
+                size = AP_GPEX_MMIO_HIGH_SIZE;
                 bind = "&system_router.initiator_socket";
             };
-            irq_out_0 = {bind = "&ap_gic.spi_in_" .. AP_IRQ.gpex[1]};
-            irq_out_1 = {bind = "&ap_gic.spi_in_" .. AP_IRQ.gpex[2]};
-            irq_out_2 = {bind = "&ap_gic.spi_in_" .. AP_IRQ.gpex[3]};
-            irq_out_3 = {bind = "&ap_gic.spi_in_" .. AP_IRQ.gpex[4]};
+            irq_out_0 = {bind = "&ap_gic.spi_in_" .. AP_GPEX_SPIS[1]};
+            irq_out_1 = {bind = "&ap_gic.spi_in_" .. AP_GPEX_SPIS[2]};
+            irq_out_2 = {bind = "&ap_gic.spi_in_" .. AP_GPEX_SPIS[3]};
+            irq_out_3 = {bind = "&ap_gic.spi_in_" .. AP_GPEX_SPIS[4]};
         }
     end
     -- Port-group 1 has a local EPC register bank even in its default RC mode.
@@ -53,13 +65,13 @@ function pcie.define(ctx, platform, hw, policy)
             request_origin_id = ctx.request_context.origin.ap_pcie_epc;
             request_domain_id = ctx.request_context.domain.ap;
             regs = {
-                address = AP_ADDRESS.pcie_epc;
-                size = AP_SIZE.pcie_epc;
+                address = AP_PCIE_EPC_BASE;
+                size = AP_PCIE_EPC_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             outbound = {
-                address = AP_ADDRESS.pcie_epc_outbound;
-                size = AP_SIZE.pcie_epc_outbound;
+                address = AP_PCIE_EPC_OUTBOUND_BASE;
+                size = AP_PCIE_EPC_OUTBOUND_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             local_master = {bind = "&system_router.target_socket"};

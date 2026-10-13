@@ -1,3 +1,24 @@
+local HOST_RSE_SI_SSRAM_PHYS_BASE = 0x4000040000000
+local HOST_RSE_SI_SSRAM_SIZE = 0x00040000
+local SI_CL0_ATU_LOGICAL_BASE = 0x80000000
+local SI_CL0_ATU_LOGICAL_SIZE = 0x60340000
+local SI_CL0_SMDEXP_ATU_LOGICAL_BASE = 0xE0340000
+local SI_CL0_SMDEXP_ATU_LOGICAL_SIZE = 0x00002000
+local SYSTEM_AP_SHARED_BRIDGE_BASE = 0x00000000
+local SYSTEM_AP_SHARED_BRIDGE_SIZE = 0x00200000
+local SYSTEM_AP_GIC_BRIDGE_BASE = 0x20000000
+local SYSTEM_AP_GIC_BRIDGE_SIZE = 0x08000000
+local SI_CL1_SCMI_BRIDGE_BASE = 0x48000000
+local SI_CL1_SCMI_BRIDGE_SIZE = 0x00001000
+local SI_CL0_NI710AE_PRIMARY_NCI_BASE = 0x2A000000
+local SI_CL0_NI710AE_SECONDARY_NCI_BASE = 0x2A200000
+local SI_CL0_NI710AE_MHU_NCI_BASE = 0x2A300000
+local SI_CL0_NI710AE_NCI_SIZE = 0x00010000
+local SI_CL0_ATW0_CMN_SIZE = 0x40000000
+local SI_CL0_ATW2_SMD_EXPANSION_SIZE = 0x00020000
+local SI_CL0_CMN_PHYS_BASE = 0x100000000
+local SI_CL0_CLUSTER_UTILITY_PHYS_SIZE = 0x10000000
+
 local module = {}
 
 function module.create(ctx, hardware, runtime, _interrupts)
@@ -19,8 +40,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
 
     function block.connect(ctx, platform)
         platform.host_si_atu.translation_socket = {
-            address = SI_CONST.SI_CL0_ATU_LOGICAL_BASE;
-            size = SI_CONST.SI_CL0_ATU_LOGICAL_SIZE;
+            address = SI_CL0_ATU_LOGICAL_BASE;
+            size = SI_CL0_ATU_LOGICAL_SIZE;
             bind = "&si_cl0_router.initiator_socket";
             relative_addresses = false;
         }
@@ -30,8 +51,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
         platform.host_si_atu.enable_dmi = false
 
         platform.host_smdexp2smd_atu.translation_socket = {
-            address = SI_CONST.SI_CL0_SMDEXP_ATU_LOGICAL_BASE;
-            size = SI_CONST.SI_CL0_SMDEXP_ATU_LOGICAL_SIZE;
+            address = SI_CL0_SMDEXP_ATU_LOGICAL_BASE;
+            size = SI_CL0_SMDEXP_ATU_LOGICAL_SIZE;
             bind = "&si_cl0_router.initiator_socket";
             relative_addresses = false;
         }
@@ -45,10 +66,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             "duplicate object: platform.system_to_ap_shared_bridge")
         platform.system_to_ap_shared_bridge = {
             moduletype = "addrtr";
-            mapped_base_addr = SI_CONST.SYSTEM_AP_SHARED_BRIDGE_BASE;
+            mapped_base_addr = SYSTEM_AP_SHARED_BRIDGE_BASE;
             target_socket = {
-                address = SI_CONST.SYSTEM_AP_SHARED_BRIDGE_BASE;
-                size = SI_CONST.SYSTEM_AP_SHARED_BRIDGE_SIZE;
+                address = SYSTEM_AP_SHARED_BRIDGE_BASE;
+                size = SYSTEM_AP_SHARED_BRIDGE_SIZE;
                 bind = "&system_router.initiator_socket";
                 relative_addresses = false;
             };
@@ -61,10 +82,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             "duplicate object: platform.system_to_ap_gic_bridge")
         platform.system_to_ap_gic_bridge = {
             moduletype = "addrtr";
-            mapped_base_addr = SI_CONST.SYSTEM_AP_GIC_BRIDGE_BASE;
+            mapped_base_addr = SYSTEM_AP_GIC_BRIDGE_BASE;
             target_socket = {
-                address = SI_CONST.SYSTEM_AP_GIC_BRIDGE_BASE;
-                size = SI_CONST.SYSTEM_AP_GIC_BRIDGE_SIZE;
+                address = SYSTEM_AP_GIC_BRIDGE_BASE;
+                size = SYSTEM_AP_GIC_BRIDGE_SIZE;
                 bind = "&system_router.initiator_socket";
                 relative_addresses = false;
             };
@@ -77,10 +98,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             "duplicate object: platform.si_cl0_rse_shared_bridge")
         platform.si_cl0_rse_shared_bridge = {
             moduletype = "addrtr";
-            mapped_base_addr = SI_CONST.HOST_RSE_SI_SSRAM_PHYS_BASE;
+            mapped_base_addr = HOST_RSE_SI_SSRAM_PHYS_BASE;
             target_socket = {
                 address = SI_CONST.SI_CL0_RSE_MHU_SHMEM_BASE;
-                size = SI_CONST.HOST_RSE_SI_SSRAM_SIZE;
+                size = HOST_RSE_SI_SSRAM_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 relative_addresses = false;
             };
@@ -93,10 +114,10 @@ function module.create(ctx, hardware, runtime, _interrupts)
             "duplicate object: platform.si_cl0_to_si_cl1_scmi_bridge")
         platform.si_cl0_to_si_cl1_scmi_bridge = {
             moduletype = "addrtr";
-            mapped_base_addr = SI_CONST.SI_CL1_SCMI_BRIDGE_BASE;
+            mapped_base_addr = SI_CL1_SCMI_BRIDGE_BASE;
             target_socket = {
-                address = SI_CONST.SI_CL1_SCMI_BRIDGE_BASE;
-                size = SI_CONST.SI_CL1_SCMI_BRIDGE_SIZE;
+                address = SI_CL1_SCMI_BRIDGE_BASE;
+                size = SI_CL1_SCMI_BRIDGE_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 relative_addresses = false;
             };
@@ -115,8 +136,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
             trace = si_cmn_trace;
             trace_limit = si_cmn_trace_limit;
             target_socket = {
-                address = SI_CONST.SI_CL0_CMN_PHYS_BASE;
-                size = SI_CONST.SI_CL0_ATW0_CMN_SIZE;
+                address = SI_CL0_CMN_PHYS_BASE;
+                size = SI_CL0_ATW0_CMN_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 0;
             };
@@ -136,8 +157,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
             reset_owner_domain_id = ctx.request_context.domain.si_cl0;
             allow_trusted_loader = true;
             target_socket = {
-                address = SI_CONST.SI_CL0_NI710AE_PRIMARY_NCI_BASE;
-                size = SI_CONST.SI_CL0_NI710AE_NCI_SIZE;
+                address = SI_CL0_NI710AE_PRIMARY_NCI_BASE;
+                size = SI_CL0_NI710AE_NCI_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -153,8 +174,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "host_ni710ae_nci";
             topology = 2;
             target_socket = {
-                address = SI_CONST.SI_CL0_NI710AE_SECONDARY_NCI_BASE;
-                size = SI_CONST.SI_CL0_NI710AE_NCI_SIZE;
+                address = SI_CL0_NI710AE_SECONDARY_NCI_BASE;
+                size = SI_CL0_NI710AE_NCI_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -168,8 +189,8 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "host_ni710ae_nci";
             topology = 1;
             target_socket = {
-                address = SI_CONST.SI_CL0_NI710AE_MHU_NCI_BASE;
-                size = SI_CONST.SI_CL0_NI710AE_NCI_SIZE;
+                address = SI_CL0_NI710AE_MHU_NCI_BASE;
+                size = SI_CL0_NI710AE_NCI_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -185,7 +206,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
             dmi = false;
             target_socket = {
                 address = SI_CONST.SI_CL0_SMD_EXPANSION_PHYS_BASE;
-                size = SI_CONST.SI_CL0_ATW2_SMD_EXPANSION_SIZE;
+                size = SI_CL0_ATW2_SMD_EXPANSION_SIZE;
                 bind = "&smd_router.initiator_socket";
                 priority = 10;
             };
@@ -199,7 +220,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
             dmi = false;
             target_socket = {
                 address = SI_CONST.SI_CL0_CLUSTER_UTILITY_PHYS_BASE;
-                size = SI_CONST.SI_CL0_CLUSTER_UTILITY_PHYS_SIZE;
+                size = SI_CL0_CLUSTER_UTILITY_PHYS_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 20;
             };

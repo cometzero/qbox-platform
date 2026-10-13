@@ -1,3 +1,24 @@
+local AP_BL2_HEADER_SRAM_BASE = 0x00100000
+local AP_MHU_NS_SHARED_SRAM_BASE = 0x00180000
+local AP_PERIPHERAL_NS_SRAM_TAIL_BASE = 0x00181000
+local AP_TRUSTED_NVCTR_BASE = 0x32030000
+local AP_DRAM1_BASE = 0x80000000
+local AP_CPER_BASE = 0xFFA00000
+local AP_FFA_MM_COMM_BUFFER_BASE = 0xFFBF0000
+local AP_SPMC_BASE = 0xFFC00000
+local AP_DRAM2_BASE = 0x20000000000
+local AP_SHARED_SRAM_SIZE = 0x00100000
+local AP_BL2_HEADER_SRAM_SIZE = 0x00080000
+local AP_MHU_NS_SHARED_SRAM_SIZE = 0x00001000
+local AP_PERIPHERAL_NS_SRAM_TAIL_SIZE = 0x0007F000
+local AP_FLASH_SECTOR_SIZE = 0x00001000
+local AP_TRUSTED_NVCTR_SIZE = 0x00010000
+local AP_DRAM1_SIZE = 0x7F000000
+local AP_CPER_SIZE = 0x00100000
+local AP_FFA_MM_COMM_BUFFER_SIZE = 0x00002000
+local AP_SPMC_LOCAL_SIZE = 0x003E0000
+local AP_DRAM2_SIZE = 0x80000000
+
 local memory = {}
 
 function memory.define(ctx, platform, hw)
@@ -11,7 +32,7 @@ function memory.define(ctx, platform, hw)
         dmi_allow = options.host_memory_dmi;
         target_socket = {
             address = AP_ADDRESS.shared_sram;
-            size = AP_SIZE.shared_sram;
+            size = AP_SHARED_SRAM_SIZE;
             bind = "&system_router.initiator_socket";
         };
         log_level = 0;
@@ -22,8 +43,8 @@ function memory.define(ctx, platform, hw)
         moduletype = "gs_memory";
         dmi_allow = options.host_memory_dmi;
         target_socket = {
-            address = AP_ADDRESS.mhu_ns_shared_sram;
-            size = AP_SIZE.mhu_ns_shared_sram;
+            address = AP_MHU_NS_SHARED_SRAM_BASE;
+            size = AP_MHU_NS_SHARED_SRAM_SIZE;
             bind = "&system_router.initiator_socket";
         };
         init_mem = true;
@@ -35,8 +56,8 @@ function memory.define(ctx, platform, hw)
         moduletype = "gs_memory";
         dmi_allow = options.host_memory_dmi;
         target_socket = {
-            address = AP_ADDRESS.peripheral_ns_sram_tail;
-            size = AP_SIZE.peripheral_ns_sram_tail;
+            address = AP_PERIPHERAL_NS_SRAM_TAIL_BASE;
+            size = AP_PERIPHERAL_NS_SRAM_TAIL_SIZE;
             bind = "&system_router.initiator_socket";
         };
         init_mem = true;
@@ -48,8 +69,8 @@ function memory.define(ctx, platform, hw)
         moduletype = "gs_memory";
         dmi_allow = options.host_memory_dmi;
         target_socket = {
-            address = AP_ADDRESS.bl2_header_sram;
-            size = AP_SIZE.bl2_header_sram;
+            address = AP_BL2_HEADER_SRAM_BASE;
+            size = AP_BL2_HEADER_SRAM_SIZE;
             bind = "&system_router.initiator_socket";
         };
         log_level = 0;
@@ -62,7 +83,7 @@ function memory.define(ctx, platform, hw)
         program_ff_sets_bits = true;
         program_ff_erases_sector = true;
         size = AP_SIZE.flash;
-        sector_size = AP_SIZE.flash_sector;
+        sector_size = AP_FLASH_SECTOR_SIZE;
         target_socket = {
             address = AP_ADDRESS.flash;
             size = AP_SIZE.flash;
@@ -76,8 +97,8 @@ function memory.define(ctx, platform, hw)
         moduletype = "gs_memory";
         read_only = true;
         target_socket = {
-            address = AP_ADDRESS.trusted_nvctr;
-            size = AP_SIZE.trusted_nvctr;
+            address = AP_TRUSTED_NVCTR_BASE;
+            size = AP_TRUSTED_NVCTR_SIZE;
             bind = "&system_router.initiator_socket";
         };
         init_mem = true;
@@ -90,8 +111,8 @@ function memory.define(ctx, platform, hw)
             moduletype = "gs_memory";
             dmi_allow = options.host_memory_dmi;
             target_socket = {
-                address = AP_ADDRESS.dram1;
-                size = AP_SIZE.dram1;
+                address = AP_DRAM1_BASE;
+                size = AP_DRAM1_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 10;
             };
@@ -105,8 +126,8 @@ function memory.define(ctx, platform, hw)
             moduletype = "gs_memory";
             dmi_allow = options.host_memory_dmi;
             target_socket = {
-                address = AP_ADDRESS.ffa_mm_comm_buffer;
-                size = AP_SIZE.ffa_mm_comm_buffer;
+                address = AP_FFA_MM_COMM_BUFFER_BASE;
+                size = AP_FFA_MM_COMM_BUFFER_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             init_mem = true;
@@ -120,8 +141,8 @@ function memory.define(ctx, platform, hw)
             moduletype = "gs_memory";
             dmi_allow = options.host_memory_dmi;
             target_socket = {
-                address = AP_ADDRESS.spmc;
-                size = AP_SIZE.spmc_local;
+                address = AP_SPMC_BASE;
+                size = AP_SPMC_LOCAL_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             log_level = 0;
@@ -134,8 +155,8 @@ function memory.define(ctx, platform, hw)
             moduletype = "gs_memory";
             dmi_allow = options.host_memory_dmi;
             target_socket = {
-                address = AP_ADDRESS.dram2;
-                size = AP_SIZE.dram2;
+                address = AP_DRAM2_BASE;
+                size = AP_DRAM2_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             log_level = 0;
@@ -147,8 +168,8 @@ function memory.define(ctx, platform, hw)
         platform.host_ap_cper = {
             moduletype = "gs_memory";
             target_socket = {
-                address = AP_ADDRESS.cper;
-                size = AP_SIZE.cper;
+                address = AP_CPER_BASE;
+                size = AP_CPER_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             init_mem = true;

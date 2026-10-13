@@ -1,10 +1,14 @@
+-- GIC SPI constants are zero-based SPI socket indices (not architectural INTIDs).
+local AP_SECURE_UART_BASE = 0x1A410000
+local AP_PRIMARY_UART_BASE = 0x1A400000
+local AP_PRIMARY_UART_SPI = 52
+local AP_SECURE_UART_SPI = 53
+
 local io_peri = {}
 
 function io_peri.define(ctx, platform, hw)
     local options = ctx.options
-    local AP_ADDRESS = hw.AP_ADDRESS
     local AP_SIZE = hw.AP_SIZE
-    local AP_IRQ = hw.AP_IRQ
     local AP_HW = hw.AP_HW
 
     assert(platform.ap_secure_uart == nil, "duplicate Apollo object")
@@ -14,11 +18,11 @@ function io_peri.define(ctx, platform, hw)
             dylib_path = "uart-pl011";
             revision = AP_HW.uart_revision;
             target_socket = {
-                address = AP_ADDRESS.secure_uart;
+                address = AP_SECURE_UART_BASE;
                 size = AP_SIZE.register_window;
                 bind = "&system_router.initiator_socket";
             };
-            irq = {bind = "&ap_gic.spi_in_" .. AP_IRQ.secure_uart};
+            irq = {bind = "&ap_gic.spi_in_" .. AP_SECURE_UART_SPI};
         }
     end
 
@@ -29,11 +33,11 @@ function io_peri.define(ctx, platform, hw)
             dylib_path = "uart-pl011";
             revision = AP_HW.uart_revision;
             target_socket = {
-                address = AP_ADDRESS.primary_uart;
+                address = AP_PRIMARY_UART_BASE;
                 size = AP_SIZE.register_window;
                 bind = "&system_router.initiator_socket";
             };
-            irq = {bind = "&ap_gic.spi_in_" .. AP_IRQ.primary_uart};
+            irq = {bind = "&ap_gic.spi_in_" .. AP_PRIMARY_UART_SPI};
         }
     end
 end

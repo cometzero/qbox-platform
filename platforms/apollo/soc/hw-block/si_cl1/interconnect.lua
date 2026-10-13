@@ -1,9 +1,10 @@
+local SI_CL1_HIPC_ALIAS_BASE = 0x00100000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, _interrupts)
     local SI_CL1_HIPC_SHARED_BASE = hardware.SI_CL1_HIPC_SHARED_BASE
     local SI_CL1_HIPC_SHARED_SIZE = hardware.SI_CL1_HIPC_SHARED_SIZE
-    local SI_CL1_HIPC_ALIAS_BASE = hardware.SI_CL1_HIPC_ALIAS_BASE
 
     local block = {}
 

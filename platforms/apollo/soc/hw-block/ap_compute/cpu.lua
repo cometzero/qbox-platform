@@ -1,3 +1,12 @@
+-- CPU PPI constants use architectural INTIDs, as required by QEMU PPI sockets.
+local AP_ARCH_TIMER_VIRT_INTID = 16 + 11
+local AP_ARCH_TIMER_SECURE_INTID = 16 + 13
+local AP_ARCH_TIMER_NON_SECURE_INTID = 16 + 14
+local AP_ARCH_TIMER_HYP_INTID = 16 + 10
+local AP_GIC_MAINTENANCE_INTID = 25
+local AP_PMU_INTID = 23
+local AP_RAS_FAULT_INTID = 17
+
 local cpu = {}
 
 function cpu.define_initiator(ctx, platform)
@@ -19,7 +28,6 @@ function cpu.define(ctx, platform, hw)
     local options = ctx.options
     local AP_ADDRESS = hw.AP_ADDRESS
     local AP_SIZE = hw.AP_SIZE
-    local AP_IRQ = hw.AP_IRQ
     local AP_HW = hw.AP_HW
 
     if options.enable_ap_cpus then
@@ -37,7 +45,7 @@ function cpu.define(ctx, platform, hw)
             platform["ap_cpu_ras_fault_sync_" .. i] = {
                 moduletype = "signal_fanout";
                 signal_out = {
-                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_IRQ.ras_fault;
+                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_RAS_FAULT_INTID;
                 };
             }
             local cpu = {
@@ -47,21 +55,21 @@ function cpu.define(ctx, platform, hw)
                 has_el3 = true;
                 has_el2 = true;
                 irq_timer_phys_out = {
-                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_IRQ.arch_timer_non_secure;
+                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_ARCH_TIMER_NON_SECURE_INTID;
                 };
                 irq_timer_virt_out = {
-                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_IRQ.arch_timer_virt;
+                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_ARCH_TIMER_VIRT_INTID;
                 };
                 irq_timer_hyp_out = {
-                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_IRQ.arch_timer_hyp;
+                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_ARCH_TIMER_HYP_INTID;
                 };
                 irq_timer_sec_out = {
-                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_IRQ.arch_timer_secure;
+                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_ARCH_TIMER_SECURE_INTID;
                 };
                 gicv3_maintenance_interrupt = {
-                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_IRQ.gic_maintenance;
+                    bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_GIC_MAINTENANCE_INTID;
                 };
-                pmu_interrupt = {bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_IRQ.pmu};
+                pmu_interrupt = {bind = "&ap_gic.ppi_in_cpu_" .. i .. "_" .. AP_PMU_INTID};
                 ras_fault_interrupt = {
                     bind = "&ap_cpu_ras_fault_sync_" .. i .. ".signal_in";
                 };

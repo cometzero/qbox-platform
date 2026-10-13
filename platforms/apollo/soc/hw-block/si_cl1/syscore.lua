@@ -1,9 +1,10 @@
+local SI_CL1_GICD_BASE = 0x30200000
+local SI_CL1_GICD_SIZE = 0x00010000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, _interrupts)
     local SI_CL1_CPU_COUNT = hardware.SI_CL1_CPU_COUNT
-    local SI_CL1_GICD_BASE = hardware.SI_CL1_GICD_BASE
-    local SI_CL1_GICD_SIZE = hardware.SI_CL1_GICD_SIZE
     local SI_CL1_GIC_REDIST_REGIONS = hardware.SI_CL1_GIC_REDIST_REGIONS
     local SI_CL1_GIC_NUM_SPI = hardware.SI_CL1_GIC_NUM_SPI
 

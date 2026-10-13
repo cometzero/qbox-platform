@@ -1,3 +1,6 @@
+local HOST_SI_CLUS_PPU_OFFSET = 0x00010000
+local HOST_SI_CONTROL_WINDOW_SIZE = 0x00010000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, _interrupts)
@@ -5,8 +8,6 @@ function module.create(ctx, hardware, _runtime, _interrupts)
     local host_ppu_trace_limit = ctx.options.host_ppu_trace_limit
     local SI_CL1_CPU_COUNT = hardware.SI_CL1_CPU_COUNT
     local HOST_SI_CL1_CL_UTIL_BASE = hardware.HOST_SI_CL1_CL_UTIL_BASE
-    local HOST_SI_CLUS_PPU_OFFSET = hardware.HOST_SI_CLUS_PPU_OFFSET
-    local HOST_SI_CONTROL_WINDOW_SIZE = hardware.HOST_SI_CONTROL_WINDOW_SIZE
 
     local block = {}
 

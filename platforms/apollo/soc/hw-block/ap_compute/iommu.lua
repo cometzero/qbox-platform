@@ -1,3 +1,6 @@
+local AP_SMMU_BASE = 0x1C0000000
+local AP_SMMU_SIZE = 0x08000000
+
 local iommu = {}
 
 local function ap_smmu_component(ctx, hw)
@@ -17,8 +20,8 @@ local function ap_smmu_component(ctx, hw)
             num_tbu = AP_HW.smmu_tbu_count;
             iidr = AP_HW.smmu_iidr;
             target_socket = {
-                address = AP_ADDRESS.smmu;
-                size = AP_SIZE.smmu;
+                address = AP_SMMU_BASE;
+                size = AP_SMMU_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             dma = {bind = "&system_router.target_socket"};
@@ -30,8 +33,8 @@ local function ap_smmu_component(ctx, hw)
         moduletype = "arm_smmuv3";
         args = {"&platform.ap_qemu_inst", "&platform.ap_gpex_0"};
         mem = {
-            address = AP_ADDRESS.smmu;
-            size = AP_SIZE.smmu;
+            address = AP_SMMU_BASE;
+            size = AP_SMMU_SIZE;
             bind = "&system_router.initiator_socket";
         };
         irq_out_0 = {bind = event_irq_target};

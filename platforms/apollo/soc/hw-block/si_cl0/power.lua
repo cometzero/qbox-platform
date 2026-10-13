@@ -1,3 +1,16 @@
+local HOST_SI_CLUS_PPU_OFFSET = 0x00010000
+local HOST_SI_CORE0_PPU_OFFSET = 0x00040000
+local HOST_SI_CONTROL_WINDOW_SIZE = 0x00010000
+local SI_CL1_CORE_PPU_STRIDE = 0x00100000
+local SI_CL_PPU_SIZE = 0x00001000
+local SI_CL0_AP_CLUSTER_PPU_OFFSET = 0x01030000
+local SI_CL0_AP_CLUSTER_AE_OFFSET = 0x01050000
+local SI_CL0_AP_CORE_PPU0_OFFSET = 0x01080000
+local SI_CL0_AP_CLUSTER_CONTROL_OFFSET = 0x02000000
+local SI_CL0_AP_CLUSTER_CONTROL_SIZE = 0x00010000
+local SI_CL0_SYS0_PPU_SIZE = 0x00001000
+local SI_CL0_SYS0_PPU_PHYS_BASE = 0x20000D0201000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, _interrupts)
@@ -19,8 +32,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             trace = host_ppu_trace;
             trace_limit = host_ppu_trace_limit;
             target_socket = {
-                address = SI_CONST.HOST_SI_CL0_CL_UTIL_BASE + SI_CONST.HOST_SI_CLUS_PPU_OFFSET;
-                size = SI_CONST.HOST_SI_CONTROL_WINDOW_SIZE;
+                address = SI_CONST.HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
+                size = HOST_SI_CONTROL_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 10;
             };
@@ -45,8 +58,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             access_latency_ns = ctx.getenv_number_or(
                 "QBOX_APOLLO_FULL_SI_CL0_PPU_ACCESS_LATENCY_NS", "100");
             target_socket = {
-                address = SI_CONST.HOST_SI_CL0_CL_UTIL_BASE + SI_CONST.HOST_SI_CORE0_PPU_OFFSET;
-                size = SI_CONST.HOST_SI_CONTROL_WINDOW_SIZE;
+                address = SI_CONST.HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CORE0_PPU_OFFSET;
+                size = HOST_SI_CONTROL_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 10;
             };
@@ -62,8 +75,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
         platform.si_cl0_sys0_ppu = {
             moduletype = "host_ppu";
             target_socket = {
-                address = SI_CONST.SI_CL0_SYS0_PPU_PHYS_BASE;
-                size = SI_CONST.SI_CL0_SYS0_PPU_SIZE;
+                address = SI_CL0_SYS0_PPU_PHYS_BASE;
+                size = SI_CL0_SYS0_PPU_SIZE;
                 bind = "&smd_router.initiator_socket";
                 priority = 0;
             };
@@ -78,7 +91,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             initial_power_status = 0x0;
             target_socket = {
                 address = SI_CONST.SI_CL1_CLUSTER_PPU_BASE;
-                size = SI_CONST.SI_CL_PPU_SIZE;
+                size = SI_CL_PPU_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -98,8 +111,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                 };
                 target_socket = {
                     address = SI_CONST.SI_CL1_CORE_PPU0_BASE +
-                        (i * SI_CONST.SI_CL1_CORE_PPU_STRIDE);
-                    size = SI_CONST.SI_CL_PPU_SIZE;
+                        (i * SI_CL1_CORE_PPU_STRIDE);
+                    size = SI_CL_PPU_SIZE;
                     bind = "&si_cl0_router.initiator_socket";
                     priority = 0;
                 };
@@ -115,7 +128,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             dmi = false;
             target_socket = {
                 address = SI_CONST.SI_CL1_PPU_AE_BASE;
-                size = SI_CONST.SI_CL_PPU_SIZE;
+                size = SI_CL_PPU_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -138,8 +151,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                 trace_limit = host_ppu_trace_limit;
                 irq = {bind = "&si_cl0_gic.spi_in_" .. (228 + 5 * cluster)};
                 target_socket = {
-                    address = cluster_base + SI_CONST.SI_CL0_AP_CLUSTER_PPU_OFFSET;
-                    size = SI_CONST.SI_CL_PPU_SIZE;
+                    address = cluster_base + SI_CL0_AP_CLUSTER_PPU_OFFSET;
+                    size = SI_CL_PPU_SIZE;
                     bind = "&system_router.initiator_socket";
                     priority = 0;
                 };
@@ -152,8 +165,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                 moduletype = "gs_memory";
                 dmi = false;
                 target_socket = {
-                    address = cluster_base + SI_CONST.SI_CL0_AP_CLUSTER_AE_OFFSET;
-                    size = SI_CONST.SI_CL_PPU_SIZE;
+                    address = cluster_base + SI_CL0_AP_CLUSTER_AE_OFFSET;
+                    size = SI_CL_PPU_SIZE;
                     bind = "&system_router.initiator_socket";
                     priority = 0;
                 };
@@ -168,8 +181,8 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                 moduletype = "gs_memory";
                 dmi = false;
                 target_socket = {
-                    address = cluster_base + SI_CONST.SI_CL0_AP_CLUSTER_CONTROL_OFFSET;
-                    size = SI_CONST.SI_CL0_AP_CLUSTER_CONTROL_SIZE;
+                    address = cluster_base + SI_CL0_AP_CLUSTER_CONTROL_OFFSET;
+                    size = SI_CL0_AP_CLUSTER_CONTROL_SIZE;
                     bind = "&system_router.initiator_socket";
                     priority = 0;
                 };
@@ -212,9 +225,9 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                         bind = "&ap_cpu_" .. cpu_index .. ".reset";
                     } or nil;
                     target_socket = {
-                        address = cluster_base + SI_CONST.SI_CL0_AP_CORE_PPU0_OFFSET +
+                        address = cluster_base + SI_CL0_AP_CORE_PPU0_OFFSET +
                             (core * SI_CONST.SI_CL0_AP_CORE_PPU_STRIDE);
-                        size = SI_CONST.SI_CL_PPU_SIZE;
+                        size = SI_CL_PPU_SIZE;
                         bind = "&system_router.initiator_socket";
                         priority = 0;
                     };

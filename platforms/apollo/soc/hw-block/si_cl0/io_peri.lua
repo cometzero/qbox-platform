@@ -1,7 +1,9 @@
+local SI_CL0_UART_BASE = 0x2A400000
+local SI_CL0_UART_SIZE = 0x00010000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, interrupts)
-    local SI_CONST = hardware
     local irq_routes = interrupts
 
     local block = {}
@@ -14,8 +16,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             moduletype = "Pl011";
             dylib_path = "uart-pl011";
             target_socket = {
-                address = SI_CONST.SI_CL0_UART_BASE;
-                size = SI_CONST.SI_CL0_UART_SIZE;
+                address = SI_CL0_UART_BASE;
+                size = SI_CL0_UART_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
             };
             irq = {bind = irq_routes.spi_target(ctx, "si_cl0_uart", "View1")};

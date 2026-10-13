@@ -1,3 +1,25 @@
+local SI_CL0_SSU_BASE = 0x2A500000
+local SI_CL0_SSU_SIZE = 0x00001000
+local SI_CL0_FMU_BASE = 0x2A510000
+local SI_CL0_FMU_SIZE = 0x00050000
+local SI_CL0_AP_CORE_RAS_OFFSET = 0x010A0000
+local SI_CL0_AP_CORE_RAS_SIZE = 0x00000040
+local HOST_NI710AE_SYS_CTRL_PHYS_BASE = 0x20000D2400000
+local HOST_NI710AE_SMD_PHYS_BASE = 0x20000D2600000
+local HOST_NI710AE_WINDOW_SIZE = 0x00100000
+local SI_CL0_GIC_FMU_BASE = 0x32020000
+local SI_CL0_RSE_CL0_MHU_FMU_BASE = 0x321D0000
+local SI_CL0_CL0_RSE_MHU_FMU_BASE = 0x321C0000
+local SI_CL0_PC0_CL0_MHU_FMU_BASE = 0x32110000
+local SI_CL0_CL0_PC0_MHU_FMU_BASE = 0x32100000
+local SI_CL0_PC1_CL0_MHU_FMU_BASE = 0x32130000
+local SI_CL0_CL0_PC1_MHU_FMU_BASE = 0x32120000
+local SI_CL0_PC2_CL0_MHU_FMU_BASE = 0x32310000
+local SI_CL0_CL0_PC2_MHU_FMU_BASE = 0x32300000
+local SI_CL0_PC3_CL0_MHU_FMU_BASE = 0x32330000
+local SI_CL0_CL0_PC3_MHU_FMU_BASE = 0x32320000
+local SI_CL0_DEVICE_FMU_SIZE = 0x00010000
+
 local module = {}
 
 function module.create(ctx, hardware, _runtime, interrupts)
@@ -13,8 +35,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
         platform.si_cl0_ssu = {
             moduletype = "zena_ssu";
             target_socket = {
-                address = SI_CONST.SI_CL0_SSU_BASE;
-                size = SI_CONST.SI_CL0_SSU_SIZE;
+                address = SI_CL0_SSU_BASE;
+                size = SI_CL0_SSU_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -35,8 +57,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             fault_id = "ni710ae-apu-permission-denied";
             fault_sink = "si_cl0_fmu.record0";
             target_socket = {
-                address = SI_CONST.SI_CL0_FMU_BASE;
-                size = SI_CONST.SI_CL0_FMU_SIZE;
+                address = SI_CL0_FMU_BASE;
+                size = SI_CL0_FMU_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
@@ -54,27 +76,27 @@ function module.create(ctx, hardware, _runtime, interrupts)
         }
 
         local device_fmus = {
-            {name = "gic"; base = SI_CONST.SI_CL0_GIC_FMU_BASE;
+            {name = "gic"; base = SI_CL0_GIC_FMU_BASE;
              critical_record = 204; non_critical_record = 203};
-            {name = "rse_cl0_mhu"; base = SI_CONST.SI_CL0_RSE_CL0_MHU_FMU_BASE;
+            {name = "rse_cl0_mhu"; base = SI_CL0_RSE_CL0_MHU_FMU_BASE;
              critical_record = 0; non_critical_record = 1};
-            {name = "cl0_rse_mhu"; base = SI_CONST.SI_CL0_CL0_RSE_MHU_FMU_BASE;
+            {name = "cl0_rse_mhu"; base = SI_CL0_CL0_RSE_MHU_FMU_BASE;
              critical_record = 2; non_critical_record = 3};
-            {name = "pc0_cl0_mhu"; base = SI_CONST.SI_CL0_PC0_CL0_MHU_FMU_BASE;
+            {name = "pc0_cl0_mhu"; base = SI_CL0_PC0_CL0_MHU_FMU_BASE;
              critical_record = 4; non_critical_record = 5};
-            {name = "cl0_pc0_mhu"; base = SI_CONST.SI_CL0_CL0_PC0_MHU_FMU_BASE;
+            {name = "cl0_pc0_mhu"; base = SI_CL0_CL0_PC0_MHU_FMU_BASE;
              critical_record = 6; non_critical_record = 7};
-            {name = "pc1_cl0_mhu"; base = SI_CONST.SI_CL0_PC1_CL0_MHU_FMU_BASE;
+            {name = "pc1_cl0_mhu"; base = SI_CL0_PC1_CL0_MHU_FMU_BASE;
              critical_record = 8; non_critical_record = 9};
-            {name = "cl0_pc1_mhu"; base = SI_CONST.SI_CL0_CL0_PC1_MHU_FMU_BASE;
+            {name = "cl0_pc1_mhu"; base = SI_CL0_CL0_PC1_MHU_FMU_BASE;
              critical_record = 10; non_critical_record = 11};
-            {name = "pc2_cl0_mhu"; base = SI_CONST.SI_CL0_PC2_CL0_MHU_FMU_BASE;
+            {name = "pc2_cl0_mhu"; base = SI_CL0_PC2_CL0_MHU_FMU_BASE;
              critical_record = 12; non_critical_record = 13};
-            {name = "cl0_pc2_mhu"; base = SI_CONST.SI_CL0_CL0_PC2_MHU_FMU_BASE;
+            {name = "cl0_pc2_mhu"; base = SI_CL0_CL0_PC2_MHU_FMU_BASE;
              critical_record = 14; non_critical_record = 15};
-            {name = "pc3_cl0_mhu"; base = SI_CONST.SI_CL0_PC3_CL0_MHU_FMU_BASE;
+            {name = "pc3_cl0_mhu"; base = SI_CL0_PC3_CL0_MHU_FMU_BASE;
              critical_record = 16; non_critical_record = 17};
-            {name = "cl0_pc3_mhu"; base = SI_CONST.SI_CL0_CL0_PC3_MHU_FMU_BASE;
+            {name = "cl0_pc3_mhu"; base = SI_CL0_CL0_PC3_MHU_FMU_BASE;
              critical_record = 18; non_critical_record = 19};
         }
         for _, fmu in ipairs(device_fmus) do
@@ -88,7 +110,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 parent_non_critical_record = fmu.non_critical_record;
                 target_socket = {
                     address = fmu.base;
-                    size = SI_CONST.SI_CL0_DEVICE_FMU_SIZE;
+                    size = SI_CL0_DEVICE_FMU_SIZE;
                     bind = "&si_cl0_router.initiator_socket";
                     priority = 0;
                 };
@@ -105,8 +127,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             parent_critical_record = 68;
             parent_non_critical_record = 66;
             target_socket = {
-                address = SI_CONST.HOST_NI710AE_SYS_CTRL_PHYS_BASE;
-                size = SI_CONST.HOST_NI710AE_WINDOW_SIZE;
+                address = HOST_NI710AE_SYS_CTRL_PHYS_BASE;
+                size = HOST_NI710AE_WINDOW_SIZE;
                 bind = "&smd_router.initiator_socket";
             };
             fault_socket = {bind = "&si_cl0_router.target_socket"};
@@ -122,8 +144,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             parent_critical_record = 167;
             parent_non_critical_record = 165;
             target_socket = {
-                address = SI_CONST.HOST_NI710AE_SMD_PHYS_BASE;
-                size = SI_CONST.HOST_NI710AE_WINDOW_SIZE;
+                address = HOST_NI710AE_SMD_PHYS_BASE;
+                size = HOST_NI710AE_WINDOW_SIZE;
                 bind = "&smd_router.initiator_socket";
             };
             fault_socket = {bind = "&si_cl0_router.target_socket"};
@@ -140,9 +162,9 @@ function module.create(ctx, hardware, _runtime, interrupts)
             }
             for core = 0,(SI_CONST.SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
                 ras["record_" .. core] = {
-                    address = cluster_base + SI_CONST.SI_CL0_AP_CORE_RAS_OFFSET +
+                    address = cluster_base + SI_CL0_AP_CORE_RAS_OFFSET +
                         (core * SI_CONST.SI_CL0_AP_CORE_PPU_STRIDE);
-                    size = SI_CONST.SI_CL0_AP_CORE_RAS_SIZE;
+                    size = SI_CL0_AP_CORE_RAS_SIZE;
                     bind = "&system_router.initiator_socket";
                     priority = 0;
                 }

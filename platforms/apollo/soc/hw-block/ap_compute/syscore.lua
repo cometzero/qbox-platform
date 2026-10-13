@@ -1,8 +1,17 @@
+-- GIC SPI constants are zero-based SPI socket indices (not architectural INTIDs).
+local AP_SID_BASE = 0x1A4A0000
+local AP_RGIC2LGIC_MESSREG_BASE = 0x5FFF0000
+local AP_SBIST_CLUSTER0_BASE = 0x140100000
+local AP_SI_CL0_FMU_BASE = 0x2A510000
+local AP_SID_SIZE = 0x00010000
+local AP_RGIC2LGIC_MESSREG_SIZE = 0x00010000
+local AP_SBIST_SIZE = 0x00100000
+local AP_NS_WDOG_WS1_SPI = 51
+
 local syscore = {}
 
 function syscore.define_reset(ctx, platform, hw)
     local options = ctx.options
-    local AP_IRQ = hw.AP_IRQ
 
     assert(platform.ap_reset_gpio == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
@@ -39,7 +48,7 @@ function syscore.define_reset(ctx, platform, hw)
         platform.ap_ns_watchdog_ws1_fanout = {
             moduletype = "signal_fanout";
             signal_out = {
-                bind = "&ap_gic.spi_in_" .. AP_IRQ.ns_wdog_ws1 ..
+                bind = "&ap_gic.spi_in_" .. AP_NS_WDOG_WS1_SPI ..
                     ";" .. ctx.modules.si_cl0.spi_target(ctx, "si_cl0_ap_ns_watchdog_ws1", "View1");
             };
         }
@@ -69,8 +78,8 @@ function syscore.define(ctx, platform, hw)
             cidr2 = AP_HW.sid_cidr2;
             cidr3 = AP_HW.sid_cidr3;
             target_socket = {
-                address = AP_ADDRESS.sid;
-                size = AP_SIZE.sid;
+                address = AP_SID_BASE;
+                size = AP_SID_SIZE;
                 bind = "&system_router.initiator_socket";
             };
             log_level = 0;
@@ -82,11 +91,11 @@ function syscore.define(ctx, platform, hw)
         platform.ap_rgic2lgic_messreg = {
             moduletype = "gic720ae_messreg";
             target_socket = {
-                address = AP_ADDRESS.rgic2lgic_messreg;
-                size = AP_SIZE.rgic2lgic_messreg;
+                address = AP_RGIC2LGIC_MESSREG_BASE;
+                size = AP_RGIC2LGIC_MESSREG_SIZE;
                 bind = "&system_router.initiator_socket";
             };
-            window_size = AP_SIZE.rgic2lgic_messreg;
+            window_size = AP_RGIC2LGIC_MESSREG_SIZE;
             log_level = 0;
         }
     end
@@ -165,10 +174,10 @@ function syscore.define(ctx, platform, hw)
             platform["ap_sbist_cluster" .. cluster] = {
                 moduletype = "apollo_sbist";
                 cpu_base = cluster * 4;
-                fmu_base = AP_ADDRESS.si_cl0_fmu;
+                fmu_base = AP_SI_CL0_FMU_BASE;
                 target_socket = {
-                    address = AP_ADDRESS.sbist_cluster0 + (cluster * 0x04000000);
-                    size = AP_SIZE.sbist;
+                    address = AP_SBIST_CLUSTER0_BASE + (cluster * 0x04000000);
+                    size = AP_SBIST_SIZE;
                     bind = "&system_router.initiator_socket";
                     priority = 0;
                 };
