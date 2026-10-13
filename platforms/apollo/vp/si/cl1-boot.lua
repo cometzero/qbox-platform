@@ -1,7 +1,8 @@
+local SI_CL1_SRAM_BASE = 0x140000000
+
 local module = {}
 
-function module.create(ctx, hardware, _runtime, _interrupts)
-    local SI_CL1_SRAM_BASE = hardware.SI_CL1_SRAM_BASE
+function module.create(ctx, _runtime)
 
     local block = {}
 

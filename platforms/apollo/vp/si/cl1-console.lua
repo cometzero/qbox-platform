@@ -1,7 +1,8 @@
+local SI_CL1_UART_POLL_INTERVAL_MS = 100
+
 local module = {}
 
-function module.create(ctx, hardware, runtime, _interrupts)
-    local SI_CL1_UART_POLL_INTERVAL_MS = hardware.SI_CL1_UART_POLL_INTERVAL_MS
+function module.create(ctx, runtime)
     local si_cl1_uart_read_file = runtime.si_cl1_uart_read_file
     local si_cl1_log = runtime.si_cl1_log
     local si_cl1_uart_poll_read = runtime.si_cl1_uart_poll_read

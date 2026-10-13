@@ -1,3 +1,13 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_CL1_HIPC_PBX_SPI = 72 - 32
+local SI_CL1_HIPC_MBX_SPI = 73 - 32
+local SI_CL1_PFDI_SPI = 82 - 32
+
+local SI_CL1_SCMI_SHMEM_BASE = 0x48000000
+local SI_CL1_MHU_CHANNELS = 32
+local SI_CL1_SCMI_MSG_SIZE_PER_CORE = 40
+local SI_CL1_PFDI_CORE_COUNT = 4
+
 local SI_CL1_HIPC_PBX_BASE = 0x39000000
 local SI_CL1_HIPC_MBX_BASE = 0x39040000
 local SI_CL1_PFDI_PBX_BASE = 0x39200000
@@ -8,12 +18,8 @@ local SI_CL1_PFDI_MHU_CHANNEL_BASE = 2
 
 local module = {}
 
-function module.create(ctx, hardware, runtime, interrupts)
-    local SI_CL1_SCMI_SHMEM_BASE = hardware.SI_CL1_SCMI_SHMEM_BASE
-    local SI_CL1_MHU_CHANNELS = hardware.SI_CL1_MHU_CHANNELS
-    local SI_CL1_SCMI_MSG_SIZE_PER_CORE = hardware.SI_CL1_SCMI_MSG_SIZE_PER_CORE
-    local SI_CL1_PFDI_CORE_COUNT = hardware.SI_CL1_PFDI_CORE_COUNT
-    local irq_routes = interrupts
+function module.create(ctx, runtime)
+
     local mhu_trace = runtime.mhu_trace
     local mhu_trace_file = runtime.mhu_trace_file
     local mhu_trace_limit = runtime.mhu_trace_limit
@@ -39,8 +45,7 @@ function module.create(ctx, hardware, runtime, interrupts)
                 bind = "&si_cl1_router.initiator_socket";
             };
             initiator_socket = {bind = "&si_cl1_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl1_hipc_pbx", "View2")};
+            irq = {bind = "&si_cl1_gic.spi_in_" .. SI_CL1_HIPC_PBX_SPI};
             log_level = 0;
         }
 
@@ -62,8 +67,7 @@ function module.create(ctx, hardware, runtime, interrupts)
                 bind = "&si_cl1_router.initiator_socket";
             };
             initiator_socket = {bind = "&si_cl1_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl1_hipc_mbx", "View2")};
+            irq = {bind = "&si_cl1_gic.spi_in_" .. SI_CL1_HIPC_MBX_SPI};
             log_level = 0;
         }
 
@@ -93,8 +97,7 @@ function module.create(ctx, hardware, runtime, interrupts)
                 bind = "&si_cl1_router.initiator_socket";
             };
             initiator_socket = {bind = "&si_cl1_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl1_pfdi", "View2")};
+            irq = {bind = "&si_cl1_gic.spi_in_" .. SI_CL1_PFDI_SPI};
             log_level = 0;
         }
 

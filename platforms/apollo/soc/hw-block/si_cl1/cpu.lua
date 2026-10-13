@@ -1,21 +1,25 @@
-local SI_CL1_GICR0_BASE = 0x30260000
-local SI_CL1_GICR_STRIDE = 0x00020000
-local SI_CL1_GICR_SIZE = 0x00020000
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_SECURE_TIMER_INTID = 29
+local SI_PHYSICAL_TIMER_INTID = 20
+local SI_VIRTUAL_TIMER_INTID = 27
+local SI_HYPERVISOR_TIMER_INTID = 19
+
+local SI_CL1_CPU_COUNT = 4
+local ARCH_TIMER_FREQUENCY_HZ = 125000000
+
 local SI_CL1_AFFINITY_BASE = 0x00010000
 local SI_CL1_AFFINITY_STRIDE = 0x00000100
 
 local module = {}
 
-function module.create(ctx, hardware, runtime, _interrupts)
-    local SI_CL1_CPU_COUNT = hardware.SI_CL1_CPU_COUNT
-    local ARCH_TIMER_FREQUENCY_HZ = hardware.ARCH_TIMER_FREQUENCY_HZ
+function module.create(ctx, runtime)
 
     local block = {}
 
     function block.define(ctx, platform, qemu_instance)
         local gic_name = "si_cl1_gic"
         local gic = platform[gic_name]
-        local irq_routes = ctx.modules.si_cl0
+
         for i = 0,(SI_CL1_CPU_COUNT-1) do
             local gic_cpu = i
             assert(
@@ -40,22 +44,22 @@ function module.create(ctx, hardware, runtime, _interrupts)
                 irq_timer_sec_out = {
                     bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
                         gic_cpu .. "_" ..
-                        irq_routes.ppi_index(ctx, "si_secure_timer");
+                        SI_SECURE_TIMER_INTID;
                 };
                 irq_timer_phys_out = {
                     bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
                         gic_cpu .. "_" ..
-                        irq_routes.ppi_index(ctx, "si_physical_timer");
+                        SI_PHYSICAL_TIMER_INTID;
                 };
                 irq_timer_virt_out = {
                     bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
                         gic_cpu .. "_" ..
-                        irq_routes.ppi_index(ctx, "si_virtual_timer");
+                        SI_VIRTUAL_TIMER_INTID;
                 };
                 irq_timer_hyp_out = {
                     bind = "&" .. gic_name .. ".ppi_in_cpu_" ..
                         gic_cpu .. "_" ..
-                        irq_routes.ppi_index(ctx, "si_hypervisor_timer");
+                        SI_HYPERVISOR_TIMER_INTID;
                 };
             }
             assert(
@@ -67,11 +71,6 @@ function module.create(ctx, hardware, runtime, _interrupts)
                     "&platform.si_cl1_cpu_" .. i;
                     "&platform.css_system_counter";
                 };
-            }
-            gic["redist_iface_" .. i] = {
-                address = SI_CL1_GICR0_BASE + (i * SI_CL1_GICR_STRIDE);
-                size = SI_CL1_GICR_SIZE;
-                bind = "&si_cl1_router.initiator_socket";
             }
             for _, signal in ipairs({"irq", "fiq", "virq", "vfiq"}) do
                 gic[signal .. "_out_" .. gic_cpu] = {

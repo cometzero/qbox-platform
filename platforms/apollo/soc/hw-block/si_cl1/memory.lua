@@ -1,3 +1,7 @@
+local SI_CL1_SRAM_BASE = 0x140000000
+local HOST_SI_CL1_CL_UTIL_BASE = 0x4000028800000
+local SI_CL1_SCMI_SHMEM_BASE = 0x48000000
+
 local HOST_SI_CL1_SRAM_PHYS_BASE = 0x4000140000000
 local HOST_SI_SRAM_WINDOW_SIZE = 0x01000000
 local HOST_SI_CL_UTIL_SIZE = 0x00800000
@@ -6,13 +10,10 @@ local SI_CL1_SCMI_SHMEM_SIZE = 0x00001000
 
 local module = {}
 
-function module.create(ctx, hardware, _runtime, _interrupts)
+function module.create(ctx, _runtime)
     local host_si_cl1_sram_map_file = ctx.options.host_si_cl1_sram_map_file
     local host_si_sram_dmi = ctx.options.host_si_sram_dmi
     local host_sram_shared_memory_enabled = ctx.options.host_sram_shared_memory_enabled
-    local SI_CL1_SRAM_BASE = hardware.SI_CL1_SRAM_BASE
-    local HOST_SI_CL1_CL_UTIL_BASE = hardware.HOST_SI_CL1_CL_UTIL_BASE
-    local SI_CL1_SCMI_SHMEM_BASE = hardware.SI_CL1_SCMI_SHMEM_BASE
 
     local block = {}
 
