@@ -6,13 +6,38 @@
 `apollo-qvp.lua` forwards to it. `apollo-qvp-linux.lua` selects the AP-only
 profile with explicit firmware substitutes.
 
-- `soc/apollo.lua` composes `soc/hw-block/{ap_compute,ros,rse,system_mgmt,si_cl0,si_cl1}`.
-  Each domain groups CPU, memory, syscore, peripheral and interconnect definitions.
-- `vp/options.lua` resolves environment options into `ctx.options` before domain
-  construction. `vp/` owns QEMU instances, firmware loaders, host IO, VirtIO,
-  monitor/QMP, backend adapters, test wiring and AP-only mocks.
-- `board/saturn-v.lua` attaches EEPROMs, PCA9539, TPS6594 and their I2C buses from
-  `board/hw-block/`. Existing test loopbacks are selected explicitly by the entry.
+- `soc/apollo.lua` owns complete SoC construction and domain wiring.
+  `soc.default_config()` supplies independent model defaults; `soc.create()`
+  produces the hardware descriptor without VP/board imports or host input.
+  Addresses and IRQ constants remain local to their hardware modules.
+- CPU modules own the minimum QEMU instances needed by CPU/device models.
+  Hardware reset belongs to each domain's `system.lua` and the fabric reset
+  list. Essential QEMU reset adapters belong to SoC hardware as well.
+- `vp/composition.lua` configures model choices, invokes SoC construction, then
+  applies domain overrides. VP owns QEMU execution policy, loaders, host
+  backends, diagnostics, acceleration, virtual/test devices and reset workarounds.
+  It does not repeat hardware assembly.
+- `vp/profiles/full-system.lua` attaches board, backend and debug services.
+  `vp/profiles/linux-direct.lua` applies AP-only firmware substitutes.
+- `board/saturn-v.lua` attaches EEPROMs, PCA9539, TPS6594 and their I2C buses.
+  EEPROM reset participation is attached with board population.
+
+A standalone descriptor can be generated directly:
+
+```lua
+local soc = dofile("path/to/apollo/soc/apollo.lua")
+local config = soc.default_config()
+platform = soc.create(config)
+```
+
+The default contains 16 AP CPUs, RSE and both SI clusters. It selects SystemC
+flash/crypto, disables optional DMI and trace, and has no firmware loaders,
+host files or board devices. SI entry zero is an unprogrammed model value,
+not a qualified silicon reset vector. Descriptor construction does not imply
+firmware boot or board completeness; execution profiles supply those inputs.
+`config.options` exposes supported model choices. VP changes those choices before
+construction and applies execution-only properties afterwards. RSE local placement
+is derived from its flash/crypto choices; complete SoC creation requires AP CPUs.
 
 Includes are source-relative literal `dofile` paths. Modules return local tables
 or functions; only the fully composed `platform` is exported globally to QBox.
@@ -44,7 +69,8 @@ This is test-time validation, not a replacement startup validator.
 
 System management uses `system.lua` for PPU/SCR/reset and the shared CSS
 counter, `interconnect.lua` for its three ATUs, `memory.lua` for shared SRAM
-and AP/RSE pointer-access memory, and `io_peri.lua` for GPIO and its cold reset.
+and AP/RSE pointer-access memory, and `io_peri.lua` for GPIO. Its cold reset
+adapter is attached by SoC composition.
 MHU definitions remain in `rse_si_mailbox.lua`, `ap_si_mailbox.lua` and
 `ap_rse_mailbox.lua`. Each file owns its local address/IRQ constants;
 `constants.lua` and the unused, inaccurate `ownership` table are removed.
@@ -55,8 +81,8 @@ RSE uses `cpu.lua`, `system.lua`, `security.lua`, `memory.lua`, `boot.lua`,
 `io_peri.lua` and `interconnect.lua`, composed by `rse.lua`. Hardware constants
 are local to each consuming file; shared values are temporarily duplicated.
 Option-dependent VM size and VM1 base are calculated during creation.
-`system.lua` owns timers, mailboxes and SYS/RSS versus AON reset fanouts;
-device reset adapters stay with the CPU, GPIO or flash definitions.
+`system.lua` owns timers, mailboxes and SYS/RSS versus AON reset assembly.
+SoC owns required QEMU device reset adapters.
 Boot ROM and flash devices live in the SoC `boot.lua`; firmware image loading
 and diagnostics remain in `vp/rse/boot.lua`. Existing CCI paths are unchanged.
 
@@ -65,7 +91,7 @@ interconnect modules. `system.lua` owns GIC/ITS, SMMU/TBU, timers, watchdogs
 and SID, with separate definition functions preserving composition order.
 `map.lua` is removed; each consumer owns its constants, with temporary
 copies for shared values. Active GIC geometry follows the configured CPU count.
-CPU reset stays with CPU definitions; common fanouts remain in `system.lua`.
+CPU reset and common fanouts are assembled by the SoC system and fabric modules.
 `interconnect.lua` replaces `address_view.lua` and still connects the final AP
 view after RoS and system management exist. Mailbox/PPU ownership and global
 reset targets are unchanged. VP code retains firmware loading and test devices.
@@ -74,12 +100,13 @@ SI CL0 combines GIC/multiview, timer/watchdog, SCR/system ID and PLL definitions
 in `system.lua`. SMCF monitors belong to `safety.lua`; power, mailbox, memory,
 CPU, I/O and interconnect remain separate. `hardware.lua` is removed and each
 consumer declares its constants, retaining shared address arithmetic locally.
-The protected CPU path, GIC view priorities, PPU load/reset timing and `define()`/`enable()` phases are preserved.
+The protected CPU path, GIC view priorities and PPU load/reset timing are preserved.
+The domain aggregator constructs host windows before the cluster hardware.
 Firmware loading and PMIC/vMCU execution extensions remain under `vp/`.
 
 SI CL1 keeps CPU, system, power, mailbox, memory, I/O and interconnect modules.
-`system.lua` owns the GIC distributor/redistributors and the ordered SI reset
-finalization formerly in `power.lua`. PPU definitions stay in `power.lua` and
+`system.lua` owns the GIC distributor/redistributors; `vp/si_cl1/reset.lua`
+finalizes the ordered SI execution reset. PPU definitions stay in `power.lua` and
 CL0-controlled PPU definitions stay with CL0. `hardware.lua` is removed;
 constants belong to consumers. The public HIPC window query delegates to
 `interconnect.lua`. Four-core topology, IRQ bindings, reset order and
