@@ -1,3 +1,22 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_CL0_AP_NS_MHU_PBX_SPI = 96 - 32
+local SI_CL0_AP_NS_MHU_MBX_SPI = 97 - 32
+local SI_CL0_AP_SCMI_MHU_PBX_SPI = 98 - 32
+local SI_CL0_AP_SCMI_MHU_MBX_SPI = 99 - 32
+local SI_CL0_AP_PFDI_MHU_PBX_SPI = 102 - 32
+local SI_CL0_AP_PFDI_MHU_MBX_SPI = 103 - 32
+local SI_CL0_RSE_MHU_SPI = 105 - 32
+local SI_CL0_CL1_MHU_SPI = 107 - 32
+
+local HOST_AP_SHARED_SRAM_PHYS_BASE = 0x00000000
+local HOST_AP_SDS_MEM_SIZE = 0x00000DC0
+local HOST_AP_SCMI_PAYLOAD_BASE = HOST_AP_SHARED_SRAM_PHYS_BASE + HOST_AP_SDS_MEM_SIZE
+local HOST_AP_SCMI_PFDI_MONITOR_OFFSET = 0x00000100
+local HOST_AP_SCMI_PFDI_MONITOR_BASE = HOST_AP_SCMI_PAYLOAD_BASE + HOST_AP_SCMI_PFDI_MONITOR_OFFSET
+local SI_CL0_RSE_MHU_SHMEM_BASE = 0x40000000
+local SI_CL0_PFDI_MHU_CHANNELS = 32
+local SI_CL0_PFDI_CHANNEL_COUNT = 4
+
 local HOST_AP_NS_MHU_SHMEM_BASE = 0x00180000
 local HOST_AP_SI_MHU_FRAME_SIZE = 0x00030000
 local RSE_MHU_FRAME_SIZE = 0x00020000
@@ -18,12 +37,11 @@ local SI_CL0_PFDI_CHANNEL_BASE = 2
 
 local module = {}
 
-function module.create(ctx, hardware, _runtime, interrupts)
+function module.create(ctx, _runtime)
     local mhu_trace = ctx.options.mhu_trace
     local mhu_trace_file = ctx.options.mhu_trace_file
     local mhu_trace_limit = ctx.options.mhu_trace_limit
-    local SI_CONST = hardware
-    local irq_routes = interrupts
+
 
     local block = {}
 
@@ -48,8 +66,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&system_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_ap_ns_mhu_pbx", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_AP_NS_MHU_PBX_SPI};
             log_level = 0;
         }
 
@@ -73,8 +90,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&system_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_ap_ns_mhu_mbx", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_AP_NS_MHU_MBX_SPI};
             log_level = 0;
         }
 
@@ -86,8 +102,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             frame = "pbx";
             pair = "si_cl0_to_ap_scmi";
             protocol = "doorbell-bridge";
-            tx_shmem = SI_CONST.HOST_AP_SCMI_PAYLOAD_BASE;
-            rx_shmem = SI_CONST.HOST_AP_SCMI_PAYLOAD_BASE;
+            tx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
+            rx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -98,8 +114,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&system_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_ap_scmi_mhu_pbx", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_AP_SCMI_MHU_PBX_SPI};
             log_level = 0;
         }
 
@@ -111,8 +126,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             frame = "mbx";
             pair = "ap_to_si_cl0_scmi";
             protocol = "doorbell-bridge";
-            tx_shmem = SI_CONST.HOST_AP_SCMI_PAYLOAD_BASE;
-            rx_shmem = SI_CONST.HOST_AP_SCMI_PAYLOAD_BASE;
+            tx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
+            rx_shmem = HOST_AP_SCMI_PAYLOAD_BASE;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -123,8 +138,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&system_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_ap_scmi_mhu_mbx", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_AP_SCMI_MHU_MBX_SPI};
             log_level = 0;
         }
 
@@ -136,8 +150,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             frame = "pbx";
             pair = "si_cl0_to_ap_pfdi";
             protocol = "doorbell-bridge";
-            tx_shmem = SI_CONST.HOST_AP_SCMI_PFDI_MONITOR_BASE;
-            rx_shmem = SI_CONST.HOST_AP_SCMI_PFDI_MONITOR_BASE;
+            tx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
+            rx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -148,8 +162,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&system_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_ap_pfdi_mhu_pbx", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_AP_PFDI_MHU_PBX_SPI};
             log_level = 0;
         }
 
@@ -161,8 +174,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             frame = "mbx";
             pair = "ap_to_si_cl0_pfdi";
             protocol = "doorbell-bridge";
-            tx_shmem = SI_CONST.HOST_AP_SCMI_PFDI_MONITOR_BASE;
-            rx_shmem = SI_CONST.HOST_AP_SCMI_PFDI_MONITOR_BASE;
+            tx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
+            rx_shmem = HOST_AP_SCMI_PFDI_MONITOR_BASE;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -173,8 +186,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&system_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_ap_pfdi_mhu_mbx", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_AP_PFDI_MHU_MBX_SPI};
             log_level = 0;
         }
 
@@ -186,8 +198,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             frame = "pbx";
             pair = "si_cl0_to_rse";
             protocol = "doorbell-bridge";
-            tx_shmem = SI_CONST.SI_CL0_RSE_MHU_SHMEM_BASE;
-            rx_shmem = SI_CONST.SI_CL0_RSE_MHU_SHMEM_BASE;
+            tx_shmem = SI_CL0_RSE_MHU_SHMEM_BASE;
+            rx_shmem = SI_CL0_RSE_MHU_SHMEM_BASE;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -209,8 +221,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             frame = "mbx";
             pair = "rse_to_si_cl0";
             protocol = "doorbell-bridge";
-            tx_shmem = SI_CONST.SI_CL0_RSE_MHU_SHMEM_BASE;
-            rx_shmem = SI_CONST.SI_CL0_RSE_MHU_SHMEM_BASE;
+            tx_shmem = SI_CL0_RSE_MHU_SHMEM_BASE;
+            rx_shmem = SI_CL0_RSE_MHU_SHMEM_BASE;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -221,8 +233,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&si_cl0_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_rse_mhu", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_RSE_MHU_SPI};
             log_level = 0;
         }
 
@@ -235,12 +246,12 @@ function module.create(ctx, hardware, _runtime, interrupts)
             pair = "apollo_si_cl0_pfdi_reply";
             protocol = "doorbell-bridge";
             scmi_transport = "pfdi-monitor";
-            channel_count = SI_CONST.SI_CL0_PFDI_MHU_CHANNELS;
+            channel_count = SI_CL0_PFDI_MHU_CHANNELS;
             tx_shmem = SI_CL0_PFDI_SHMEM_BASE;
             rx_shmem = SI_CL0_PFDI_SHMEM_BASE;
             scmi_channel_stride = SI_CL0_PFDI_CHANNEL_STRIDE;
             scmi_channel_base_index = SI_CL0_PFDI_CHANNEL_BASE;
-            scmi_channel_count = SI_CONST.SI_CL0_PFDI_CHANNEL_COUNT;
+            scmi_channel_count = SI_CL0_PFDI_CHANNEL_COUNT;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -263,12 +274,12 @@ function module.create(ctx, hardware, _runtime, interrupts)
             pair = "apollo_si_cl1_pfdi";
             protocol = "doorbell-bridge";
             scmi_transport = "pfdi-monitor";
-            channel_count = SI_CONST.SI_CL0_PFDI_MHU_CHANNELS;
+            channel_count = SI_CL0_PFDI_MHU_CHANNELS;
             tx_shmem = SI_CL0_PFDI_SHMEM_BASE;
             rx_shmem = SI_CL0_PFDI_SHMEM_BASE;
             scmi_channel_stride = SI_CL0_PFDI_CHANNEL_STRIDE;
             scmi_channel_base_index = SI_CL0_PFDI_CHANNEL_BASE;
-            scmi_channel_count = SI_CONST.SI_CL0_PFDI_CHANNEL_COUNT;
+            scmi_channel_count = SI_CL0_PFDI_CHANNEL_COUNT;
             init_shmem = false;
             trace = mhu_trace;
             trace_limit = mhu_trace_limit;
@@ -279,8 +290,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
             };
             initiator_socket = {bind = "&si_cl0_router.target_socket"};
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_cl1_mhu", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_CL1_MHU_SPI};
             log_level = 0;
         }
     end

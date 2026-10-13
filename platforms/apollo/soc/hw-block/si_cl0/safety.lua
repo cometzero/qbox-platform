@@ -1,3 +1,22 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_CL0_FMU_CRITICAL_SPI = 128 - 32
+local SI_CL0_FMU_NONCRITICAL_SPI = 129 - 32
+local SI_CL0_AP_RAS_CLUSTER0_SPI = 325 - 32
+local SI_CL0_AP_RAS_IRQ_STRIDE = 2
+
+local SI_CL0_FMU_BANK_COUNT = 5
+local SI_CL0_FMU_RECORD_COUNT = 384
+local SI_CL0_CLUSTER_UTILITY_STRIDE = 0x04000000
+local SI_CL0_AP_CLUSTER_COUNT = 4
+local SI_CL0_AP_CORE_PER_CLUSTER_COUNT = 4
+local SI_CL0_AP_CORE_PPU_STRIDE = 0x00100000
+local SI_CL0_CLUSTER_UTILITY_PHYS_BASE = 0x140000000
+
+local SI_CL0_AP_CLUSTER_MGI_PHYS_BASE = 0x140200000
+local SI_CL0_SMCF_SMD_MGI_PHYS_BASE = 0x20000D8100000
+local SI_CL0_ATW16_SMCF_SMD_MGI_SIZE = 0x00010000
+local SI_CL0_CLUSTER_UTILITY_MGI_SIZE = 0x00010000
+local SI_CL0_CLUSTER_UTILITY_MGI_STRIDE = 0x04000000
 local SI_CL0_SSU_BASE = 0x2A500000
 local SI_CL0_SSU_SIZE = 0x00001000
 local SI_CL0_FMU_BASE = 0x2A510000
@@ -22,9 +41,8 @@ local SI_CL0_DEVICE_FMU_SIZE = 0x00010000
 
 local module = {}
 
-function module.create(ctx, hardware, _runtime, interrupts)
-    local SI_CONST = hardware
-    local irq_routes = interrupts
+function module.create(ctx, _runtime)
+
 
     local block = {}
 
@@ -49,8 +67,8 @@ function module.create(ctx, hardware, _runtime, interrupts)
             "duplicate object: platform.si_cl0_fmu")
         platform.si_cl0_fmu = {
             moduletype = "zena_fmu";
-            bank_count = SI_CONST.SI_CL0_FMU_BANK_COUNT;
-            record_count = SI_CONST.SI_CL0_FMU_RECORD_COUNT;
+            bank_count = SI_CL0_FMU_BANK_COUNT;
+            record_count = SI_CL0_FMU_RECORD_COUNT;
             fault_input_enabled = true;
             fault_input_record = 0;
             fault_source = "si_cl0_ni710ae_primary_nci.apu_fault";
@@ -63,12 +81,10 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 priority = 0;
             };
             critical_irq = {
-                bind = irq_routes.spi_target(
-                    ctx, "si_cl0_fmu_critical", "View1");
+                bind = "&si_cl0_gic.spi_in_" .. SI_CL0_FMU_CRITICAL_SPI;
             };
             non_critical_irq = {
-                bind = irq_routes.spi_target(
-                    ctx, "si_cl0_fmu_noncritical", "View1");
+                bind = "&si_cl0_gic.spi_in_" .. SI_CL0_FMU_NONCRITICAL_SPI;
             };
             critical_ssu = {bind = "&si_cl0_ssu.critical_in"};
             non_critical_ssu = {bind = "&si_cl0_ssu.non_critical_in"};
@@ -151,19 +167,19 @@ function module.create(ctx, hardware, _runtime, interrupts)
             fault_socket = {bind = "&si_cl0_router.target_socket"};
             log_level = 0;
         }
-        for cluster = 0,(SI_CONST.SI_CL0_AP_CLUSTER_COUNT - 1) do
-            local cluster_base = SI_CONST.SI_CL0_CLUSTER_UTILITY_PHYS_BASE +
-                (cluster * SI_CONST.SI_CL0_CLUSTER_UTILITY_STRIDE)
+        for cluster = 0,(SI_CL0_AP_CLUSTER_COUNT - 1) do
+            local cluster_base = SI_CL0_CLUSTER_UTILITY_PHYS_BASE +
+                (cluster * SI_CL0_CLUSTER_UTILITY_STRIDE)
             local ras = {
                 moduletype = "apollo_cpu_ras";
-                cluster_irq = {bind = irq_routes.spi_target(
-                    ctx, "si_cl0_ap_ras_cluster" .. cluster, "View1")};
+                cluster_irq = {bind = "&si_cl0_gic.spi_in_" ..
+                    (SI_CL0_AP_RAS_CLUSTER0_SPI + cluster * SI_CL0_AP_RAS_IRQ_STRIDE)};
                 log_level = 0;
             }
-            for core = 0,(SI_CONST.SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
+            for core = 0,(SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
                 ras["record_" .. core] = {
                     address = cluster_base + SI_CL0_AP_CORE_RAS_OFFSET +
-                        (core * SI_CONST.SI_CL0_AP_CORE_PPU_STRIDE);
+                        (core * SI_CL0_AP_CORE_PPU_STRIDE);
                     size = SI_CL0_AP_CORE_RAS_SIZE;
                     bind = "&system_router.initiator_socket";
                     priority = 0;
@@ -174,6 +190,47 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 "duplicate object: platform." .. ("si_cl0_ap_ras_cluster" .. cluster))
             platform["si_cl0_ap_ras_cluster" .. cluster] = ras
         end
+    end
+
+    function block.define_monitors(ctx, platform)
+        assert(
+            platform.si_cl0_smcf_smd_mgi == nil,
+            "duplicate object: platform.si_cl0_smcf_smd_mgi")
+        platform.si_cl0_smcf_smd_mgi = {
+            moduletype = "host_smcf_mgi";
+            group_id = 0x00000000;
+            monitor_count = 1;
+            data_values_per_monitor = 12;
+            data_width_bits = 32;
+            target_socket = {
+                address = SI_CL0_SMCF_SMD_MGI_PHYS_BASE;
+                size = SI_CL0_ATW16_SMCF_SMD_MGI_SIZE;
+                bind = "&smd_router.initiator_socket";
+                priority = 0;
+            };
+            log_level = 0;
+        }
+        for i = 0,3 do
+            assert(
+                platform["si_cl0_smcf_ap_cluster_mgi_" .. i] == nil,
+                "duplicate object: platform." .. ("si_cl0_smcf_ap_cluster_mgi_" .. i))
+            platform["si_cl0_smcf_ap_cluster_mgi_" .. i] = {
+                moduletype = "host_smcf_mgi";
+                group_id = i + 1;
+                monitor_count = 1;
+                data_values_per_monitor = 12;
+                data_width_bits = 32;
+                target_socket = {
+                    address = SI_CL0_AP_CLUSTER_MGI_PHYS_BASE +
+                        (i * SI_CL0_CLUSTER_UTILITY_MGI_STRIDE);
+                    size = SI_CL0_CLUSTER_UTILITY_MGI_SIZE;
+                    bind = "&system_router.initiator_socket";
+                    priority = 0;
+                };
+                log_level = 0;
+            }
+        end
+
     end
 
     return block

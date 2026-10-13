@@ -1,7 +1,8 @@
+local SI_CL0_UART_POLL_INTERVAL_MS = 100
+
 local module = {}
 
-function module.create(ctx, hardware, runtime, _interrupts)
-    local SI_CONST = hardware
+function module.create(ctx, runtime)
     local si_cl0_uart_read_file = runtime.si_cl0_uart_read_file
     local si_cl0_log = runtime.si_cl0_log
     local si_cl0_uart_poll_read = runtime.si_cl0_uart_poll_read
@@ -17,7 +18,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
             read_file = si_cl0_uart_read_file;
             write_file = si_cl0_log;
             poll_read = si_cl0_uart_poll_read;
-            poll_interval_ms = SI_CONST.SI_CL0_UART_POLL_INTERVAL_MS;
+            poll_interval_ms = SI_CL0_UART_POLL_INTERVAL_MS;
             baudrate = 0;
         }
     end

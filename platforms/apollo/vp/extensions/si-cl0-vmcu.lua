@@ -1,3 +1,7 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_CL0_VMCU_UART_SPI = 41 - 32
+local SI_CL0_VMCU_GPIO_SPI = 42 - 32
+
 -- SPDX-License-Identifier: BSD-3-Clause
 -- QVP-only external safety channel and board wires; not RD-Aspen assignments.
 local module = {}
@@ -7,7 +11,7 @@ local function socket(endpoint)
             server = false; nowait = true; sigquit = false}
 end
 
-function module.create(ctx, _hardware, _runtime, interrupts)
+function module.create(ctx, _runtime)
     local block = {}
     function block.define(ctx, platform)
         assert(platform.si_cl0_vmcu_uart == nil, "duplicate vMCU safety UART")
@@ -30,7 +34,7 @@ function module.create(ctx, _hardware, _runtime, interrupts)
                 address = 0x2A820000; size = 0x10000;
                 bind = "&si_cl0_router.initiator_socket";
             };
-            irq = {bind = interrupts.spi_target(ctx, "si_cl0_vmcu_uart", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_VMCU_UART_SPI};
             backend_socket = {bind = uart_backend};
         }
         assert(platform.si_cl0_vmcu_gpio == nil, "duplicate vMCU board GPIO")
@@ -41,7 +45,7 @@ function module.create(ctx, _hardware, _runtime, interrupts)
             init_inputs = 0x0C; pullups = 0x0C; pulldowns = 0x13;
             mem = {address = 0x2A830000; size = 0x10000;
                    bind = "&si_cl0_router.initiator_socket"};
-            irq = {bind = interrupts.spi_target(ctx, "si_cl0_vmcu_gpio", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_VMCU_GPIO_SPI};
         }
         platform.si_cl0_vmcu_gpio_cold_reset = {
             moduletype = "qemu_device_cold_reset";

@@ -1,6 +1,6 @@
 local module = {}
 
-function module.create(ctx, _hardware, _runtime, _interrupts)
+function module.create(ctx, _runtime)
     local SI_CL0_QEMU = {
         accel_env = "QBOX_APOLLO_FULL_SI_CL0_ACCEL";
         accel = "tcg";

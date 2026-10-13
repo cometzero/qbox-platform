@@ -1,3 +1,23 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_CL0_AP_CLUSTER0_PPU_SPI = 260 - 32
+local SI_CL0_AP_CORE0_PPU_SPI = 261 - 32
+local SI_CL0_AP_PPU_IRQ_STRIDE = 5
+
+local HOST_SI_CL0_CL_UTIL_BASE = 0x4000028000000
+local SI_CL1_CLUSTER_UTILITY_BUS_BASE = 0x28800000
+local SI_CL1_CLUSTER_PPU_OFFSET = 0x00010000
+local SI_CL1_CLUSTER_PPU_BASE = SI_CL1_CLUSTER_UTILITY_BUS_BASE + SI_CL1_CLUSTER_PPU_OFFSET
+local SI_CL1_PPU_AE_OFFSET = 0x00080000
+local SI_CL1_PPU_AE_BASE = SI_CL1_CLUSTER_UTILITY_BUS_BASE + SI_CL1_PPU_AE_OFFSET
+local SI_CL1_CORE_PPU0_OFFSET = 0x00040000
+local SI_CL1_CORE_PPU0_BASE = SI_CL1_CLUSTER_UTILITY_BUS_BASE + SI_CL1_CORE_PPU0_OFFSET
+local SI_CL1_CORE_PPU_COUNT = 4
+local SI_CL0_CLUSTER_UTILITY_STRIDE = 0x04000000
+local SI_CL0_AP_CLUSTER_COUNT = 4
+local SI_CL0_AP_CORE_PER_CLUSTER_COUNT = 4
+local SI_CL0_AP_CORE_PPU_STRIDE = 0x00100000
+local SI_CL0_CLUSTER_UTILITY_PHYS_BASE = 0x140000000
+
 local HOST_SI_CLUS_PPU_OFFSET = 0x00010000
 local HOST_SI_CORE0_PPU_OFFSET = 0x00040000
 local HOST_SI_CONTROL_WINDOW_SIZE = 0x00010000
@@ -13,13 +33,12 @@ local SI_CL0_SYS0_PPU_PHYS_BASE = 0x20000D0201000
 
 local module = {}
 
-function module.create(ctx, hardware, _runtime, _interrupts)
+function module.create(ctx, _runtime)
     local AP_NUM_CPUS = ctx.options.AP_NUM_CPUS
     local ap_cpu_index = ctx.options.ap_cpu_index
     local enable_ap_cpus = ctx.options.enable_ap_cpus
     local host_ppu_trace = ctx.options.host_ppu_trace
     local host_ppu_trace_limit = ctx.options.host_ppu_trace_limit
-    local SI_CONST = hardware
 
     local block = {}
 
@@ -32,7 +51,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             trace = host_ppu_trace;
             trace_limit = host_ppu_trace_limit;
             target_socket = {
-                address = SI_CONST.HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
+                address = HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CLUS_PPU_OFFSET;
                 size = HOST_SI_CONTROL_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 10;
@@ -58,7 +77,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             access_latency_ns = ctx.getenv_number_or(
                 "QBOX_APOLLO_FULL_SI_CL0_PPU_ACCESS_LATENCY_NS", "100");
             target_socket = {
-                address = SI_CONST.HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CORE0_PPU_OFFSET;
+                address = HOST_SI_CL0_CL_UTIL_BASE + HOST_SI_CORE0_PPU_OFFSET;
                 size = HOST_SI_CONTROL_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 10;
@@ -90,7 +109,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             moduletype = "host_ppu";
             initial_power_status = 0x0;
             target_socket = {
-                address = SI_CONST.SI_CL1_CLUSTER_PPU_BASE;
+                address = SI_CL1_CLUSTER_PPU_BASE;
                 size = SI_CL_PPU_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
@@ -98,7 +117,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             log_level = 0;
         }
 
-        for i = 0,(SI_CONST.SI_CL1_CORE_PPU_COUNT - 1) do
+        for i = 0,(SI_CL1_CORE_PPU_COUNT - 1) do
             assert(
                 platform["si_cl1_core" .. i .. "_ppu"] == nil,
                 "duplicate object: platform." .. ("si_cl1_core" .. i .. "_ppu"))
@@ -110,7 +129,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                     bind = "&si_cl1_cpu_" .. i .. ".reset";
                 };
                 target_socket = {
-                    address = SI_CONST.SI_CL1_CORE_PPU0_BASE +
+                    address = SI_CL1_CORE_PPU0_BASE +
                         (i * SI_CL1_CORE_PPU_STRIDE);
                     size = SI_CL_PPU_SIZE;
                     bind = "&si_cl0_router.initiator_socket";
@@ -127,7 +146,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             moduletype = "gs_memory";
             dmi = false;
             target_socket = {
-                address = SI_CONST.SI_CL1_PPU_AE_BASE;
+                address = SI_CL1_PPU_AE_BASE;
                 size = SI_CL_PPU_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
@@ -136,9 +155,9 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             log_level = 0;
         }
 
-        for cluster = 0,(SI_CONST.SI_CL0_AP_CLUSTER_COUNT - 1) do
-            local cluster_base = SI_CONST.SI_CL0_CLUSTER_UTILITY_PHYS_BASE +
-                (cluster * SI_CONST.SI_CL0_CLUSTER_UTILITY_STRIDE)
+        for cluster = 0,(SI_CL0_AP_CLUSTER_COUNT - 1) do
+            local cluster_base = SI_CL0_CLUSTER_UTILITY_PHYS_BASE +
+                (cluster * SI_CL0_CLUSTER_UTILITY_STRIDE)
 
             assert(
                 platform["si_cl0_ap_cluster" .. cluster .. "_ppu"] == nil,
@@ -146,10 +165,10 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             platform["si_cl0_ap_cluster" .. cluster .. "_ppu"] = {
                 moduletype = "host_ppu";
                 initial_power_status = 0x0;
-                num_active_inputs = SI_CONST.SI_CL0_AP_CORE_PER_CLUSTER_COUNT;
+                num_active_inputs = SI_CL0_AP_CORE_PER_CLUSTER_COUNT;
                 trace = host_ppu_trace;
                 trace_limit = host_ppu_trace_limit;
-                irq = {bind = "&si_cl0_gic.spi_in_" .. (228 + 5 * cluster)};
+                irq = {bind = "&si_cl0_gic.spi_in_" .. (SI_CL0_AP_CLUSTER0_PPU_SPI + SI_CL0_AP_PPU_IRQ_STRIDE * cluster)};
                 target_socket = {
                     address = cluster_base + SI_CL0_AP_CLUSTER_PPU_OFFSET;
                     size = SI_CL_PPU_SIZE;
@@ -190,7 +209,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                 log_level = 0;
             }
 
-            for core = 0,(SI_CONST.SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
+            for core = 0,(SI_CL0_AP_CORE_PER_CLUSTER_COUNT - 1) do
                 local cpu_index = ap_cpu_index(cluster, core)
                 local cpu_active = enable_ap_cpus and cpu_index < AP_NUM_CPUS
                 assert(
@@ -202,7 +221,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                     trace = host_ppu_trace;
                     trace_limit = host_ppu_trace_limit;
                     enable_powerdown = cpu_active;
-                    irq = {bind = "&si_cl0_gic.spi_in_" .. (229 + 5 * cluster + core)};
+                    irq = {bind = "&si_cl0_gic.spi_in_" .. (SI_CL0_AP_CORE0_PPU_SPI + SI_CL0_AP_PPU_IRQ_STRIDE * cluster + core)};
                     devactive_out = {bind = "&si_cl0_ap_cluster" .. cluster ..
                         "_ppu.active_in_" .. core};
                     powerdown = cpu_active and {
@@ -226,7 +245,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
                     } or nil;
                     target_socket = {
                         address = cluster_base + SI_CL0_AP_CORE_PPU0_OFFSET +
-                            (core * SI_CONST.SI_CL0_AP_CORE_PPU_STRIDE);
+                            (core * SI_CL0_AP_CORE_PPU_STRIDE);
                         size = SI_CL_PPU_SIZE;
                         bind = "&system_router.initiator_socket";
                         priority = 0;

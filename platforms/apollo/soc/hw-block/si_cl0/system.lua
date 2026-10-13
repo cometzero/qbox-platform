@@ -1,3 +1,34 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_CL0_SYSTEM_TIMER_SPI = 34 - 32
+local SI_CL0_WATCHDOG_WS0_SPI = 37 - 32
+
+local SI_CL0_GICD_VIEW0_BASE = 0x30000000
+local SI_CL0_GICR_VIEW0_BASES = {
+    0x30040000;
+    0x30060000;
+    0x30080000;
+    0x300a0000;
+    0x300c0000;
+}
+local SI_GICR_SIZE = 0x00020000
+local SI_CL0_WDOG_CLOCK_HZ = 125000000
+local SI_CL0_SMD_EXPANSION_PHYS_BASE = 0x20000D8000000
+local SI_GIC_BACKEND_REDIST_COUNT = 0
+local SI_GIC_VIEW1_REDIST_FIRST = 0
+local SI_GIC_VIEW2_REDIST_FIRST = 1
+local SI_GIC_SPI_COUNT = 960
+
+local SI_GIC_BACKEND_DIST_BASE = 0x30f00000
+local SI_GIC_BACKEND_REDIST_BASE = 0x30f40000
+local SI_GIC_DIST_CFGID_OFFSET = 0x0000F000
+local SI_GIC_DIST_CFGID_SIZE = 0x00000008
+local SI_GIC_DIST_IVIEWR_OFFSET = 0x0000F600
+local SI_GIC_DIST_IVIEWR_SIZE = 0x00000400
+local SI_GIC_REDIST_PWRR_OFFSET = 0x00000024
+local SI_GIC_REDIST_VIEWR_OFFSET = 0x0000002C
+local SI_GIC_REDIST_FLUSHR_OFFSET = 0x00000030
+local SI_GIC_REDIST_REGISTER_SIZE = 0x00000004
+
 local SI_CL0_GICD_VIEW1_BASE = 0x30100000
 local SI_CL0_GICR_VIEW1_BASE = 0x30140000
 local SI_GICD_SIZE = 0x00010000
@@ -12,18 +43,15 @@ local SI_CL0_WDOG_REFRESH_BASE = 0x2A710000
 local SI_CL0_WDOG_SIZE = 0x00010000
 local SI_CL0_PLL_SIZE = 0x00001000
 local SI_CL0_ATW4_SYSTEM_ID_SIZE = 0x00010000
-local SI_CL0_CLUSTER_UTILITY_MGI_STRIDE = 0x04000000
-local SI_CL0_CLUSTER_UTILITY_MGI_SIZE = 0x00010000
-local SI_CL0_ATW16_SMCF_SMD_MGI_SIZE = 0x00010000
-local SI_CL0_SMCF_SMD_MGI_PHYS_BASE = 0x20000D8100000
-local SI_CL0_AP_CLUSTER_MGI_PHYS_BASE = 0x140200000
 local SI_CL0_SYSTEM_ID_PHYS_BASE = 0x20000D0400000
 
 local module = {}
 
-function module.create(ctx, hardware, _runtime, interrupts)
-    local SI_CONST = hardware
-    local irq_routes = interrupts
+function module.create(ctx, runtime)
+
+
+    local si_gic_trace = runtime.si_gic_trace
+    local si_gic_trace_limit = runtime.si_gic_trace_limit
 
     local block = {}
 
@@ -41,20 +69,20 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 priority = 10;
                 aliases = {
                     view0_functional = {
-                        address = SI_CONST.SI_CL0_GICD_VIEW0_BASE;
+                        address = SI_CL0_GICD_VIEW0_BASE;
                         size = SI_GICD_SIZE;
                     };
                 };
             };
             redist_iface_0 = {
                 address = SI_CL0_GICR_VIEW1_BASE;
-                size = SI_CONST.SI_GICR_SIZE;
+                size = SI_GICR_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 10;
                 aliases = {
                     view0_functional = {
-                        address = SI_CONST.SI_CL0_GICR_VIEW0_BASES[1];
-                        size = SI_CONST.SI_GICR_SIZE;
+                        address = SI_CL0_GICR_VIEW0_BASES[1];
+                        size = SI_GICR_SIZE;
                     };
                 };
             };
@@ -113,8 +141,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
             moduletype = "host_gtimer";
             args = {"&platform.css_system_counter"};
             counter_base = true;
-            irq = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_system_timer", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_SYSTEM_TIMER_SPI};
             target_socket = {
                 address = SI_CL0_TIMER_CNT_BASE;
                 size = SI_CL0_TIMER_CNT_SIZE;
@@ -129,7 +156,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
             "duplicate object: platform.si_cl0_watchdog")
         platform.si_cl0_watchdog = {
             moduletype = "zena_watchdog";
-            clock_frequency = SI_CONST.SI_CL0_WDOG_CLOCK_HZ;
+            clock_frequency = SI_CL0_WDOG_CLOCK_HZ;
             control = {
                 address = SI_CL0_WDOG_CONTROL_BASE;
                 size = SI_CL0_WDOG_SIZE;
@@ -142,8 +169,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 bind = "&si_cl0_router.initiator_socket";
                 priority = 0;
             };
-            ws0 = {bind = irq_routes.spi_target(
-                ctx, "si_cl0_watchdog_ws0", "View1")};
+            ws0 = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_WATCHDOG_WS0_SPI};
             ws1 = {bind = "&host_reset_ctrl.si_watchdog_reset"};
             log_level = 0;
         }
@@ -154,51 +180,13 @@ function module.create(ctx, hardware, _runtime, interrupts)
             moduletype = "host_system_pll";
             lock_mask = 0x00000001;
             target_socket = {
-                address = SI_CONST.SI_CL0_SMD_EXPANSION_PHYS_BASE;
+                address = SI_CL0_SMD_EXPANSION_PHYS_BASE;
                 size = SI_CL0_PLL_SIZE;
                 bind = "&smd_router.initiator_socket";
                 priority = 0;
             };
             log_level = 0;
         }
-
-        assert(
-            platform.si_cl0_smcf_smd_mgi == nil,
-            "duplicate object: platform.si_cl0_smcf_smd_mgi")
-        platform.si_cl0_smcf_smd_mgi = {
-            moduletype = "host_smcf_mgi";
-            group_id = 0x00000000;
-            monitor_count = 1;
-            data_values_per_monitor = 12;
-            data_width_bits = 32;
-            target_socket = {
-                address = SI_CL0_SMCF_SMD_MGI_PHYS_BASE;
-                size = SI_CL0_ATW16_SMCF_SMD_MGI_SIZE;
-                bind = "&smd_router.initiator_socket";
-                priority = 0;
-            };
-            log_level = 0;
-        }
-        for i = 0,3 do
-            assert(
-                platform["si_cl0_smcf_ap_cluster_mgi_" .. i] == nil,
-                "duplicate object: platform." .. ("si_cl0_smcf_ap_cluster_mgi_" .. i))
-            platform["si_cl0_smcf_ap_cluster_mgi_" .. i] = {
-                moduletype = "host_smcf_mgi";
-                group_id = i + 1;
-                monitor_count = 1;
-                data_values_per_monitor = 12;
-                data_width_bits = 32;
-                target_socket = {
-                    address = SI_CL0_AP_CLUSTER_MGI_PHYS_BASE +
-                        (i * SI_CL0_CLUSTER_UTILITY_MGI_STRIDE);
-                    size = SI_CL0_CLUSTER_UTILITY_MGI_SIZE;
-                    bind = "&system_router.initiator_socket";
-                    priority = 0;
-                };
-                log_level = 0;
-            }
-        end
 
         assert(
             platform.si_cl0_system_id == nil,
@@ -223,6 +211,65 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 priority = 0;
             };
             log_level = 0;
+        }
+    end
+
+    function block.define_multiview(ctx, platform)
+        assert(
+            platform.si_gic_multiview == nil,
+            "duplicate object: platform.si_gic_multiview")
+        platform.si_gic_multiview = {
+            moduletype = "gicx00_multiview";
+            trace = si_gic_trace;
+            trace_limit = si_gic_trace_limit;
+            backend_dist_base = SI_GIC_BACKEND_DIST_BASE;
+            backend_redist_base = SI_GIC_BACKEND_REDIST_BASE;
+            backend_redist_stride = SI_GICR_SIZE;
+            backend_redist_count = SI_GIC_BACKEND_REDIST_COUNT;
+            view_redist_stride = SI_GICR_SIZE;
+            view1_redist_first = SI_GIC_VIEW1_REDIST_FIRST;
+            view2_redist_first = SI_GIC_VIEW2_REDIST_FIRST;
+            spi_count = SI_GIC_SPI_COUNT;
+            view0_dist_cfgid = {
+                address = SI_CL0_GICD_VIEW0_BASE + SI_GIC_DIST_CFGID_OFFSET;
+                size = SI_GIC_DIST_CFGID_SIZE;
+                bind = "&si_cl0_router.initiator_socket";
+                priority = 0;
+            };
+            view0_dist_iviewr = {
+                address = SI_CL0_GICD_VIEW0_BASE + SI_GIC_DIST_IVIEWR_OFFSET;
+                size = SI_GIC_DIST_IVIEWR_SIZE;
+                bind = "&si_cl0_router.initiator_socket";
+                priority = 0;
+            };
+        }
+
+        for i = 1,4 do
+            platform.si_gic_multiview["view0_redist_" .. i] = {
+                address = SI_CL0_GICR_VIEW0_BASES[i + 1];
+                size = SI_GICR_SIZE;
+                bind = "&si_cl0_router.initiator_socket";
+                priority = 20;
+            }
+        end
+
+        platform.si_gic_multiview.view0_redist_0_pwrr = {
+            address = SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_PWRR_OFFSET;
+            size = SI_GIC_REDIST_REGISTER_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        }
+        platform.si_gic_multiview.view0_redist_0_viewr = {
+            address = SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_VIEWR_OFFSET;
+            size = SI_GIC_REDIST_REGISTER_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
+        }
+        platform.si_gic_multiview.view0_redist_0_flushr = {
+            address = SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_FLUSHR_OFFSET;
+            size = SI_GIC_REDIST_REGISTER_SIZE;
+            bind = "&si_cl0_router.initiator_socket";
+            priority = 0;
         }
     end
 

@@ -1,3 +1,7 @@
+local SI_CL0_RSE_MHU_SHMEM_BASE = 0x40000000
+local SI_CL0_SMD_EXPANSION_PHYS_BASE = 0x20000D8000000
+local SI_CL0_CLUSTER_UTILITY_PHYS_BASE = 0x140000000
+
 local HOST_RSE_SI_SSRAM_PHYS_BASE = 0x4000040000000
 local HOST_RSE_SI_SSRAM_SIZE = 0x00040000
 local SI_CL0_ATU_LOGICAL_BASE = 0x80000000
@@ -21,8 +25,7 @@ local SI_CL0_CLUSTER_UTILITY_PHYS_SIZE = 0x10000000
 
 local module = {}
 
-function module.create(ctx, hardware, runtime, _interrupts)
-    local SI_CONST = hardware
+function module.create(ctx, runtime)
     local si_cmn_trace = runtime.si_cmn_trace
     local si_cmn_trace_limit = runtime.si_cmn_trace_limit
 
@@ -100,7 +103,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "addrtr";
             mapped_base_addr = HOST_RSE_SI_SSRAM_PHYS_BASE;
             target_socket = {
-                address = SI_CONST.SI_CL0_RSE_MHU_SHMEM_BASE;
+                address = SI_CL0_RSE_MHU_SHMEM_BASE;
                 size = HOST_RSE_SI_SSRAM_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
                 relative_addresses = false;
@@ -205,7 +208,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "gs_memory";
             dmi = false;
             target_socket = {
-                address = SI_CONST.SI_CL0_SMD_EXPANSION_PHYS_BASE;
+                address = SI_CL0_SMD_EXPANSION_PHYS_BASE;
                 size = SI_CL0_ATW2_SMD_EXPANSION_SIZE;
                 bind = "&smd_router.initiator_socket";
                 priority = 10;
@@ -219,7 +222,7 @@ function module.create(ctx, hardware, runtime, _interrupts)
             moduletype = "gs_memory";
             dmi = false;
             target_socket = {
-                address = SI_CONST.SI_CL0_CLUSTER_UTILITY_PHYS_BASE;
+                address = SI_CL0_CLUSTER_UTILITY_PHYS_BASE;
                 size = SI_CL0_CLUSTER_UTILITY_PHYS_SIZE;
                 bind = "&system_router.initiator_socket";
                 priority = 20;

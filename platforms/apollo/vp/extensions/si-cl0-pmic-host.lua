@@ -1,7 +1,7 @@
 -- QVP-only polling PMIC transport; these addresses are not physical SI assignments.
 local module = {}
 
-function module.create(ctx, _hardware, _runtime, _interrupts)
+function module.create(ctx, _runtime)
     local PMIC_I2C_BASE = 0x2A800000
     local PMIC_GPIO_BASE = 0x2A810000
     local PMIC_MMIO_SIZE = 0x00010000

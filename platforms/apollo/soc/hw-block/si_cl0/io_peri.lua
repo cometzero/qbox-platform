@@ -1,10 +1,13 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_CL0_UART_SPI = 40 - 32
+
 local SI_CL0_UART_BASE = 0x2A400000
 local SI_CL0_UART_SIZE = 0x00010000
 
 local module = {}
 
-function module.create(ctx, hardware, _runtime, interrupts)
-    local irq_routes = interrupts
+function module.create(ctx, _runtime)
+
 
     local block = {}
 
@@ -20,7 +23,7 @@ function module.create(ctx, hardware, _runtime, interrupts)
                 size = SI_CL0_UART_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
             };
-            irq = {bind = irq_routes.spi_target(ctx, "si_cl0_uart", "View1")};
+            irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_UART_SPI};
             backend_socket = {bind = "&si_cl0_console_file.biflow_socket"};
         }
     end

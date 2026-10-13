@@ -1,7 +1,8 @@
+local SI_CL0_SRAM_BASE = 0x120000000
+
 local module = {}
 
-function module.create(ctx, hardware, _runtime, _interrupts)
-    local SI_CONST = hardware
+function module.create(ctx, _runtime)
 
     local block = {}
 
@@ -17,7 +18,7 @@ function module.create(ctx, hardware, _runtime, _interrupts)
             request_secure = true;
             request_secure_valid = true;
             initiator_socket = {bind = "&si_cl0_router.target_socket"};
-            { bin_file = image, address = SI_CONST.SI_CL0_SRAM_BASE };
+            { bin_file = image, address = SI_CL0_SRAM_BASE };
         }
     end
 

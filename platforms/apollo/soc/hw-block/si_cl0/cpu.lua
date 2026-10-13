@@ -1,8 +1,13 @@
+-- SPI constants are socket indices; PPI constants are architectural INTIDs.
+local SI_SECURE_TIMER_INTID = 29
+local SI_PHYSICAL_TIMER_INTID = 20
+local SI_VIRTUAL_TIMER_INTID = 27
+local SI_HYPERVISOR_TIMER_INTID = 19
+
 local module = {}
 
-function module.create(ctx, hardware, runtime, interrupts)
-    local SI_CONST = hardware
-    local irq_routes = interrupts
+function module.create(ctx, runtime)
+
 
     local block = {}
 
@@ -29,19 +34,19 @@ function module.create(ctx, hardware, runtime, interrupts)
             request_secure_valid = true;
             irq_timer_sec_out = {
                 bind = "&si_cl0_gic.ppi_in_cpu_0_" ..
-                    irq_routes.ppi_index(ctx, "si_secure_timer");
+                    SI_SECURE_TIMER_INTID;
             };
             irq_timer_phys_out = {
                 bind = "&si_cl0_gic.ppi_in_cpu_0_" ..
-                    irq_routes.ppi_index(ctx, "si_physical_timer");
+                    SI_PHYSICAL_TIMER_INTID;
             };
             irq_timer_virt_out = {
                 bind = "&si_cl0_gic.ppi_in_cpu_0_" ..
-                    irq_routes.ppi_index(ctx, "si_virtual_timer");
+                    SI_VIRTUAL_TIMER_INTID;
             };
             irq_timer_hyp_out = {
                 bind = "&si_cl0_gic.ppi_in_cpu_0_" ..
-                    irq_routes.ppi_index(ctx, "si_hypervisor_timer");
+                    SI_HYPERVISOR_TIMER_INTID;
             };
         }
 
