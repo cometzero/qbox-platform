@@ -1,3 +1,4 @@
+local AP_GPEX_REQUESTER_ID = 0x40
 -- GIC SPI constants are zero-based SPI socket indices (not architectural INTIDs).
 local AP_GPEX_PIO_BASE = 0x60200000
 local AP_GPEX_MMIO_BASE = 0x60300000
@@ -15,9 +16,8 @@ local AP_GPEX_SPIS = {300; 301; 302; 303}
 
 local pcie = {}
 
-function pcie.define(ctx, platform, hw, policy)
+function pcie.define(ctx, platform, policy)
     local options = ctx.options
-    local AP_HW = hw.AP_HW
 
     assert(platform.ap_gpex_0 == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
@@ -26,7 +26,7 @@ function pcie.define(ctx, platform, hw, policy)
             args = {"&platform.ap_qemu_inst"};
             request_origin_id = ctx.request_context.origin.ap_gpex;
             request_domain_id = ctx.request_context.domain.ap;
-            requester_id = AP_HW.gpex_requester_id;
+            requester_id = AP_GPEX_REQUESTER_ID;
             pci_requester_id = not policy.pcie_irq_test_enabled;
             bus_master = {bind = "&system_router.target_socket"};
             pio_iface = {

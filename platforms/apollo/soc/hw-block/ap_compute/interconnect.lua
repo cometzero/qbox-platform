@@ -1,3 +1,9 @@
+local AP_FLASH_BASE = 0x38000000
+local AP_FLASH_SIZE = 0x08000000
+local AP_FMU_CL0_BASE = 0x1D000000
+local AP_FMU_CL1_BASE = 0x1D100000
+local AP_FMU_CL2_BASE = 0x1D200000
+local AP_FMU_CL3_BASE = 0x1D300000
 local AP_HOST_FMU_CL0_BASE = 0x20000D2000000
 local AP_HOST_FMU_CL1_BASE = 0x20000D2100000
 local AP_HOST_FMU_CL2_BASE = 0x20000D2200000
@@ -10,12 +16,10 @@ local AP_FMU_MODELED_SIZE = 0x00050000
 local AP_MHU_POINTER_ACCESS_SIZE = 0x00020000
 local AP_PFDI_MONITOR_MHU_SIZE = 0x00030000
 
-local address_view = {}
+local interconnect = {}
 
-function address_view.enable_ap_router(ctx, platform, hw)
+function interconnect.enable_ap_router(ctx, platform)
     local options = ctx.options
-    local AP_ADDRESS = hw.AP_ADDRESS
-    local AP_SIZE = hw.AP_SIZE
 
     print("Apollo QVP AP router enabled...")
 
@@ -72,10 +76,10 @@ function address_view.enable_ap_router(ctx, platform, hw)
 
     platform.system_to_ap_flash_bridge = {
         moduletype = "addrtr";
-        mapped_base_addr = AP_ADDRESS.flash;
+        mapped_base_addr = AP_FLASH_BASE;
         target_socket = {
-            address = AP_ADDRESS.flash;
-            size = AP_SIZE.flash;
+            address = AP_FLASH_BASE;
+            size = AP_FLASH_SIZE;
             bind = "&system_router.initiator_socket";
             relative_addresses = false;
         };
@@ -84,13 +88,13 @@ function address_view.enable_ap_router(ctx, platform, hw)
     }
 
     local smd_fmu_aliases = {
-        { local_base = AP_ADDRESS.fmu_cl0;
+        { local_base = AP_FMU_CL0_BASE;
           physical_base = AP_HOST_FMU_CL0_BASE };
-        { local_base = AP_ADDRESS.fmu_cl1;
+        { local_base = AP_FMU_CL1_BASE;
           physical_base = AP_HOST_FMU_CL1_BASE };
-        { local_base = AP_ADDRESS.fmu_cl2;
+        { local_base = AP_FMU_CL2_BASE;
           physical_base = AP_HOST_FMU_CL2_BASE };
-        { local_base = AP_ADDRESS.fmu_cl3;
+        { local_base = AP_FMU_CL3_BASE;
           physical_base = AP_HOST_FMU_CL3_BASE };
     }
     for i, route in ipairs(smd_fmu_aliases) do
@@ -220,4 +224,19 @@ function address_view.enable_ap_router(ctx, platform, hw)
     end
 end
 
-return address_view
+function interconnect.define_initiator(ctx, platform)
+    local options = ctx.options
+
+    assert(platform.ap_global_peripheral_initiator == nil, "duplicate Apollo object")
+    if options.enable_ap_cpus then
+        platform.ap_global_peripheral_initiator = {
+            moduletype = "global_peripheral_initiator";
+            args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
+            request_origin_id = ctx.request_context.origin.ap_global_peripheral;
+            request_domain_id = ctx.request_context.domain.ap;
+            global_initiator = {bind = "&system_router.target_socket"};
+        }
+    end
+end
+
+return interconnect

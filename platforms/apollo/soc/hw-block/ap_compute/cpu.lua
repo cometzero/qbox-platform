@@ -1,3 +1,4 @@
+local AP_ARCH_TIMER_FREQUENCY_HZ = 125000000
 -- CPU PPI constants use architectural INTIDs, as required by QEMU PPI sockets.
 local AP_ARCH_TIMER_VIRT_INTID = 16 + 11
 local AP_ARCH_TIMER_SECURE_INTID = 16 + 13
@@ -9,37 +10,10 @@ local AP_RAS_FAULT_INTID = 17
 
 local cpu = {}
 
-function cpu.define_initiator(ctx, platform)
+function cpu.define(ctx, platform)
     local options = ctx.options
 
-    assert(platform.ap_global_peripheral_initiator == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
-        platform.ap_global_peripheral_initiator = {
-            moduletype = "global_peripheral_initiator";
-            args = {"&platform.ap_qemu_inst", "&platform.ap_cpu_0"};
-            request_origin_id = ctx.request_context.origin.ap_global_peripheral;
-            request_domain_id = ctx.request_context.domain.ap;
-            global_initiator = {bind = "&system_router.target_socket"};
-        }
-    end
-end
-
-function cpu.define(ctx, platform, hw)
-    local options = ctx.options
-    local AP_ADDRESS = hw.AP_ADDRESS
-    local AP_SIZE = hw.AP_SIZE
-    local AP_HW = hw.AP_HW
-
-    if options.enable_ap_cpus then
-        for i = 0, (AP_HW.gic_active_redist_regions-1) do
-            assert(platform["ap_gic"]["redist_iface_" .. i] == nil, "duplicate Apollo object")
-            platform["ap_gic"]["redist_iface_" .. i] = {
-                address = AP_ADDRESS.gic_redist + (i * AP_SIZE.gic_redist);
-                size = AP_SIZE.gic_redist;
-                bind = "&system_router.initiator_socket";
-            }
-        end
-
         for i = 0, (options.AP_NUM_CPUS-1) do
             assert(platform["ap_cpu_ras_fault_sync_" .. i] == nil, "duplicate Apollo object")
             platform["ap_cpu_ras_fault_sync_" .. i] = {
@@ -82,7 +56,7 @@ function cpu.define(ctx, platform, hw)
                 start_powered_off = i ~= 0;
                 start_in_reset = true;
                 reset_power_on = true;
-                cntfrq_hz = AP_HW.arch_timer_frequency_hz;
+                cntfrq_hz = AP_ARCH_TIMER_FREQUENCY_HZ;
                 trace_pc = options.ap_pc_trace;
                 trace_pc_file = options.ap_pc_trace_file;
                 trace_pc_interval = options.ap_pc_trace_interval;
@@ -114,6 +88,20 @@ function cpu.define(ctx, platform, hw)
             platform["ap_gic"]["vfiq_out_" .. i] = {bind = "&ap_cpu_" .. i .. ".vfiq_in"}
         end
     end
+end
+
+function cpu.define_reset(ctx, platform)
+    local options = ctx.options
+    assert(platform.ap_reset_gpio == nil, "duplicate Apollo object")
+    if options.enable_ap_cpus then
+        platform.ap_reset_gpio = {
+            moduletype = "reset_gpio";
+            args = {"&platform.ap_qemu_inst"};
+            reset_out = {bind = options.ap_cpu_reset_bind_targets(options.AP_NUM_CPUS)};
+            log_level = 0;
+        }
+    end
+
 end
 
 return cpu

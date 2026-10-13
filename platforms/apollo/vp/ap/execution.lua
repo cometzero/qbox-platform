@@ -52,7 +52,7 @@ function execution.policy(ctx)
     }
 end
 
-function execution.define(ctx, platform, hw, policy)
+function execution.define(ctx, platform, policy)
     local options = ctx.options
 
     assert(platform.ap_qemu_inst_mgr == nil, "duplicate Apollo object")

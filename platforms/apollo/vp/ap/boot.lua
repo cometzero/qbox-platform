@@ -1,3 +1,4 @@
+local AP_SHARED_SRAM_BASE = 0x00000000
 local AP_SDS_MEM_SIZE = 0x00000DC0
 
 local boot = {}
@@ -17,15 +18,14 @@ local AP_BOOT = {
     bl2_xlat_size = 0x0000E000;
 }
 
-function boot.define(ctx, platform, hw)
+function boot.define(ctx, platform)
     local options = ctx.options
-    local AP_ADDRESS = hw.AP_ADDRESS
 
     local AP_BL2_RESET = {
-        data_phys_base = AP_ADDRESS.shared_sram + AP_BOOT.bl2_data_offset;
-        stacks_phys_base = AP_ADDRESS.shared_sram + AP_BOOT.bl2_stacks_offset;
-        bss_phys_base = AP_ADDRESS.shared_sram + AP_BOOT.bl2_bss_offset;
-        xlat_phys_base = AP_ADDRESS.shared_sram + AP_BOOT.bl2_xlat_offset;
+        data_phys_base = AP_SHARED_SRAM_BASE + AP_BOOT.bl2_data_offset;
+        stacks_phys_base = AP_SHARED_SRAM_BASE + AP_BOOT.bl2_stacks_offset;
+        bss_phys_base = AP_SHARED_SRAM_BASE + AP_BOOT.bl2_bss_offset;
+        xlat_phys_base = AP_SHARED_SRAM_BASE + AP_BOOT.bl2_xlat_offset;
         data_elf_offset = AP_BOOT.bl2_data_elf_offset;
         data_size = AP_BOOT.bl2_data_size;
         stacks_size = AP_BOOT.bl2_stacks_size;
@@ -85,7 +85,7 @@ function boot.define(ctx, platform, hw)
                 bin_file_size = AP_BL2_RESET.xlat_size;
             };
             {
-                address = (AP_ADDRESS.shared_sram + AP_BOOT.sds_reset_syndrome_offset);
+                address = (AP_SHARED_SRAM_BASE + AP_BOOT.sds_reset_syndrome_offset);
                 data = {AP_BOOT.reset_syndrome_system_reset_req};
             };
             log_level = 0;
@@ -117,7 +117,7 @@ function boot.define(ctx, platform, hw)
     for i = 0, options.AP_NUM_CPUS - 1 do
         local cpu = platform["ap_cpu_" .. i]
         if cpu then
-            cpu.rvbar = AP_ADDRESS.shared_sram + AP_BOOT.bl2_offset
+            cpu.rvbar = AP_SHARED_SRAM_BASE + AP_BOOT.bl2_offset
         end
     end
 end

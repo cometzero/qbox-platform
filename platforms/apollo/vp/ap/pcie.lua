@@ -1,6 +1,6 @@
 local pcie = {}
 
-function pcie.define(ctx, platform, hw, policy)
+function pcie.define(ctx, platform, policy)
     local options = ctx.options
 
     if options.enable_ap_cpus and not policy.pcie_irq_test_enabled then
