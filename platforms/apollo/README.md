@@ -1632,3 +1632,72 @@ and the cold/warm 10-run gate remain unqualified. The current verifiers
 reject observed XRUN, PFDI timeout and RCU stall messages during the suite.
 See `doc/dma-i2s/05-code-cleanup.md` and `04-implementation-results.md` in
 the workspace for retained code and historical artifact provenance.
+
+### TC397-master SPI QVP extension
+
+`QBOX_APOLLO_VMCU_SPI_ENDPOINT=127.0.0.1:PORT` selects the independent
+SPI socket client. `si_cl0_vmcu_spi` is always mapped at SI `0x2a840000`
+(size `0x10000`), GIC INTID 43 / SPI index 11. It is a functional QVP
+slave peripheral, not a claim of DW SSI slave or RD-Aspen silicon parity.
+The existing AP SSI loopback controllers are unchanged. System reset clears
+this controller before the SI GIC; AP cold reset does not reset it.
+
+The 32-bit little-endian registers are ID `0x00` (`0x53504931`), CTRL `0x04`
+(enable bit 0, FIFO reset bit 1), STATUS `0x08` (TX room/RX available/CS
+active bits 0/1/2), TXCOUNT `0x0c`, RXCOUNT `0x10`, DATA `0x14` (TX write,
+RX read), IRQ_STATUS `0x18`, IRQ_MASK `0x1c`, ERROR `0x20` (W1C), and
+TX_COMMIT `0x24`, and CAPABILITY `0x28` (bit 0: SPI endpoint configured). FIFO depth is 64 bytes.
+IRQ bits 0/1/2 are RX available/TX empty/error levels; bit 3 is sticky
+CS END completion, cleared by W1C. Error bits 0/1/2 mean TX underrun,
+FIFO overflow, invalid protocol. Empty TX shifts `0xff`; MOSI still arrives
+and COMPLETE reports result 3; RX overflow reports fatal result 4. Firmware must validate its frame CRC.
+
+GPIO pin 5 is SI output `SOC_SPI_REQ`, default Low. With the SPI endpoint,
+GP8 input snapshots advertise mask `0x27`; UART profile retains mask `0x07`.
+The request toggle is independent of SPI transport, so firmware uses SYNC,
+sequence and ACK to recover pending state. No short pulse capture is promised.
+
+SPI1 wire records are 64 bytes: magic 0..3; type 4 (HELLO=1, READY=2,
+TRANSFER=3, COMPLETE=4, CANCEL=5); result 5 (0 success, 1 invalid, 2 disabled,
+3 TX underrun, 4 RX overflow); flags 6 (BEGIN=1, END=2); count 7 (1..32 for transfer);
+LE64 connection generation 8; LE32 transfer ID 16; LE32 nominal Hz 20;
+CS 24, mode 25, word bits 26, reserved 27; data 28..59; IEEE CRC32 60..63
+covering bytes 0..59. Only CS0/mode0/8-bit/MSB-first is supported. HELLO
+establishes a new generation, clears CS and transfer ordering, and preserves
+firmware FIFO state. Repeated same-generation HELLO preserves ordering and CS. Duplicate/out-of-order transfers do not clock data.
+CANCEL closes the session. CTRL FIFO reset keeps the wire session but clears
+CS. Reconnect must perform HELLO; the socket API has no disconnect callback.
+
+The socket ingress queue is bounded to four records; callbacks only copy
+records and notify SystemC. FIFO/IRQ changes occur in the SystemC owner
+context. Host transfer latency and configured SCLK are not a synchronized
+simulation clock, physical bus timing, or FTTI evidence. Focused native
+`vmcu_spi_slave-tests` covers full duplex, fragmented framing, CS, FIFO
+limits, reset, invalid settings and stale/duplicate transactions; the Lua
+configuration test covers endpoint/pin/IRQ/reset wiring. Guest-level evidence
+is recorded separately by the root vMCU validation workflow.
+
+SPI socket replies use a bounded 256-byte asynchronous write queue with partial-write
+retry on the socket thread and 1 ms receive polling. Queue overflow closes the
+connection; reconnect discards old pending bytes. Other UART sockets keep their
+existing default write path. `apollo-socket-queued-write-tests` exercises real TCP
+backpressure with an 8 MiB stream and a paused receiver.
+
+SI hardware reset emits an ordered CANCEL (reason 1, current generation and last
+transfer ID) and clears the ingress overflow latch. Previously produced COMPLETE
+bytes finish before CANCEL, preserving stream framing. The master renegotiates
+HELLO with a new generation; old-session transfers are discarded after reset.
+FIFO-only CTRL reset remains within the current session. Queued socket mode
+uses a cancellable asynchronous connect, and joins its owner thread before closing
+the socket. The native tests also cover overflow followed by reset/CANCEL, stale
+requests, disconnected shutdown and shutdown with a partly written large stream.
+
+TX DATA writes stage bytes in the same 64-byte FIFO. TX_COMMIT writes must equal
+its current nonzero TXCOUNT, with no remaining previously committed bytes;
+invalid commits set protocol ERROR bit 2. Reading TX_COMMIT returns committed
+bytes remaining. CS BEGIN snapshots that count as the current transfer budget.
+A commit during an idle transfer cannot change its all-`0xff` MISO stream; the
+next CS BEGIN sees the complete publication. An early CS END retains unclocked
+committed bytes for the next BEGIN. CTRL FIFO reset and hardware reset clear
+both publication and active budget. No application frame length is built into
+the peripheral, and staging does not introduce a second FIFO.

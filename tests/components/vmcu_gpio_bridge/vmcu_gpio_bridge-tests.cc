@@ -16,6 +16,7 @@ public:
     InitiatorSignalSocket<bool> soc_error;
     InitiatorSignalSocket<bool> soc_power;
     InitiatorSignalSocket<bool> ist_done_n;
+    InitiatorSignalSocket<bool> spi_req;
     TargetSignalSocket<bool> reset_n;
     TargetSignalSocket<bool> wake;
     TargetSignalSocket<bool> reset_request;
@@ -25,7 +26,7 @@ public:
 
     explicit Peer(sc_core::sc_module_name name)
         : sc_core::sc_module(name), socket("socket"), soc_error("soc_error"),
-          soc_power("soc_power"), ist_done_n("ist_done_n"), reset_n("reset_n"),
+          soc_power("soc_power"), ist_done_n("ist_done_n"), spi_req("spi_req"), reset_n("reset_n"),
           wake("wake"), reset_request("reset_request")
     {
         socket.register_b_transport(this, &Peer::receive);
@@ -64,6 +65,7 @@ TEST(VmcuGpioBridgeTest, DefaultsFramingDriveReleaseAndTransportTimeout)
     peer.soc_error.bind(dut.gpio_in[0]);
     peer.soc_power.bind(dut.gpio_in[1]);
     peer.ist_done_n.bind(dut.gpio_in[2]);
+    peer.spi_req.bind(dut.gpio_in[5]);
     dut.gpio_out[3].bind(peer.reset_n);
     dut.gpio_out[4].bind(peer.wake);
     dut.reset_request.bind(peer.reset_request);
@@ -118,6 +120,11 @@ TEST(VmcuGpioBridgeTest, DefaultsFramingDriveReleaseAndTransportTimeout)
     sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
     EXPECT_EQ(peer.snapshots.back()[4], 3u);
     EXPECT_EQ(peer.snapshots.back()[6], 7u);
+    dut.p_soc_mask.set_value(0x27);
+    peer.spi_req->write(true);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(peer.snapshots.back()[4], 0x23u);
+    EXPECT_EQ(peer.snapshots.back()[6], 0x27u);
     const auto sent = peer.snapshots.size();
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));

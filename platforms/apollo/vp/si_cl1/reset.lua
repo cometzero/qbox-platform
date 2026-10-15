@@ -69,6 +69,11 @@ local reset = {}
                 ordered_targets[#ordered_targets], "&si_cl0_vmcu_uart%.reset;?", "")
             table.insert(ordered_targets, 2, "&si_cl0_vmcu_uart.reset")
         end
+        if platform.si_cl0_vmcu_spi then
+            ordered_targets[#ordered_targets] = string.gsub(
+                ordered_targets[#ordered_targets], "&si_cl0_vmcu_spi%.reset;?", "")
+            table.insert(ordered_targets, 2, "&si_cl0_vmcu_spi.reset")
+        end
         system_reset.reset_out.bind = table.concat(ordered_targets, ";")
     end
 

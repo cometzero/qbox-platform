@@ -13,12 +13,13 @@ end
 return function(options)
     options.vmcu_uart_endpoint = endpoint_option("QBOX_APOLLO_VMCU_UART_ENDPOINT")
     options.vmcu_safety_endpoint = endpoint_option("QBOX_APOLLO_VMCU_SAFETY_ENDPOINT")
+    options.vmcu_spi_endpoint = endpoint_option("QBOX_APOLLO_VMCU_SPI_ENDPOINT")
     options.vmcu_gpio_endpoint = endpoint_option("QBOX_APOLLO_VMCU_GPIO_ENDPOINT")
     assert(not options.vmcu_uart_endpoint or options.enable_ap_cpus,
            "QBOX_APOLLO_VMCU_UART_ENDPOINT requires QBOX_RDASPEN_ENABLE_AP_CPUS=true")
     local used = {}
     for _, endpoint in ipairs({options.vmcu_uart_endpoint or false,
-        options.vmcu_safety_endpoint or false, options.vmcu_gpio_endpoint or false}) do
+        options.vmcu_safety_endpoint or false, options.vmcu_gpio_endpoint or false, options.vmcu_spi_endpoint or false}) do
         if endpoint then
             assert(not used[endpoint], "vMCU endpoints must be distinct")
             used[endpoint] = true

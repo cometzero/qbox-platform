@@ -37,12 +37,29 @@ function module.create(ctx, _runtime)
             irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_VMCU_UART_SPI};
             backend_socket = {bind = uart_backend};
         }
+        platform.si_cl0_vmcu_spi = {
+            moduletype = "vmcu_spi_slave";
+            connected = ctx.options.vmcu_spi_endpoint ~= nil;
+            target_socket = {address = 0x2A840000; size = 0x10000;
+                bind = "&si_cl0_router.initiator_socket"};
+            irq = {bind = "&si_cl0_gic.spi_in_11"}; -- QVP INTID 43
+        }
+        if ctx.options.vmcu_spi_endpoint then
+            platform.vmcu_spi_socket = socket(ctx.options.vmcu_spi_endpoint)
+            platform.vmcu_spi_socket.write_queue_size = 256
+            platform.vmcu_spi_socket.poll_interval_ms = 1
+            platform.si_cl0_vmcu_spi.backend_socket = {bind = "&vmcu_spi_socket.biflow_socket"}
+        else
+            platform.vmcu_spi_sink = {moduletype = "char_backend_file";
+                read_file = ""; write_file = "/dev/null"; poll_read = false}
+            platform.si_cl0_vmcu_spi.backend_socket = {bind = "&vmcu_spi_sink.biflow_socket"}
+        end
         assert(platform.si_cl0_vmcu_gpio == nil, "duplicate vMCU board GPIO")
         platform.si_cl0_vmcu_gpio = {
             moduletype = "qemu_pl061";
             args = {"&platform.si_cl0_qemu_inst"};
             -- RESET_N pull-up and inactive IST_DONE_N board default.
-            init_inputs = 0x0C; pullups = 0x0C; pulldowns = 0x13;
+            init_inputs = 0x0C; pullups = 0x0C; pulldowns = 0x33;
             mem = {address = 0x2A830000; size = 0x10000;
                    bind = "&si_cl0_router.initiator_socket"};
             irq = {bind = "&si_cl0_gic.spi_in_" .. SI_CL0_VMCU_GPIO_SPI};
@@ -55,12 +72,13 @@ function module.create(ctx, _runtime)
             platform.vmcu_gpio_socket = socket(ctx.options.vmcu_gpio_endpoint)
             platform.vmcu_gpio_bridge = {
                 moduletype = "vmcu_gpio_bridge";
+                soc_mask = ctx.options.vmcu_spi_endpoint and 0x27 or 0x07;
                 backend_socket = {bind = "&vmcu_gpio_socket.biflow_socket"};
                 gpio_out_3 = {bind = "&si_cl0_vmcu_gpio.gpio_in_3"};
                 gpio_out_4 = {bind = "&si_cl0_vmcu_gpio.gpio_in_4"};
                 reset_request = {bind = "&host_reset_ctrl.vmcu_reset"};
             }
-            for pin = 0,2 do
+            for _, pin in ipairs({0, 1, 2, 5}) do
                 platform.si_cl0_vmcu_gpio["gpio_out_"..pin] = {
                     bind = "&vmcu_gpio_bridge.gpio_in_"..pin}
             end

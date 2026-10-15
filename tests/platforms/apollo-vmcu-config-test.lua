@@ -3,12 +3,13 @@
 local apollo_dir = apollo_dir or assert(arg[1], "Apollo source directory required")
 local original_getenv = os.getenv
 
-local function evaluate(entry, endpoint, enable_ap, safety, gpio)
+local function evaluate(entry, endpoint, enable_ap, safety, gpio, spi)
     local environment = {
         QBOX_RDASPEN_ENABLE_AP_CPUS = enable_ap == false and "false" or "true";
         QBOX_APOLLO_VMCU_UART_ENDPOINT = endpoint;
         QBOX_APOLLO_VMCU_SAFETY_ENDPOINT = safety;
         QBOX_APOLLO_VMCU_GPIO_ENDPOINT = gpio;
+        QBOX_APOLLO_VMCU_SPI_ENDPOINT = spi;
         QBOX_LINUX_BOOT_STUB = "fixture-boot-stub.bin";
         QBOX_LINUX_KERNEL = "fixture-kernel.bin";
         QBOX_LINUX_DTB = "fixture.dtb";
@@ -135,3 +136,18 @@ assert(ok, err)
 assert(enabled.si_cl0_vmcu_uart and not enabled.vmcu_uart_socket)
 print("PASS: vMCU UART config, full/AP-only bindings, unchanged default and invalid options")
 print("PASS: SI safety UART, independent GPIO, reset ordering and PMIC preservation")
+
+ok, err, enabled = evaluate("apollo-qvp-saturn-v.lua", nil, true, nil,
+                            "127.0.0.1:44003", "127.0.0.1:44004")
+assert(ok, err)
+assert(enabled.si_cl0_vmcu_spi.target_socket.address == 0x2a840000)
+assert(enabled.si_cl0_vmcu_spi.irq.bind == "&si_cl0_gic.spi_in_11")
+assert(enabled.si_cl0_vmcu_spi.connected == true)
+assert(baseline.si_cl0_vmcu_spi.connected == false)
+assert(enabled.vmcu_gpio_bridge.soc_mask == 0x27)
+assert(enabled.si_cl0_vmcu_gpio.gpio_out_5.bind == "&vmcu_gpio_bridge.gpio_in_5")
+assert(enabled.apollo_system_reset_fanout.reset_out.bind:find("&si_cl0_vmcu_spi.reset", 1, true))
+assert(not enabled.ap_cold_reset_fanout.reset_out.bind:find("vmcu_spi", 1, true))
+ok, err = evaluate("apollo-qvp-saturn-v.lua", nil, true, nil, "127.0.0.1:44004", "127.0.0.1:44004")
+assert(not ok and tostring(err):find("endpoints must be distinct", 1, true))
+print("PASS: SPI QVP slave mapping, request pin, endpoint uniqueness and AP reset independence")

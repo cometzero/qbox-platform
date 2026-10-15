@@ -1,0 +1,2 @@
+gs_create_dymod(vmcu_spi_slave)
+target_compile_definitions(vmcu_spi_slave PUBLIC SC_ALLOW_DEPRECATED_IEEE_API)

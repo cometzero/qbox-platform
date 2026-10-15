@@ -26,6 +26,7 @@ return function(ctx, platform)
             "&si_cl0_pmic_gpio_cold_reset.reset";
             "&si_cl0_pmic_gpio.reset";
             "&si_cl0_vmcu_uart.reset";
+            "&si_cl0_vmcu_spi.reset";
             "&si_cl0_vmcu_gpio_cold_reset.reset";
             "&si_cl0_vmcu_gpio.reset";
         }, ";"))

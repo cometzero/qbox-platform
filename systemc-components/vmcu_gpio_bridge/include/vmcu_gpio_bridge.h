@@ -26,7 +26,6 @@
 class vmcu_gpio_bridge : public sc_core::sc_module
 {
     using Clock = std::chrono::steady_clock;
-    static constexpr uint16_t SOC_MASK = 0x07;
     static constexpr uint16_t MCU_MASK = 0x18;
     static constexpr uint16_t RESET_N = 0x08;
     std::array<uint8_t, 8> m_frame{};
@@ -84,7 +83,7 @@ class vmcu_gpio_bridge : public sc_core::sc_module
         }
         if (reset_request.size()) reset_request->write((peer & RESET_N) == 0);
         std::array<uint8_t, 8> bytes = {{'G', 'P', 1, 'I',
-            static_cast<uint8_t>(soc), 0, SOC_MASK, 0}};
+            static_cast<uint8_t>(soc), 0, static_cast<uint8_t>(p_soc_mask.get_value()), 0}};
         tlm::tlm_generic_payload trans;
         trans.set_data_ptr(bytes.data());
         trans.set_data_length(bytes.size());
@@ -95,6 +94,7 @@ class vmcu_gpio_bridge : public sc_core::sc_module
 
 public:
     SC_HAS_PROCESS(vmcu_gpio_bridge);
+    cci::cci_param<unsigned> p_soc_mask;
     cci::cci_param<unsigned> p_publish_interval_ms;
     cci::cci_param<unsigned> p_peer_timeout_ms;
     gs::biflow_socket<vmcu_gpio_bridge> backend_socket;
@@ -104,10 +104,11 @@ public:
 
     explicit vmcu_gpio_bridge(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
+        , p_soc_mask("soc_mask", 0x07)
         , p_publish_interval_ms("publish_interval_ms", 100)
         , p_peer_timeout_ms("peer_timeout_ms", 1000)
         , backend_socket("backend_socket")
-        , gpio_in("gpio_in", 3, [](const char* n, size_t) { return new TargetSignalSocket<bool>(n); })
+        , gpio_in("gpio_in", 6, [](const char* n, size_t) { return new TargetSignalSocket<bool>(n); })
         , gpio_out("gpio_out", 5)
         , reset_request("reset_request")
     {
