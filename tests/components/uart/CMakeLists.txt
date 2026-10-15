@@ -21,3 +21,4 @@ set_tests_properties(apollo-pl011-reset-tests PROPERTIES
 gs_add_test(uart-biflow-stdio-test)
 gs_add_test(uart-biflow-backend-socket-test)
 gs_add_test(uart-ibex-biflow-stdio-test)
+gs_add_test(socket-queued-write-tests)
