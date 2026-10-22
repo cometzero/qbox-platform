@@ -262,7 +262,7 @@ their runtime presence before reporting availability.
 ## Yocto unit tests
 
 The native provider enables tests by default. Its `do_check` task builds and
-runs platform tests and selected core tests after `do_compile`, before
+runs only qbox-platform tests after `do_compile`, before
 `do_install`; compilation errors and test failures stop the recipe.
 
 ```bash
@@ -275,9 +275,10 @@ four-CPU timer, and core-selection configuration tests. The legacy
 `tests/components/CMakeLists.txt` also names old core-test copies; those
 are not added alongside the authoritative core suites. Platform-owned
 tests use the root CMake list, including the renamed `apollo-*` UART tests.
-Core defaults are
-`components`, `sync`, `utils`, and `qbox`, with CPU tests restricted to
-`aarch64`. Existing feature/platform gates still apply: Python binder is
+The Yocto recipe defaults `QBOX_CORE_TEST_DIRS` to empty, so core suites
+are not configured, built, or run unless explicitly selected. The standalone
+CMake default remains `components`, `sync`, `utils`, and `qbox`. When enabled
+through Yocto, CPU tests are restricted to `aarch64`. Existing feature/platform gates still apply: Python binder is
 disabled, DMI-reset firmware and display tests are macOS-only, and the
 legacy synchronization `checker` executable has no registered CTest.
 
@@ -312,8 +313,9 @@ default profile. The initial 2026-09-09 timing measurement excluded 26 slow
 core cases (the router cache benchmark and 25 CPU cases). Subsequent repeat
 testing also quarantined `aarch64-managed-uart-fifo-closed-writer` and
 `aarch64-managed-timer-wfi-timer-wake` for intermittent post-simulation hangs.
-The default selection is now 55 platform and 60 core tests, including 11
-AArch64 CPU cases. The 28 excluded cases remain configured and compiled;
+The historical 2026-09-09 selection was 55 platform and 60 core tests,
+including 11 AArch64 CPU cases. When these core suites are enabled, the
+28 excluded cases remain configured and compiled;
 exclusion is not a fix or a PASS. PL061's asynchronous-reset test race was
 fixed and that test remains enabled.
 
@@ -323,7 +325,7 @@ by default and can explicitly override the entire exclusion policy;
 `QBOX_APOLLO_UNIT_TEST_EXCLUDE_REGEX` is available for platform exclusions
 (empty by default). The recipe records matching cases in
 `qbox-core-unit-tests.excluded.list`. To deliberately include all core tests
-for diagnosis:
+for diagnosis, first select the core directories as above, then set:
 
 ```bitbake
 QBOX_CORE_TEST_EXCLUDE_REGEX:pn-qbox-apollo-qvp-native = ""
