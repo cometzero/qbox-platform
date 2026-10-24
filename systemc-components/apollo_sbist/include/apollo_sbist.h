@@ -29,7 +29,7 @@ class apollo_sbist : public sc_core::sc_module
     static constexpr uint32_t FMU_SYS_KEY_VALUE = 0xbe;
     static constexpr uint64_t FMU_IMPDEF_BASE = 0x8000;
     static constexpr uint64_t FMU_IMPDEF_STRIDE = 0x8;
-    static constexpr uint32_t FMU_IMPDEF_INJECT = 1u << 9;
+    static constexpr uint32_t FMU_IMPDEF_INJECT = 1u << 13;
     static constexpr unsigned int SBIST_EQ_FAIL_RECORD0 = 210;
 
     std::array<uint8_t, WINDOW_BYTES> m_regs {};
@@ -47,29 +47,37 @@ class apollo_sbist : public sc_core::sc_module
                offset <= m_regs.size() && length <= m_regs.size() - offset;
     }
 
-    void write_fmu32(uint64_t address, uint32_t value)
+    bool access_fmu32(uint64_t address, tlm::tlm_command command,
+                      uint32_t& value)
     {
         if (fmu_initiator.size() == 0)
-            return;
+            return false;
 
         tlm::tlm_generic_payload trans;
         trans.set_address(address);
-        trans.set_command(tlm::TLM_WRITE_COMMAND);
+        trans.set_command(command);
         trans.set_data_length(sizeof(value));
         trans.set_streaming_width(sizeof(value));
         trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
         trans.set_dmi_allowed(false);
         sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
         fmu_initiator->b_transport(trans, delay);
+        return trans.is_response_ok();
     }
 
     void inject_fault(unsigned int cpu)
     {
         const uint64_t bank = p_fmu_base.get_value() + FMU_BANK1_OFFSET;
         const uint64_t record = SBIST_EQ_FAIL_RECORD0 + cpu;
-        write_fmu32(bank + FMU_SYS_KEY_OFFSET, FMU_SYS_KEY_VALUE);
-        write_fmu32(bank + FMU_IMPDEF_BASE + record * FMU_IMPDEF_STRIDE,
-                    FMU_IMPDEF_INJECT);
+        const uint64_t address = bank + FMU_IMPDEF_BASE +
+            record * FMU_IMPDEF_STRIDE;
+        uint32_t control = 0;
+        uint32_t key = FMU_SYS_KEY_VALUE;
+        if (!access_fmu32(address, tlm::TLM_READ_COMMAND, control) ||
+            !access_fmu32(bank + FMU_SYS_KEY_OFFSET, tlm::TLM_WRITE_COMMAND, key))
+            return;
+        control |= FMU_IMPDEF_INJECT;
+        access_fmu32(address, tlm::TLM_WRITE_COMMAND, control);
     }
 
     void schedule_fault(unsigned int local_cpu)

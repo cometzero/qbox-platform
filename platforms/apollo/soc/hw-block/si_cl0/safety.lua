@@ -69,6 +69,9 @@ function module.create(ctx, _runtime)
             moduletype = "zena_fmu";
             bank_count = SI_CL0_FMU_BANK_COUNT;
             record_count = SI_CL0_FMU_RECORD_COUNT;
+            critical_records = "0:0,0:2,0:4,0:6," ..
+                "1:3,1:18,1:33,1:48,1:68,1:167," ..
+                "4:0,4:2,4:4,4:6,4:8,4:10,4:12,4:14,4:16,4:18,4:204";
             fault_input_enabled = true;
             fault_input_record = 0;
             fault_source = "si_cl0_ni710ae_primary_nci.apu_fault";
@@ -121,6 +124,9 @@ function module.create(ctx, _runtime)
                 "duplicate object: platform." .. ("si_cl0_" .. fmu.name .. "_fmu"))
             platform["si_cl0_" .. fmu.name .. "_fmu"] = {
                 moduletype = "zena_device_fmu";
+                mhu_profile = fmu.name ~= "gic";
+                clock_period_ns = 8;
+                gci_count = 2;
                 parent_bank = 4;
                 parent_critical_record = fmu.critical_record;
                 parent_non_critical_record = fmu.non_critical_record;
@@ -130,7 +136,7 @@ function module.create(ctx, _runtime)
                     bind = "&si_cl0_router.initiator_socket";
                     priority = 0;
                 };
-                fault_socket = {bind = "&si_cl0_router.target_socket"};
+                fault_socket = {bind = "&si_cl0_fmu.device_fault_socket"};
                 log_level = 0;
             }
         end
@@ -140,14 +146,16 @@ function module.create(ctx, _runtime)
         platform.si_cl0_ni710ae_sys_ctrl = {
             moduletype = "zena_ni710ae_fmu";
             node_index = 0x14;
+            parent_bank = 1;
             parent_critical_record = 68;
             parent_non_critical_record = 66;
+            parent_fault_record = 67;
             target_socket = {
                 address = HOST_NI710AE_SYS_CTRL_PHYS_BASE;
                 size = HOST_NI710AE_WINDOW_SIZE;
                 bind = "&smd_router.initiator_socket";
             };
-            fault_socket = {bind = "&si_cl0_router.target_socket"};
+            fault_socket = {bind = "&si_cl0_fmu.device_fault_socket"};
             log_level = 0;
         }
 
@@ -157,14 +165,16 @@ function module.create(ctx, _runtime)
         platform.si_cl0_ni710ae_smd = {
             moduletype = "zena_ni710ae_fmu";
             node_index = 0x17;
+            parent_bank = 1;
             parent_critical_record = 167;
             parent_non_critical_record = 165;
+            parent_fault_record = 166;
             target_socket = {
                 address = HOST_NI710AE_SMD_PHYS_BASE;
                 size = HOST_NI710AE_WINDOW_SIZE;
                 bind = "&smd_router.initiator_socket";
             };
-            fault_socket = {bind = "&si_cl0_router.target_socket"};
+            fault_socket = {bind = "&si_cl0_fmu.device_fault_socket"};
             log_level = 0;
         }
         for cluster = 0,(SI_CL0_AP_CLUSTER_COUNT - 1) do

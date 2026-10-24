@@ -25,6 +25,7 @@ class FmuTarget : public sc_core::sc_module
 public:
     tlm_utils::simple_target_socket<FmuTarget, DEFAULT_TLM_BUSWIDTH> socket;
     std::vector<ObservedWrite> writes;
+    uint32_t control = 0x07030181;
 
     explicit FmuTarget(sc_core::sc_module_name name)
         : sc_core::sc_module(name)
@@ -36,6 +37,11 @@ public:
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
     {
         (void)delay;
+        if (trans.is_read()) {
+            std::memcpy(trans.get_data_ptr(), &control, sizeof(control));
+            trans.set_response_status(tlm::TLM_OK_RESPONSE);
+            return;
+        }
         uint32_t value = 0;
         std::memcpy(&value, trans.get_data_ptr(), sizeof(value));
         writes.push_back({trans.get_address(), value});
@@ -80,9 +86,10 @@ TEST(ApolloSbistTest, StoresFctlrAndInjectsCpuSpecificSi0FmuRecords)
     EXPECT_EQ(fmu.writes[0].address, 0x2a528bfcu);
     EXPECT_EQ(fmu.writes[0].value, 0xbeu);
     EXPECT_EQ(fmu.writes[1].address, 0x2a528690u);
-    EXPECT_EQ(fmu.writes[1].value, 1u << 9);
+    EXPECT_EQ(fmu.writes[1].value, fmu.control | (1u << 13));
     EXPECT_EQ(fmu.writes[2].address, 0x2a528bfcu);
     EXPECT_EQ(fmu.writes[3].address, 0x2a5286a8u);
+    EXPECT_EQ(fmu.writes[3].value, fmu.control | (1u << 13));
 }
 
 int sc_main(int argc, char* argv[])

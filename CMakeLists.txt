@@ -154,6 +154,7 @@ if(BUILD_TESTING)
         strata_flash_j3
         zena_fmu
         zena_leaf_fmu
+        zena_ni710ae_fmu
         zena_ssu
         zena_watchdog
         zena_reset_ctrl

@@ -11,6 +11,8 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -20,8 +22,10 @@
 #include <ports/target-signal-socket.h>
 #include <systemc>
 #include <tlm>
+#include <tlm-extensions/request-context.h>
 #include <tlm_sockets_buswidth.h>
 #include <tlm_utils/simple_target_socket.h>
+#include <tlm_utils/multi_passthrough_target_socket.h>
 
 class zena_fmu : public sc_core::sc_module
 {
@@ -75,8 +79,6 @@ class zena_fmu : public sc_core::sc_module
     static constexpr uint32_t IMPDEF_DE_MASK = 0x000001f0;
     static constexpr uint32_t IMPDEF_IE_MASK = 0x00003e00;
     static constexpr uint32_t IMPDEF_IC_MASK = 0x0000000c;
-    static constexpr uint32_t IMPDEF_CI_INJECT = 1u << 15;
-    static constexpr uint32_t IMPDEF_STORED_MASK = 0xffff01f1;
     static constexpr uint32_t IMPDEF_COUNT_MASK = 0x00ff0000;
     static constexpr unsigned int IMPDEF_COUNT_SHIFT = 16;
     static constexpr uint32_t IMPDEF_THRESHOLD_MASK = 0xff000000;
@@ -86,6 +88,11 @@ class zena_fmu : public sc_core::sc_module
         std::array<uint32_t, MAX_RECORDS> ctlr {};
         std::array<uint32_t, MAX_RECORDS> status {};
         std::array<uint32_t, MAX_RECORDS> impdef {};
+        std::array<bool, MAX_RECORDS> critical {};
+        std::array<bool, MAX_RECORDS> corrected {};
+        std::array<uint32_t, MAX_RECORDS> level_flags {};
+        std::array<bool, MAX_RECORDS> detected_level {};
+        std::array<bool, MAX_RECORDS> summary_level {};
         bool unlocked = false;
     };
 
@@ -96,6 +103,9 @@ class zena_fmu : public sc_core::sc_module
     };
 
     std::array<Bank, MAX_BANKS> m_banks {};
+    // A pin can have several functional producers. One producer's deassertion
+    // must not remove another producer's asserted level.
+    std::map<std::pair<int, uint64_t>, bool> m_device_levels;
     std::vector<ObservedEvent> m_observed_events;
     unsigned int m_trace_count = 0;
     unsigned int m_event_sequence = 0;
@@ -171,11 +181,6 @@ class zena_fmu : public sc_core::sc_module
         return std::min<unsigned int>(p_record_count.get_value(), MAX_RECORDS);
     }
 
-    static bool is_supported_length(unsigned int len)
-    {
-        return len == 1 || len == 2 || len == 4 || len == 8;
-    }
-
     static bool is_aligned32(uint64_t offset)
     {
         return (offset & 0x3u) == 0;
@@ -219,26 +224,81 @@ class zena_fmu : public sc_core::sc_module
         return index == (MAX_RECORDS - 1) ? 0x00000070u : 0x00000180u;
     }
 
-    bool is_critical_record(unsigned int index) const
+    uint32_t ctlr_mask(const Bank& bank, unsigned int index) const
     {
-        if (index < 64) {
-            return (p_critical_mask.get_value() & (1ull << index)) != 0;
-        }
-
-        return false;
+        return CTLR_ED | CTLR_CI | (bank.critical[index] ? 0 :
+            CTLR_FI | (bank.corrected[index] ? CTLR_CFI : CTLR_UE));
     }
 
-    bool is_non_critical_record(unsigned int index) const
+    uint32_t cause_mask(unsigned int index) const
     {
-        if (is_critical_record(index)) {
-            return false;
-        }
+        return index == MAX_RECORDS - 1 ? 0x700u : 0x1800u;
+    }
 
-        if (index < 64) {
-            return (p_non_critical_mask.get_value() & (1ull << index)) != 0;
-        }
+    uint32_t stored_mask(const Bank& bank, unsigned int index) const
+    {
+        return default_impdef(index) |
+            (bank.critical[index] ? 0 : 0xffff0001u);
+    }
 
-        return true;
+    uint32_t features(const Bank& bank, unsigned int index) const
+    {
+        return 0x00800002u | (bank.critical[index] ? 0 :
+            0x80u | (bank.corrected[index] ? 0x800u : 0x200u));
+    }
+
+    void parse_profile(const std::string& text, bool corrected)
+    {
+        std::istringstream input(text);
+        std::string entry;
+        std::array<std::array<bool, MAX_RECORDS>, MAX_BANKS> seen {};
+        while (std::getline(input, entry, ',')) {
+            unsigned int bank = 0, record = 0;
+            char colon = 0, extra = 0;
+            std::istringstream item(entry);
+            if (!(item >> bank >> colon >> record) || colon != ':' ||
+                (item >> extra) || bank >= bank_count() ||
+                record >= record_count() || record == MAX_RECORDS - 1 ||
+                seen[bank][record] || (corrected && m_banks[bank].critical[record])) {
+                SC_REPORT_FATAL(name(), "Invalid or conflicting FMU input profile (bank:record)");
+                return;
+            }
+            seen[bank][record] = true;
+            if (corrected) m_banks[bank].corrected[record] = true;
+            else m_banks[bank].critical[record] = true;
+        }
+        if (!text.empty() && text.back() == ',')
+            SC_REPORT_FATAL(name(), "Trailing delimiter in FMU input profile");
+    }
+
+    // System FMU ERRIMPDEF.DE[8:4] maps to STATUS.IERR[12:8].
+    // Physical ECC/parity checking is outside this functional pin/CSR model.
+    void record_error(Bank& bank, unsigned int index, uint32_t causes,
+                      bool new_event = true)
+    {
+        if (!(bank.ctlr[index] & CTLR_ED)) return;
+        causes &= cause_mask(index) & (bank.impdef[index] << 4);
+        if (!causes) return;
+        bool critical = bank.critical[index];
+        if (!critical) {
+            auto& impdef = bank.impdef[index];
+            const uint32_t count = (impdef >> 16) & 0xff;
+            const uint32_t threshold = impdef >> 24;
+            critical = (impdef & IMPDEF_UE) && count >= threshold;
+            if (new_event) impdef = (impdef & ~IMPDEF_COUNT_MASK) |
+                (std::min(count + 1, 255u) << 16);
+        }
+        const uint32_t old = bank.status[index];
+        // Internal errors have one syndrome record. Retain the first syndrome
+        // and report loss of a subsequent error through OF, as specified.
+        if (index == MAX_RECORDS - 1 && (old & STATUS_V)) {
+            bank.status[index] |= STATUS_OF;
+        } else {
+            bank.status[index] = (old & STATUS_V ? old : 0) |
+                STATUS_V | causes | STATUS_SERR_SW;
+        }
+        bank.status[index] |= critical ? STATUS_CI :
+            bank.corrected[index] ? (2u << 24) : STATUS_UE;
     }
 
     bool require_unlock(Bank& bank)
@@ -256,36 +316,15 @@ class zena_fmu : public sc_core::sc_module
         return false;
     }
 
-    void set_sequence_error(Bank& bank)
+    void set_internal_error(Bank& bank, uint32_t cause)
     {
-        const unsigned int rec = record_count() == 0 ? 0 : record_count() - 1;
-        bank.status[rec] |= STATUS_V | STATUS_IERR_INC_SEQ | STATUS_SERR_SW;
+        if (record_count() == MAX_RECORDS) record_error(bank, MAX_RECORDS - 1, cause);
         update_irqs();
     }
 
-    void set_software_error(Bank& bank, unsigned int index, bool critical)
+    void set_sequence_error(Bank& bank)
     {
-        uint32_t& impdef = bank.impdef[index];
-        const uint32_t count =
-            std::min<uint32_t>(
-                ((impdef & IMPDEF_COUNT_MASK) >> IMPDEF_COUNT_SHIFT) + 1,
-                0xffu);
-        impdef = (impdef & ~IMPDEF_COUNT_MASK) |
-            (count << IMPDEF_COUNT_SHIFT);
-        const uint32_t threshold =
-            (impdef & IMPDEF_THRESHOLD_MASK) >> IMPDEF_THRESHOLD_SHIFT;
-        critical = critical ||
-            ((impdef & IMPDEF_UE) != 0 && count > threshold);
-        uint32_t status = STATUS_V | STATUS_IERR_ERR_IN | STATUS_SERR_SW;
-
-        if (critical) {
-            status |= STATUS_CI;
-        } else {
-            status |= STATUS_UE;
-        }
-
-        bank.status[index] |= status;
-        update_irqs();
+        set_internal_error(bank, STATUS_IERR_INC_SEQ);
     }
 
     void set_external_fault()
@@ -298,8 +337,9 @@ class zena_fmu : public sc_core::sc_module
 
         append_event("source", true);
         m_external_fault_pending = true;
-        const bool critical = is_critical_record(index);
-        set_software_error(m_banks[0], index, critical);
+        const bool critical = m_banks[0].critical[index];
+        record_error(m_banks[0], index, STATUS_IERR_ERR_IN);
+        update_irqs();
         append_event("record", true);
         append_event("sink_assert", critical ? m_critical_irq
                                                : m_non_critical_irq);
@@ -328,18 +368,18 @@ class zena_fmu : public sc_core::sc_module
         }
 
         uint32_t status = bank.status[index];
-        status &= ~(value & STATUS_W1C_MASK);
+        if (status & STATUS_V) status &= ~(value & STATUS_W1C_MASK);
 
-        if (status & STATUS_V) {
+        if (bank.status[index] & STATUS_V) {
             status = (status & ~STATUS_RW_WHEN_VALID_MASK) |
-                     (value & STATUS_RW_WHEN_VALID_MASK);
+                     (value & (STATUS_SERR_MASK | cause_mask(index)));
         }
 
         bank.status[index] = status;
         update_irqs();
 
         if (observed_clear && (status & STATUS_V) == 0) {
-            const bool critical = is_critical_record(index);
+            const bool critical = m_banks[0].critical[index];
             append_event("sink_deassert",
                          critical ? m_critical_irq : m_non_critical_irq);
             append_event("recovery", true);
@@ -349,30 +389,23 @@ class zena_fmu : public sc_core::sc_module
 
     void write_ctlr(Bank& bank, unsigned int index, uint32_t value)
     {
-        bank.ctlr[index] = (bank.ctlr[index] & ~CTLR_RW_MASK) |
-                           (value & CTLR_RW_MASK);
+        bank.ctlr[index] = value & ctlr_mask(bank, index);
         update_irqs();
     }
 
     void write_impdef(Bank& bank, unsigned int index, uint32_t value)
     {
-        bank.impdef[index] = (bank.impdef[index] & ~IMPDEF_STORED_MASK) |
-                             (value & IMPDEF_STORED_MASK);
-
-        if (value & IMPDEF_IC_MASK) {
-            bank.status[index] &= ~(STATUS_V | STATUS_UE | STATUS_OF |
-                                    STATUS_CE_MASK | STATUS_CI);
+        bank.impdef[index] = value & stored_mask(bank, index);
+        // IE and IC are source-side pulses, not writes to the RAS status
+        // register (Zena CSS guide Table 9-883). Our injected pulse completes
+        // within this transaction: no persistent injected pin remains for IC
+        // to clear. In particular, IC must neither acknowledge the latched
+        // STATUS nor clear a hardware producer's level. STATUS is W1C; a held
+        // hardware input re-latches it through refresh_levels().
+        const uint32_t causes = (value >> 1) & cause_mask(index);
+        if (causes) {
+            record_error(bank, index, causes);
         }
-
-        if ((value & IMPDEF_IE_MASK) != 0 && (bank.ctlr[index] & CTLR_ED) != 0) {
-            const bool root_critical = &bank == &m_banks[0] &&
-                is_critical_record(index);
-            const bool critical = root_critical ||
-                (value & IMPDEF_CI_INJECT) != 0;
-            set_software_error(bank, index, critical);
-            return;
-        }
-
         update_irqs();
     }
 
@@ -435,7 +468,7 @@ class zena_fmu : public sc_core::sc_module
         if (decode_record(reg, index, field)) {
             switch (field) {
             case ERR_FR_OFFSET:
-                return 0;
+                return features(bank, index);
             case ERR_CTLR_OFFSET:
                 return bank.ctlr[index];
             case ERR_STATUS_OFFSET:
@@ -527,31 +560,37 @@ class zena_fmu : public sc_core::sc_module
         const unsigned int len = trans.get_data_length();
         uint8_t* data = trans.get_data_ptr();
 
-        if (data == nullptr || !is_supported_length(len) ||
-            offset + len > static_cast<uint64_t>(bank_count()) * BANK_BYTES) {
+        trans.set_dmi_allowed(false);
+        if (data == nullptr || offset >= static_cast<uint64_t>(bank_count()) * BANK_BYTES) {
             trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
             return false;
         }
-
-        if (trans.get_command() == tlm::TLM_READ_COMMAND) {
-            uint64_t remaining = len;
-            uint64_t cur = offset;
-            uint8_t* out = data;
-            while (remaining > 0) {
-                const uint32_t value = read32(cur & ~0x3ull);
-                const unsigned int shift = static_cast<unsigned int>(cur & 0x3ull);
-                const unsigned int chunk = std::min<uint64_t>(remaining, 4 - shift);
-                std::memcpy(out, reinterpret_cast<const uint8_t*>(&value) + shift, chunk);
-                remaining -= chunk;
-                cur += chunk;
-                out += chunk;
-            }
-        } else if (trans.get_command() == tlm::TLM_WRITE_COMMAND) {
-            if (len == sizeof(uint32_t) && is_aligned32(offset)) {
-                uint32_t value = 0;
-                std::memcpy(&value, data, sizeof(value));
-                write32(offset, value);
-            }
+        Bank& bank = m_banks[offset / BANK_BYTES];
+        RequestContextTlmExtension* context = nullptr;
+        trans.get_extension(context);
+        const bool non_secure = context && context->get_context().secure_valid &&
+            !context->get_context().secure;
+        bool full_strobes = true;
+        if (trans.get_byte_enable_ptr()) {
+            full_strobes = trans.get_byte_enable_length() != 0;
+            for (unsigned int i = 0; full_strobes && i < len; ++i)
+                full_strobes = trans.get_byte_enable_ptr()[i % trans.get_byte_enable_length()] == 0xff;
+        }
+        if (len != 4 || !is_aligned32(offset) || trans.get_streaming_width() < 4 ||
+            !full_strobes || non_secure) {
+            if (trans.is_write()) bank.unlocked = false;
+            set_internal_error(bank, STATUS_IERR_APB_SW);
+            if (trans.is_read()) std::memset(data, 0, len);
+            trans.set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
+            return false;
+        }
+        if (trans.is_read()) {
+            const uint32_t value = read32(offset);
+            std::memcpy(data, &value, sizeof(value));
+        } else if (trans.is_write()) {
+            uint32_t value;
+            std::memcpy(&value, data, sizeof(value));
+            write32(offset, value);
         } else {
             trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
             return false;
@@ -587,14 +626,20 @@ class zena_fmu : public sc_core::sc_module
     void reset_registers()
     {
         for (auto& bank : m_banks) {
-            bank.unlocked = false;
+            bank = Bank {};
+        }
+        // Legacy low-64 root mask remains a default; explicit pin profiles
+        // supply the actual class of configured bank/record routes.
+        for (unsigned int i = 0; i < std::min(record_count(), 64u); ++i)
+            m_banks[0].critical[i] = (p_critical_mask.get_value() >> i) & 1;
+        parse_profile(p_critical_records.get_value(), false);
+        parse_profile(p_corrected_records.get_value(), true);
+        for (auto& bank : m_banks) {
             for (unsigned int i = 0; i < MAX_RECORDS; ++i) {
-                bank.ctlr[i] = p_default_ctlr.get_value();
-                bank.status[i] = 0;
+                bank.ctlr[i] = p_default_ctlr.get_value() & ctlr_mask(bank, i);
                 bank.impdef[i] = default_impdef(i);
             }
         }
-
         m_critical_irq = false;
         m_non_critical_irq = false;
         m_fault_input_level = false;
@@ -603,71 +648,104 @@ class zena_fmu : public sc_core::sc_module
         m_event_sequence = 0;
     }
 
+    bool critical_output(const Bank& bank, unsigned int index) const
+    {
+        return (bank.status[index] & STATUS_V) && (bank.status[index] & STATUS_CI) &&
+            (bank.ctlr[index] & CTLR_CI);
+    }
+
+    bool non_critical_output(const Bank& bank, unsigned int index) const
+    {
+        const uint32_t status = bank.status[index], ctlr = bank.ctlr[index];
+        return (status & STATUS_V) && !(status & STATUS_CI) && (ctlr & CTLR_FI) &&
+            (((status & STATUS_UE) && (ctlr & CTLR_UE)) ||
+             ((status & STATUS_CE_MASK) && (ctlr & CTLR_CFI)));
+    }
+
+    void refresh_levels(unsigned int bank_index)
+    {
+        auto& bank = m_banks[bank_index];
+        std::array<bool, MAX_RECORDS> levels = bank.summary_level;
+        for (const auto& source : m_device_levels) {
+            if (source.first.second / BANK_BYTES == bank_index)
+                levels[(source.first.second % BANK_BYTES) / RECORD_STRIDE] =
+                    levels[(source.first.second % BANK_BYTES) / RECORD_STRIDE] || source.second;
+        }
+        for (unsigned int index = 0; index < record_count(); ++index) {
+            const bool detected = levels[index] && (bank.ctlr[index] & CTLR_ED) &&
+                (bank.impdef[index] & (1u << 8));
+            if (detected) {
+                // A held pin re-latches after ACK, but does not create a new
+                // event/counter increment on each unrelated MMIO transaction.
+                if (!bank.detected_level[index]) {
+                    record_error(bank, index, STATUS_IERR_ERR_IN);
+                    bank.level_flags[index] = bank.status[index] &
+                        (STATUS_CI | STATUS_UE | STATUS_CE_MASK);
+                } else if (!(bank.status[index] & STATUS_V)) {
+                    bank.status[index] = STATUS_V | STATUS_IERR_ERR_IN |
+                        STATUS_SERR_SW | bank.level_flags[index];
+                } else bank.status[index] |= STATUS_IERR_ERR_IN;
+            }
+            bank.detected_level[index] = detected;
+        }
+    }
+
     void latch_child_fault_summaries()
     {
-        Bank& root = m_banks[0];
-
-        for (unsigned int bank_index = 1; bank_index < bank_count();
-             ++bank_index) {
-            bool critical = false;
-            bool non_critical = false;
-            const Bank& child = m_banks[bank_index];
-
+        auto& root = m_banks[0];
+        root.summary_level.fill(false);
+        for (unsigned int bank_index = 1; bank_index < bank_count(); ++bank_index) {
+            refresh_levels(bank_index);
+            bool critical = false, non_critical = false;
             for (unsigned int index = 0; index < record_count(); ++index) {
-                if ((child.status[index] & STATUS_V) == 0) {
-                    continue;
-                }
-
-                if ((child.status[index] & STATUS_CI) != 0 &&
-                    (child.ctlr[index] & CTLR_CI) != 0) {
-                    critical = true;
-                }
-                if ((child.status[index] & STATUS_CI) == 0 &&
-                    (child.ctlr[index] &
-                     (CTLR_FI | CTLR_UE | CTLR_CFI)) != 0) {
-                    non_critical = true;
-                }
+                critical |= critical_output(m_banks[bank_index], index);
+                non_critical |= non_critical_output(m_banks[bank_index], index);
             }
-
-            const unsigned int critical_record = (bank_index - 1) * 2;
-            const unsigned int non_critical_record = critical_record + 1;
-            if (critical && critical_record < record_count()) {
-                root.status[critical_record] |=
-                    STATUS_V | STATUS_CI | STATUS_IERR_ERR_IN |
-                    STATUS_SERR_SW;
-            }
-            if (non_critical && non_critical_record < record_count()) {
-                root.status[non_critical_record] |=
-                    STATUS_V | STATUS_UE | STATUS_IERR_ERR_IN |
-                    STATUS_SERR_SW;
-            }
+            const unsigned int record = (bank_index - 1) * 2;
+            if (record < record_count()) root.summary_level[record] = critical;
+            if (record + 1 < record_count()) root.summary_level[record + 1] = non_critical;
         }
+        refresh_levels(0);
+    }
+
+    void device_fault_transport(int source, tlm::tlm_generic_payload& trans,
+                                sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        const uint64_t address = trans.get_address();
+        const unsigned int bank = address / BANK_BYTES;
+        const unsigned int record = (address % BANK_BYTES) / RECORD_STRIDE;
+        if (!trans.is_write() || !trans.get_data_ptr() ||
+            trans.get_data_length() != 4 || trans.get_streaming_width() < 4 ||
+            trans.get_byte_enable_ptr() || bank >= bank_count() ||
+            record >= record_count() || address % RECORD_STRIDE != 0) {
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return;
+        }
+        uint32_t value;
+        std::memcpy(&value, trans.get_data_ptr(), sizeof(value));
+        // The critical bit checks the wiring contract, it cannot dynamically
+        // change the hardware pin's FR/CTLR class. Reject without side effects.
+        if ((value & ~3u) || record == MAX_RECORDS - 1 ||
+            (bool(value & 2) != m_banks[bank].critical[record])) {
+            trans.set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
+            return;
+        }
+        m_device_levels[{source, address}] = value & 1;
+        update_irqs();
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
     }
 
     void update_irqs()
     {
-        bool critical = false;
-        bool non_critical = false;
-
+        bool critical = false, non_critical = false;
         latch_child_fault_summaries();
-
         const Bank& root = m_banks[0];
         for (unsigned int index = 0; index < record_count(); ++index) {
-            if ((root.status[index] & STATUS_V) == 0) {
-                continue;
-            }
-
-            if ((root.status[index] & STATUS_CI) != 0 &&
-                (root.ctlr[index] & CTLR_CI) != 0) {
-                critical = true;
-            }
-
-            if ((root.status[index] & STATUS_CI) == 0 &&
-                (root.ctlr[index] & (CTLR_FI | CTLR_UE | CTLR_CFI)) != 0) {
-                non_critical = true;
-            }
+            critical |= critical_output(root, index);
+            non_critical |= non_critical_output(root, index);
         }
-
         if (critical != m_critical_irq || non_critical != m_non_critical_irq) {
             m_critical_irq = critical;
             m_non_critical_irq = non_critical;
@@ -703,6 +781,8 @@ public:
     cci::cci_param<std::string> p_event_log;
     cci::cci_param<unsigned int> p_bank_count;
     cci::cci_param<unsigned int> p_record_count;
+    cci::cci_param<std::string> p_critical_records;
+    cci::cci_param<std::string> p_corrected_records;
     cci::cci_param<uint64_t> p_critical_mask;
     cci::cci_param<uint64_t> p_non_critical_mask;
     cci::cci_param<uint32_t> p_default_ctlr;
@@ -718,6 +798,9 @@ public:
 
     tlm_utils::simple_target_socket_optional<zena_fmu, DEFAULT_TLM_BUSWIDTH>
         target_socket;
+    tlm_utils::multi_passthrough_target_socket_optional<zena_fmu,
+        DEFAULT_TLM_BUSWIDTH> device_fault_socket;
+    TargetSignalSocket<bool> reset_in;
     InitiatorSignalSocket<bool> critical_irq;
     InitiatorSignalSocket<bool> non_critical_irq;
     InitiatorSignalSocket<bool> critical_ssu;
@@ -737,6 +820,8 @@ public:
         , p_event_log("event_log", "")
         , p_bank_count("bank_count", 5)
         , p_record_count("record_count", MAX_RECORDS)
+        , p_critical_records("critical_records", "")
+        , p_corrected_records("corrected_records", "")
         , p_critical_mask("critical_mask", 0x1ull)
         , p_non_critical_mask("non_critical_mask", ~0x1ull)
         , p_default_ctlr("default_ctlr", CTLR_ED | CTLR_FI | CTLR_UE | CTLR_CFI | CTLR_CI)
@@ -750,6 +835,8 @@ public:
         , p_cidr2("cidr2", 0x00000005)
         , p_cidr3("cidr3", 0x000000b1)
         , target_socket("target_socket")
+        , device_fault_socket("device_fault_socket")
+        , reset_in("reset_in")
         , critical_irq("critical_irq")
         , non_critical_irq("non_critical_irq")
         , critical_ssu("critical_ssu")
@@ -759,6 +846,15 @@ public:
         reset_registers();
         target_socket.register_b_transport(this, &zena_fmu::b_transport);
         target_socket.register_transport_dbg(this, &zena_fmu::transport_dbg);
+        device_fault_socket.register_b_transport(this, &zena_fmu::device_fault_transport);
+        reset_in.register_value_changed_cb([this](bool value) {
+            if (value) {
+                reset_registers();
+                emit_irqs();
+            } else {
+                update_irqs();
+            }
+        });
         fault_in.register_value_changed_cb(
             [this](bool value) { fault_input_changed(value); });
     }

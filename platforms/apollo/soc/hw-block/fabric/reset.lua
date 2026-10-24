@@ -103,6 +103,23 @@ return function(options)
         targets[#targets + 1] = "&si_cl0_ni710ae_primary_nci.reset"
         targets[#targets + 1] = "&si_cl0_ni710ae_secondary_nci.reset"
         targets[#targets + 1] = "&si_cl0_ni710ae_mhu_nci.reset"
+        if options.enable_ap_cpus then
+            for cluster = 0, 3 do
+                targets[#targets + 1] = "&ap_cl" .. cluster .. "_ni710ae_fmu.reset_in"
+            end
+        end
+        targets[#targets + 1] = "&si_cl0_ni710ae_sys_ctrl.reset_in"
+        targets[#targets + 1] = "&si_cl0_ni710ae_smd.reset_in"
+        for _, device in ipairs({
+            "gic"; "rse_cl0_mhu"; "cl0_rse_mhu";
+            "pc0_cl0_mhu"; "cl0_pc0_mhu";
+            "pc1_cl0_mhu"; "cl0_pc1_mhu";
+            "pc2_cl0_mhu"; "cl0_pc2_mhu";
+            "pc3_cl0_mhu"; "cl0_pc3_mhu";
+        }) do
+            targets[#targets + 1] = "&si_cl0_" .. device .. "_fmu.reset_in"
+        end
+        targets[#targets + 1] = "&si_cl0_fmu.reset_in"
         targets[#targets + 1] = "&si_cl0_qemu_inst.reset"
         for _, frame in ipairs({
             "si_cl0_ap_ns_mhu_pbx";

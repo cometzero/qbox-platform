@@ -16,14 +16,16 @@ function safety.define(ctx, platform)
         platform.ap_cl0_ni710ae_fmu = {
             moduletype = "zena_ni710ae_fmu";
             node_index = 0xb;
+            parent_bank = 1;
             parent_critical_record = 3;
             parent_non_critical_record = 1;
+            parent_fault_record = 2;
             target_socket = {
                 address = AP_FMU_CL0_BASE;
                 size = AP_REGISTER_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
             };
-            fault_socket = {bind = "&si_cl0_router.target_socket"};
+            fault_socket = {bind = "&si_cl0_fmu.device_fault_socket"};
             log_level = 0;
         }
     end
@@ -33,14 +35,16 @@ function safety.define(ctx, platform)
         platform.ap_cl1_ni710ae_fmu = {
             moduletype = "zena_ni710ae_fmu";
             node_index = 0xb;
+            parent_bank = 1;
             parent_critical_record = 18;
             parent_non_critical_record = 16;
+            parent_fault_record = 17;
             target_socket = {
                 address = AP_FMU_CL1_BASE;
                 size = AP_REGISTER_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
             };
-            fault_socket = {bind = "&si_cl0_router.target_socket"};
+            fault_socket = {bind = "&si_cl0_fmu.device_fault_socket"};
             log_level = 0;
         }
     end
@@ -50,14 +54,16 @@ function safety.define(ctx, platform)
         platform.ap_cl2_ni710ae_fmu = {
             moduletype = "zena_ni710ae_fmu";
             node_index = 0xb;
+            parent_bank = 1;
             parent_critical_record = 33;
             parent_non_critical_record = 31;
+            parent_fault_record = 32;
             target_socket = {
                 address = AP_FMU_CL2_BASE;
                 size = AP_REGISTER_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
             };
-            fault_socket = {bind = "&si_cl0_router.target_socket"};
+            fault_socket = {bind = "&si_cl0_fmu.device_fault_socket"};
             log_level = 0;
         }
     end
@@ -67,14 +73,16 @@ function safety.define(ctx, platform)
         platform.ap_cl3_ni710ae_fmu = {
             moduletype = "zena_ni710ae_fmu";
             node_index = 0xb;
+            parent_bank = 1;
             parent_critical_record = 48;
             parent_non_critical_record = 46;
+            parent_fault_record = 47;
             target_socket = {
                 address = AP_FMU_CL3_BASE;
                 size = AP_REGISTER_WINDOW_SIZE;
                 bind = "&system_router.initiator_socket";
             };
-            fault_socket = {bind = "&si_cl0_router.target_socket"};
+            fault_socket = {bind = "&si_cl0_fmu.device_fault_socket"};
             log_level = 0;
         }
     end
