@@ -15,6 +15,9 @@ function ap_rse_mailbox.define(ctx, platform)
     assert(platform.host_ap_rse_mhu_pbx == nil, "duplicate Apollo object: host_ap_rse_mhu_pbx")
     platform.host_ap_rse_mhu_pbx = {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "pbx";
         pair = ap_rse_mhu_pbx_pair;
         protocol = ap_rse_mhu_protocol;
@@ -35,6 +38,9 @@ function ap_rse_mailbox.define(ctx, platform)
     assert(platform.host_ap_rse_mhu_mbx == nil, "duplicate Apollo object: host_ap_rse_mhu_mbx")
     platform.host_ap_rse_mhu_mbx = {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "mbx";
         pair = ap_rse_mhu_mbx_pair;
         protocol = ap_rse_mhu_protocol;

@@ -37,6 +37,10 @@ function ap_si_mailbox.define(ctx, platform)
     assert(platform.host_ap_si_ns_scmi_mhu_pbx == nil, "duplicate Apollo object: host_ap_si_ns_scmi_mhu_pbx")
     platform.host_ap_si_ns_scmi_mhu_pbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
+        ras_enable = true;
         frame = "pbx";
         pair = "ap_to_si_cl0_ns";
         protocol = "doorbell-bridge";
@@ -58,6 +62,10 @@ function ap_si_mailbox.define(ctx, platform)
     assert(platform.host_ap_si_ns_scmi_mhu_mbx == nil, "duplicate Apollo object: host_ap_si_ns_scmi_mhu_mbx")
     platform.host_ap_si_ns_scmi_mhu_mbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
+        ras_enable = true;
         frame = "mbx";
         pair = "si_cl0_to_ap_ns";
         protocol = "doorbell-bridge";
@@ -73,12 +81,17 @@ function ap_si_mailbox.define(ctx, platform)
         };
         initiator_socket = {bind = "&system_router.target_socket"};
         irq = {bind = "&ap_gic.spi_in_"..AP_SI_NS_MHU_MBX_SPI};
+        -- Domain 0 CL0-to-PC MHU: receiver detector events reach its sender-side FMU.
+        fmu_fault_socket = {bind = "&si_cl0_cl0_pc0_mhu_fmu.error_socket"};
         log_level = 0;
     } or nil
 
     assert(platform.host_ap_si_scmi_mhu_pbx == nil, "duplicate Apollo object: host_ap_si_scmi_mhu_pbx")
     platform.host_ap_si_scmi_mhu_pbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "pbx";
         pair = "ap_to_si_cl0_scmi";
         protocol = "doorbell-bridge";
@@ -108,6 +121,9 @@ function ap_si_mailbox.define(ctx, platform)
     assert(platform.host_ap_si_scmi_mhu_mbx == nil, "duplicate Apollo object: host_ap_si_scmi_mhu_mbx")
     platform.host_ap_si_scmi_mhu_mbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "mbx";
         pair = "si_cl0_to_ap_scmi";
         protocol = "doorbell-bridge";
@@ -129,6 +145,9 @@ function ap_si_mailbox.define(ctx, platform)
     assert(platform.host_ap_si_cl1_mhu_pbx == nil, "duplicate Apollo object: host_ap_si_cl1_mhu_pbx")
     platform.host_ap_si_cl1_mhu_pbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "pbx";
         pair = "apollo_ap_to_si_cl1";
         protocol = "doorbell-bridge";
@@ -148,6 +167,9 @@ function ap_si_mailbox.define(ctx, platform)
     assert(platform.host_ap_si_cl1_mhu_mbx == nil, "duplicate Apollo object: host_ap_si_cl1_mhu_mbx")
     platform.host_ap_si_cl1_mhu_mbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "mbx";
         pair = "apollo_si_cl1_to_ap";
         protocol = "doorbell-bridge";
@@ -167,6 +189,9 @@ function ap_si_mailbox.define(ctx, platform)
     assert(platform.host_ap_si_pfdi_monitor_mhu_pbx == nil, "duplicate Apollo object: host_ap_si_pfdi_monitor_mhu_pbx")
     platform.host_ap_si_pfdi_monitor_mhu_pbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "pbx";
         pair = "ap_to_si_cl0_pfdi";
         protocol = "doorbell-bridge";
@@ -191,6 +216,9 @@ function ap_si_mailbox.define(ctx, platform)
     assert(platform.host_ap_si_pfdi_monitor_mhu_mbx == nil, "duplicate Apollo object: host_ap_si_pfdi_monitor_mhu_mbx")
     platform.host_ap_si_pfdi_monitor_mhu_mbx = options.enable_ap_cpus and {
         moduletype = "mhu320ae";
+        fast_channel_count = 64;
+        fast_channels_per_group = 32;
+        fast_channel_word_bits = 32;
         frame = "mbx";
         pair = "si_cl0_to_ap_pfdi";
         protocol = "doorbell-bridge";

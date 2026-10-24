@@ -31,6 +31,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.si_cl1_hipc_mhu_pbx")
         platform.si_cl1_hipc_mhu_pbx = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "pbx";
             pair = "apollo_si_cl1_to_ap";
             protocol = "doorbell-bridge";
@@ -52,6 +55,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.si_cl1_hipc_mhu_mbx")
         platform.si_cl1_hipc_mhu_mbx = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "mbx";
             pair = "apollo_ap_to_si_cl1";
             protocol = "doorbell-bridge";
@@ -73,6 +79,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.si_cl1_pfdi_mhu_pbx")
         platform.si_cl1_pfdi_mhu_pbx = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "pbx";
             pair = "apollo_si_cl1_pfdi";
             protocol = "doorbell-bridge";
@@ -108,6 +117,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.si_cl1_pfdi_reply_mhu_mbx")
         platform.si_cl1_pfdi_reply_mhu_mbx = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "mbx";
             pair = "apollo_si_cl0_pfdi_reply";
             protocol = "doorbell-bridge";

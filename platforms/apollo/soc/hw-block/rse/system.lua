@@ -198,6 +198,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_mhu0_sender_s")
         platform.rse_mhu0_sender_s = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "pbx";
             pair = "rse_ap_monitor_local";
             protocol = "doorbell";
@@ -218,6 +221,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_mhu0_receiver_s")
         platform.rse_mhu0_receiver_s = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "mbx";
             pair = "rse_ap_monitor_local";
             protocol = "doorbell";
@@ -240,6 +246,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_mhu2_sender_s")
         platform.rse_mhu2_sender_s = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "pbx";
             pair = "rse_to_ap_s";
             protocol = "doorbell-bridge";
@@ -260,6 +269,9 @@ function module.create(ctx, runtime)
             "duplicate object: platform.rse_mhu2_receiver_s")
         platform.rse_mhu2_receiver_s = {
             moduletype = "mhu320ae";
+            fast_channel_count = 64;
+            fast_channels_per_group = 32;
+            fast_channel_word_bits = 32;
             frame = "mbx";
             pair = "ap_s_to_rse";
             protocol = "doorbell-bridge";
