@@ -207,15 +207,20 @@ function system.define_interrupts(ctx, platform)
     local redist_regions = {}
     for i = 1, options.AP_GIC_NUM_CPUS do redist_regions[i] = 1 end
 
+    -- Keep raw GIC registers private so public aliases cannot bypass containment.
+    assert(platform.ap_gic_backend_router == nil, "duplicate Apollo object")
+    platform.ap_gic_backend_router = {moduletype = "router"; log_level = 0}
+
     assert(platform.ap_gic == nil, "duplicate Apollo object")
     if options.enable_ap_cpus then
         platform.ap_gic = {
             moduletype = "arm_gicv3";
+            has_multi_view = true;
             args = {ctx.instances.ap};
             dist_iface = {
-                address = AP_GIC_DIST_BASE;
-                size = AP_REGISTER_WINDOW_SIZE;
-                bind = "&system_router.initiator_socket";
+                address = 0x60000000;
+                size = 0x200000;
+                bind = "&ap_gic_backend_router.initiator_socket";
             };
             num_cpus = options.AP_GIC_NUM_CPUS;
             redist_region = redist_regions;
@@ -235,9 +240,9 @@ function system.define_interrupts(ctx, platform)
         for i = 0, (options.AP_GIC_NUM_CPUS-1) do
             assert(platform["ap_gic"]["redist_iface_" .. i] == nil, "duplicate Apollo object")
             platform["ap_gic"]["redist_iface_" .. i] = {
-                address = AP_GIC_REDIST_BASE + (i * AP_GIC_REDIST_SIZE);
+                address = 0x61000000 + (i * AP_GIC_REDIST_SIZE);
                 size = AP_GIC_REDIST_SIZE;
-                bind = "&system_router.initiator_socket";
+                bind = "&ap_gic_backend_router.initiator_socket";
             }
         end
 
@@ -246,16 +251,38 @@ function system.define_interrupts(ctx, platform)
     assert(platform.ap_gic_multiview == nil, "duplicate Apollo object")
     platform.ap_gic_multiview = {
         moduletype = "gicx00_multiview";
-        backend_dist_base = AP_GIC_DIST_BASE;
-        backend_redist_base = AP_GIC_REDIST_BASE;
+        backend_multi_view = true;
+        ras_lpi = true;
+        backend_its_socket = {bind = "&ap_gic_its.mem";};
+        its = {
+            address = AP_GIC_ITS_BASE;
+            size = AP_GIC_ITS_SIZE;
+            bind = "&system_router.initiator_socket";
+        };
+        internal_spi = {bind = "&ap_gic.internal_spi";};
+        backend_dist_base = 0x60000000;
+        backend_redist_base = 0x61000000;
         backend_redist_stride = AP_GIC_REDIST_SIZE;
         backend_redist_count = options.AP_GIC_NUM_CPUS;
-        backend_socket = {bind = "&ap_router.target_socket"};
+        view_redist_stride = AP_GIC_REDIST_SIZE;
+        backend_socket = {bind = "&ap_gic_backend_router.target_socket"};
         trace = options.ap_gic_multiview_trace;
         trace_limit = options.ap_gic_multiview_trace_limit;
         view0_dist = {
             address = AP_GIC_VIEW0_DIST_BASE;
             size = AP_GIC_VIEW0_DIST_SIZE;
+            bind = "&ap_router.initiator_socket";
+            priority = 0;
+        };
+        view1_dist = {
+            address = AP_GIC_DIST_BASE;
+            size = 0x40000;
+            bind = "&ap_router.initiator_socket";
+            priority = 0;
+        };
+        view1_redists = {
+            address = AP_GIC_REDIST_BASE;
+            size = options.AP_GIC_NUM_CPUS * AP_GIC_REDIST_SIZE;
             bind = "&ap_router.initiator_socket";
             priority = 0;
         };
@@ -292,11 +319,7 @@ function system.define_interrupts(ctx, platform)
             has_gicv4_1 = true;
             gicv4_1_svpet = AP_GIC_ITS_SVPET;
             gicv4_1_cte_size = AP_GIC_ITS_CTE_SIZE;
-            mem = {
-                address = AP_GIC_ITS_BASE;
-                size = AP_GIC_ITS_SIZE;
-                bind = "&system_router.initiator_socket";
-            };
+
         }
     end
 end

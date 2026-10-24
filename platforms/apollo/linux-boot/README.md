@@ -41,6 +41,11 @@ runs at EL3 and enters non-secure EL2h with translation disabled and the arm64
 boot register convention. This replaces the boot handoff only; it does not
 implement TF-A, U-Boot, secure boot, or physical power transitions.
 
+With no SCP firmware, the payload assigns GIC SPIs 32–991 and all sixteen
+redistributor view slots to View1, then enables the management view before
+Linux configures its GIC. These MMIO writes run on CPU 0 after SystemC
+elaboration; the file loader must not access the libqemu GIC during elaboration.
+
 The CPU wrapper must provide EL3, reset CPU 0 at the payload, start secondary
 CPUs powered off, and select native QEMU PSCI via `smc`. Native PSCI powers up
 secondary CPUs at Linux's requested EL2 entry point. The optional QEMU

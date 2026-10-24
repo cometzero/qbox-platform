@@ -166,13 +166,7 @@ function interconnect.enable_ap_router(ctx, platform)
     bind_ap_socket(platform.host_ap_cper, "target_socket")
     bind_ap_socket(platform.host_ap_ffa_mm_comm_buffer, "target_socket")
     bind_ap_socket(platform.host_ap_spmc_sdram, "target_socket")
-    bind_ap_socket(platform.ap_gic, "dist_iface")
-    if platform.ap_gic ~= nil then
-        for i = 0, 15 do
-            bind_ap_socket(platform.ap_gic, "redist_iface_" .. i)
-        end
-    end
-    bind_ap_socket(platform.ap_gic_its, "mem")
+    bind_ap_socket(platform.ap_gic_multiview, "its")
     if options.smmu_backend == "systemc-mmu720ae" then
         bind_ap_socket(platform.ap_smmu_0, "target_socket")
     else

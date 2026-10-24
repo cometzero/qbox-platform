@@ -140,6 +140,9 @@ function module.create(ctx, _runtime)
                 log_level = 0;
             }
         end
+        platform.si_gic_multiview.fmu_error_socket = {
+            bind = "&si_cl0_gic_fmu.error_socket";
+        }
         assert(
             platform.si_cl0_ni710ae_sys_ctrl == nil,
             "duplicate object: platform.si_cl0_ni710ae_sys_ctrl")

@@ -71,6 +71,8 @@ return function(options)
 
     function options.apollo_system_reset_bind_targets()
         local targets = {
+            -- SCP owns the view map; an AP-only reset must retain its setup.
+            "&ap_gic_multiview.reset";
             options.ap_system_reset_bind_targets();
             "&rse_host_uart0_s.reset";
             "&rse_sysctrl.reset";

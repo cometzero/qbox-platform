@@ -97,3 +97,114 @@ if(TARGET apollo-fourcpu-timer-wake-test)
         apollo-fourcpu-invalid-target
         PROPERTIES WILL_FAIL TRUE TIMEOUT 5 LABELS "qbox-platform-fourcpu-timer")
 endif()
+
+add_executable(apollo-gic-ae-containment-test apollo-gic-ae-containment-test.cc)
+set_target_properties(apollo-gic-ae-containment-test PROPERTIES
+    CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+target_include_directories(apollo-gic-ae-containment-test PRIVATE
+    ${QBOX_CORE_SOURCE_DIR}/tests/qbox/include
+    ${keystone_SOURCE_DIR}/include)
+target_link_libraries(apollo-gic-ae-containment-test PRIVATE
+    cpu_arm_cortexA720AE arm_gicv3 gicx00_multiview
+    global_peripheral_initiator router gs_memory ${TARGET_LIBS} keystone)
+add_test(NAME apollo-gic-ae-containment
+    COMMAND $<TARGET_FILE:apollo-gic-ae-containment-test>
+        -p test-bench.inst.managed_start_in_reset_release=true
+        -p test-bench.inst.accel=tcg
+        -p test-bench.inst.tcg_mode=MULTI
+        -p test-bench.inst.sync_policy=multithread-freerunning
+        -p test-bench.inst.time_sync_strategy=quantum_keeper
+        -p test-bench.quantum_ns=10000000
+        -p test-bench.gic.num_spi=960
+        -p test-bench.gic.redist_region=[1]
+        -p test-bench.gic.has_security_extensions=true
+        -p test-bench.gic.has_lpi=true
+        -p test-bench.gic.revision=4
+        -p test-bench.gic.has_gicv4_1=true
+        -p test-bench.gic.has_direct_lpi=true
+        -p test-bench.gic.has_rvpeid=true
+        -p test-bench.gic.has_vpend_valid_dirty=true
+        -p test-bench.gic.vpeid_bits=16
+        -p log_level=0)
+set_tests_properties(apollo-gic-ae-containment PROPERTIES
+    TIMEOUT 30 LABELS "qbox-platform-gic-ae")
+
+add_executable(apollo-gic-ae-view-isolation-test apollo-gic-ae-view-isolation-test.cc)
+set_target_properties(apollo-gic-ae-view-isolation-test PROPERTIES
+    CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+target_include_directories(apollo-gic-ae-view-isolation-test PRIVATE
+    ${QBOX_CORE_SOURCE_DIR}/tests/qbox/include
+    ${keystone_SOURCE_DIR}/include)
+target_link_libraries(apollo-gic-ae-view-isolation-test PRIVATE
+    cpu_arm_cortexA720AE arm_gicv3 gicx00_multiview
+    global_peripheral_initiator router gs_memory ${TARGET_LIBS} keystone)
+add_test(NAME apollo-gic-ae-view-isolation
+    COMMAND $<TARGET_FILE:apollo-gic-ae-view-isolation-test>
+        -p test-bench.inst.managed_start_in_reset_release=true
+        -p test-bench.inst.accel=tcg
+        -p test-bench.inst.tcg_mode=MULTI
+        -p test-bench.inst.sync_policy=multithread-freerunning
+        -p test-bench.inst.time_sync_strategy=quantum_keeper
+        -p test-bench.quantum_ns=10000000
+        -p test-bench.gic.num_spi=960
+        -p test-bench.gic.redist_region=[1,1]
+        -p test-bench.gic.has_security_extensions=true
+        -p test-bench.gic.has_multi_view=true
+        -p test-bench.gic.has_lpi=true
+        -p test-bench.gic.revision=4
+        -p test-bench.gic.has_gicv4_1=true
+        -p test-bench.gic.has_direct_lpi=true
+        -p test-bench.gic.has_rvpeid=true
+        -p test-bench.gic.has_vpend_valid_dirty=true
+        -p test-bench.gic.vpeid_bits=16
+        -p log_level=0)
+set_tests_properties(apollo-gic-ae-view-isolation PROPERTIES
+    TIMEOUT 30 LABELS "qbox-platform-gic-ae")
+
+add_executable(apollo-si-gic-ae-test apollo-si-gic-ae-test.cc)
+set_target_properties(apollo-si-gic-ae-test PROPERTIES
+    CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+target_include_directories(apollo-si-gic-ae-test PRIVATE
+    ${QBOX_CORE_SOURCE_DIR}/tests/qbox/include
+    ${keystone_SOURCE_DIR}/include)
+target_link_libraries(apollo-si-gic-ae-test PRIVATE
+    cpu_arm_cortexA720AE arm_gicv3 gicx00_multiview
+    global_peripheral_initiator router gs_memory ${TARGET_LIBS} keystone)
+add_test(NAME apollo-si-gic-ae
+    COMMAND $<TARGET_FILE:apollo-si-gic-ae-test>
+        -p test-bench.inst.managed_start_in_reset_release=true
+        -p test-bench.inst.accel=tcg
+        -p test-bench.inst.tcg_mode=MULTI
+        -p test-bench.inst.sync_policy=multithread-freerunning
+        -p test-bench.inst.time_sync_strategy=quantum_keeper
+        -p test-bench.quantum_ns=10000000
+        -p test-bench.gic.num_spi=960
+        -p test-bench.gic.redist_region=[1]
+        -p test-bench.gic.has_security_extensions=true
+        -p test-bench.gic.has_multi_view=true
+        -p test-bench.gic.has_lpi=true
+        -p test-bench.gic.revision=4
+        -p test-bench.gic.has_gicv4_1=true
+        -p test-bench.gic.has_direct_lpi=true
+        -p test-bench.gic.has_rvpeid=true
+        -p test-bench.gic.has_vpend_valid_dirty=true
+        -p test-bench.gic.vpeid_bits=16
+        -p test-bench.inst1.managed_start_in_reset_release=true
+        -p test-bench.inst1.accel=tcg
+        -p test-bench.inst1.tcg_mode=MULTI
+        -p test-bench.inst1.sync_policy=multithread-freerunning
+        -p test-bench.inst1.time_sync_strategy=quantum_keeper
+        -p test-bench.gic1.num_spi=960
+        -p test-bench.gic1.redist_region=[1,1,1,1]
+        -p test-bench.gic1.has_security_extensions=true
+        -p test-bench.gic1.has_multi_view=true
+        -p test-bench.gic1.has_lpi=true
+        -p test-bench.gic1.revision=4
+        -p test-bench.gic1.has_gicv4_1=true
+        -p test-bench.gic1.has_direct_lpi=true
+        -p test-bench.gic1.has_rvpeid=true
+        -p test-bench.gic1.has_vpend_valid_dirty=true
+        -p test-bench.gic1.vpeid_bits=16
+        -p log_level=0)
+set_tests_properties(apollo-si-gic-ae PROPERTIES
+    TIMEOUT 30 LABELS "qbox-platform-gic-ae")

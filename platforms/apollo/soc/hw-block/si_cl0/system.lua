@@ -13,13 +13,13 @@ local SI_CL0_GICR_VIEW0_BASES = {
 local SI_GICR_SIZE = 0x00020000
 local SI_CL0_WDOG_CLOCK_HZ = 125000000
 local SI_CL0_SMD_EXPANSION_PHYS_BASE = 0x20000D8000000
-local SI_GIC_BACKEND_REDIST_COUNT = 0
+local SI_GIC_BACKEND_REDIST_COUNT = 5
 local SI_GIC_VIEW1_REDIST_FIRST = 0
 local SI_GIC_VIEW2_REDIST_FIRST = 1
 local SI_GIC_SPI_COUNT = 960
 
-local SI_GIC_BACKEND_DIST_BASE = 0x30f00000
-local SI_GIC_BACKEND_REDIST_BASE = 0x30f40000
+local SI_GIC_BACKEND_DIST_BASE = 0x60000000
+local SI_GIC_BACKEND_REDIST_BASE = 0x61000000
 local SI_GIC_DIST_CFGID_OFFSET = 0x0000F000
 local SI_GIC_DIST_CFGID_SIZE = 0x00000008
 local SI_GIC_DIST_IVIEWR_OFFSET = 0x0000F600
@@ -62,29 +62,16 @@ function module.create(ctx, runtime)
         local gic = {
             moduletype = "arm_gicv3";
             args = {qemu_instance};
+            has_multi_view = true;
             dist_iface = {
-                address = SI_CL0_GICD_VIEW1_BASE;
-                size = SI_GICD_SIZE;
-                bind = "&si_cl0_router.initiator_socket";
-                priority = 10;
-                aliases = {
-                    view0_functional = {
-                        address = SI_CL0_GICD_VIEW0_BASE;
-                        size = SI_GICD_SIZE;
-                    };
-                };
+                address = SI_GIC_BACKEND_DIST_BASE;
+                size = 0x200000;
+                bind = "&si_gic_backend_router.initiator_socket";
             };
             redist_iface_0 = {
-                address = SI_CL0_GICR_VIEW1_BASE;
+                address = SI_GIC_BACKEND_REDIST_BASE;
                 size = SI_GICR_SIZE;
-                bind = "&si_cl0_router.initiator_socket";
-                priority = 10;
-                aliases = {
-                    view0_functional = {
-                        address = SI_CL0_GICR_VIEW0_BASES[1];
-                        size = SI_GICR_SIZE;
-                    };
-                };
+                bind = "&si_gic_backend_router.initiator_socket";
             };
             redist_region = {1};
             num_cpus = 1;
@@ -215,14 +202,19 @@ function module.create(ctx, runtime)
     end
 
     function block.define_multiview(ctx, platform)
-        assert(
-            platform.si_gic_multiview == nil,
-            "duplicate object: platform.si_gic_multiview")
+        assert(platform.si_gic_multiview == nil, "duplicate SI GIC front end")
+        assert(platform.si_gic_backend_router == nil, "duplicate SI GIC backend router")
+        platform.si_gic_backend_router = {moduletype = "router"; log_level = 0;}
         platform.si_gic_multiview = {
             moduletype = "gicx00_multiview";
             trace = si_gic_trace;
             trace_limit = si_gic_trace_limit;
+            backend_multi_view = true;
+            internal_spi = {bind = "&si_cl0_gic.internal_spi";};
+            internal_spi_view2 = {bind = "&si_cl1_gic.internal_spi";};
+            backend_socket = {bind = "&si_gic_backend_router.target_socket";};
             backend_dist_base = SI_GIC_BACKEND_DIST_BASE;
+            backend_view2_dist_base = 0x60200000;
             backend_redist_base = SI_GIC_BACKEND_REDIST_BASE;
             backend_redist_stride = SI_GICR_SIZE;
             backend_redist_count = SI_GIC_BACKEND_REDIST_COUNT;
@@ -230,47 +222,39 @@ function module.create(ctx, runtime)
             view1_redist_first = SI_GIC_VIEW1_REDIST_FIRST;
             view2_redist_first = SI_GIC_VIEW2_REDIST_FIRST;
             spi_count = SI_GIC_SPI_COUNT;
-            view0_dist_cfgid = {
-                address = SI_CL0_GICD_VIEW0_BASE + SI_GIC_DIST_CFGID_OFFSET;
-                size = SI_GIC_DIST_CFGID_SIZE;
+            view0_dist = {
+                address = SI_CL0_GICD_VIEW0_BASE;
+                size = 0x40000;
                 bind = "&si_cl0_router.initiator_socket";
-                priority = 0;
             };
-            view0_dist_iviewr = {
-                address = SI_CL0_GICD_VIEW0_BASE + SI_GIC_DIST_IVIEWR_OFFSET;
-                size = SI_GIC_DIST_IVIEWR_SIZE;
+            view1_dist = {
+                address = SI_CL0_GICD_VIEW1_BASE;
+                size = 0x40000;
                 bind = "&si_cl0_router.initiator_socket";
-                priority = 0;
+            };
+            view1_redists = {
+                address = SI_CL0_GICR_VIEW1_BASE;
+                size = SI_GICR_SIZE;
+                bind = "&si_cl0_router.initiator_socket";
+            };
+            view2_dist = {
+                address = 0x30200000;
+                size = 0x40000;
+                bind = "&si_cl1_router.initiator_socket";
+            };
+            view2_redists = {
+                address = 0x30260000;
+                size = 4 * SI_GICR_SIZE;
+                bind = "&si_cl1_router.initiator_socket";
             };
         }
-
-        for i = 1,4 do
+        for i = 0,4 do
             platform.si_gic_multiview["view0_redist_" .. i] = {
                 address = SI_CL0_GICR_VIEW0_BASES[i + 1];
                 size = SI_GICR_SIZE;
                 bind = "&si_cl0_router.initiator_socket";
-                priority = 20;
             }
         end
-
-        platform.si_gic_multiview.view0_redist_0_pwrr = {
-            address = SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_PWRR_OFFSET;
-            size = SI_GIC_REDIST_REGISTER_SIZE;
-            bind = "&si_cl0_router.initiator_socket";
-            priority = 0;
-        }
-        platform.si_gic_multiview.view0_redist_0_viewr = {
-            address = SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_VIEWR_OFFSET;
-            size = SI_GIC_REDIST_REGISTER_SIZE;
-            bind = "&si_cl0_router.initiator_socket";
-            priority = 0;
-        }
-        platform.si_gic_multiview.view0_redist_0_flushr = {
-            address = SI_CL0_GICR_VIEW0_BASES[1] + SI_GIC_REDIST_FLUSHR_OFFSET;
-            size = SI_GIC_REDIST_REGISTER_SIZE;
-            bind = "&si_cl0_router.initiator_socket";
-            priority = 0;
-        }
     end
 
     return block

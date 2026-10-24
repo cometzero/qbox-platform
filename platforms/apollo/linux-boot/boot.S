@@ -5,6 +5,28 @@
 .equ BOOT_ENTRY, 0x80200000
 _start:
     msr daifset, #15
+    /* No SCP runs here: assign AP SPIs 32..991 and redistributors to View1.
+     * Execute MMIO after elaboration; the file loader cannot call libqemu GIC.
+     */
+    ldr x4, =0x2000f608
+    mov w5, #0x55555555
+    mov w6, #60
+.Lspi_views:
+    str w5, [x4], #4
+    subs w6, w6, #1
+    b.ne .Lspi_views
+    ldr x4, =0x2008002c
+    mov w5, #1
+    mov w6, #16
+.Lredist_views:
+    str w5, [x4]
+    add x4, x4, #0x40, lsl #12
+    subs w6, w6, #1
+    b.ne .Lredist_views
+    ldr x4, =0x20000000
+    mov w5, #7
+    str w5, [x4]
+    dsb sy
     /* Permit non-secure AArch64 EL2 and its GIC system-register interface. */
     /* Linux booting.rst EL3 permissions, also used by QEMU's native PSCI
      * arm_emulate_firmware_reset(). Unimplemented enable bits are RES0 in
