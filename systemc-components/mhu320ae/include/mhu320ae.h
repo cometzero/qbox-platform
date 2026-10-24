@@ -43,6 +43,19 @@ class mhu320ae : public sc_core::sc_module
     static constexpr uint64_t CTRL_FEAT_SPT0 = 0x010;
     static constexpr uint64_t CTRL_FEAT_SPT1 = 0x014;
     static constexpr uint64_t CTRL_DBCH_CFG0 = 0x020;
+    static constexpr uint64_t CTRL_FCH_CFG0 = 0x040;
+    static constexpr uint64_t FCH_CTRL = 0x140;
+    static constexpr uint64_t FCG_INT_EN = 0x144;
+    static constexpr uint64_t FCG_INT_ST = 0x470;
+    static constexpr uint64_t FCH_GRP_INT_ST = 0x480;
+    static constexpr uint64_t FCW0 = 0x3000;
+    static constexpr uint64_t FCW_END = 0x4000;
+    static constexpr uint64_t RAS_BASE = 0x10000;
+    static constexpr uint64_t DB_ERRINS = 0xf010;
+    static constexpr uint64_t FST_ERRINS = 0xf018;
+    static constexpr uint64_t RAS_VALID = 1ULL << 30;
+    static constexpr uint64_t RAS_UE = 1ULL << 29;
+    static constexpr uint64_t RAS_OF = 1ULL << 27;
     static constexpr uint64_t CTRL_OP = 0x100;
     static constexpr uint64_t CTRL_DBCH_INT_ST0 = 0x400;
     static constexpr uint64_t CTRL_IIDR = 0xfc8;
@@ -294,7 +307,7 @@ public:
 
         void set_int_enable(unsigned int channel, uint32_t value)
         {
-            m_db_int_enable[channel] = value;
+            m_db_int_enable[channel] = value & 1u;
             store_channel_regs(channel);
         }
 
@@ -433,6 +446,10 @@ private:
     cci::cci_param<std::string> p_protocol;
     cci::cci_param<std::string> p_frame;
     cci::cci_param<unsigned int> p_channel_count;
+    cci::cci_param<unsigned int, cci::CCI_IMMUTABLE_PARAM> p_fast_channel_count;
+    cci::cci_param<unsigned int, cci::CCI_IMMUTABLE_PARAM> p_fast_channel_word_bits;
+    cci::cci_param<unsigned int, cci::CCI_IMMUTABLE_PARAM> p_fast_channels_per_group;
+    cci::cci_param<bool, cci::CCI_IMMUTABLE_PARAM> p_ras_enable;
     cci::cci_param<uint32_t> p_feat_spt0;
     cci::cci_param<uint32_t> p_feat_spt1;
     cci::cci_param<uint32_t> p_iidr;
@@ -525,6 +542,37 @@ private:
     };
 
     mhu320ae_frame_model m_frame;
+    std::array<uint64_t, 1024> m_fast_payload {};
+    std::array<uint32_t, 32> m_fast_pending {};
+    uint32_t m_fast_control = 4;
+    uint32_t m_fast_group_enable = 0;
+    struct ras_record {
+        uint64_t control = 0;
+        uint64_t status = 0;
+        uint64_t address = 0;
+        uint64_t misc0 = 0;
+        uint64_t misc1 = 0;
+    };
+    std::array<ras_record, 10> m_ras {};
+    std::array<uint64_t, 2> m_errins_result {};
+    struct ram_fault {
+        unsigned kind = 0; // 0: none, 1: SEC data, 2: SEC address, 3: DED.
+        unsigned bit = 0;
+    };
+    std::array<std::array<ram_fault, 1024>, 2> m_ram_faults {};
+    std::array<unsigned, 2> m_ecc_diagnostic_fault {};
+    uint32_t m_fctrl = 0;
+    unsigned m_scrub_cursor = 0;
+    gs::async_event m_scrub_event;
+    gs::async_event m_ras_irq_event;
+    std::mutex m_ras_irq_lock;
+    bool m_ras_fault_level = false;
+    bool m_ras_error_level = false;
+    std::array<bool, 32> m_group_irq_level {};
+    bool m_operational = true;
+    bool m_power_requested = false;
+    bool m_power_denied = false;
+    std::array<bool, 2> m_power_levels {{true, false}};
     std::shared_ptr<std::recursive_mutex> m_pair_lock;
     bool m_pending_irq_update = false;
     bool m_pending_irq_level = false;
@@ -958,8 +1006,9 @@ private:
         m_runtime_doorbell_fault.armed = false;
 
         m_frame.configure(is_mbx(), channel_count(), p_feat_spt0.get_value(),
-                          p_feat_spt1.get_value(), p_iidr.get_value(),
+                          0, p_iidr.get_value(),
                           p_aidr.get_value());
+        reset_fast_ras();
         m_pending_power_on_resets.clear();
         m_pending_power_domain_resets.clear();
         m_power_domain_reset_events.cancel_all();
@@ -1009,8 +1058,20 @@ private:
 
     void update_combined_irq()
     {
+        {
+            std::lock_guard<std::mutex> lock(m_ras_irq_lock);
+            for (unsigned group = 0; group < m_group_irq_level.size(); ++group) {
+                const bool level = is_mbx() && group < fast_groups() &&
+                    (m_fast_control & 4) && m_fast_pending[group];
+                if (!level && m_group_irq_level[group] && fch_irq[group].size()) {
+                    fch_irq[group]->write(false);
+                }
+                m_group_irq_level[group] = level;
+            }
+            m_ras_irq_event.notify(sc_core::SC_ZERO_TIME);
+        }
         m_frame.refresh_combined_irq_regs();
-        const bool level = m_frame.any_combined_irq();
+        const bool level = m_frame.any_combined_irq() || fast_group_status() != 0;
         {
             std::lock_guard<std::mutex> lock(m_irq_update_lock);
             m_pending_irq_level = level;
@@ -1713,6 +1774,7 @@ private:
         }
 
         m_frame.set_status_bits(channel, value);
+        detect_ram_error(false, channel);
         if (!p_doorbell_commit_on_notify.get_value() ||
             p_protocol.get_value() != "doorbell-bridge" ||
             channel == notify_channel()) {
@@ -2897,6 +2959,13 @@ private:
             }
         }
 
+        if (offset == CTRL_OP) {
+            value &= 3;
+        } else if (offset == CTRL_BLK_ID || offset == CTRL_FEAT_SPT1 ||
+                   offset == CTRL_DBCH_CFG0 || offset >= 0xfc8) {
+            // Architectural identification and configuration registers are read-only.
+            return;
+        }
         store<uint32_t>(offset, value);
         if (offset == CTRL_OP) {
             update_combined_irq();
@@ -2909,6 +2978,473 @@ private:
         }
     }
 
+    unsigned fast_groups() const
+    {
+        return (p_fast_channel_count.get_value() + p_fast_channels_per_group.get_value() - 1) /
+               p_fast_channels_per_group.get_value();
+    }
+
+    uint32_t fast_group_mask() const
+    {
+        return fast_groups() == 32 ? UINT32_MAX : (1u << fast_groups()) - 1;
+    }
+
+    uint32_t fast_group_status() const
+    {
+        uint32_t status = 0;
+        if (is_mbx() && (m_fast_control & 4u)) {
+            for (unsigned group = 0; group < fast_groups(); ++group) {
+                if (m_fast_pending[group]) {
+                    status |= 1u << group;
+                }
+            }
+        }
+        return status & m_fast_group_enable;
+    }
+
+    void reset_fast_ras()
+    {
+        m_fast_payload.fill(0);
+        m_fast_pending.fill(0);
+        m_fast_control = 4;
+        m_fast_group_enable = fast_group_mask();
+        m_ras.fill(ras_record{});
+        m_errins_result.fill(0);
+        for (auto& ram : m_ram_faults) ram.fill(ram_fault{});
+        m_ecc_diagnostic_fault.fill(0);
+        m_fctrl = 0;
+        m_scrub_cursor = 0;
+        m_operational = true;
+        m_power_requested = m_power_denied = false;
+        update_power_outputs();
+        update_ras_irq();
+    }
+
+    bool ras_present(unsigned record) const
+    {
+        return p_ras_enable.get_value() &&
+               (record < 2 || (is_mbx() && record < 4) ||
+                (is_mbx() && p_fast_channel_count.get_value() && record < 6));
+    }
+
+    uint64_t ras_features(unsigned record) const
+    {
+        if (!ras_present(record)) {
+            return 0;
+        }
+        const bool corrected = record >= 2 && !(record & 1);
+        return 0x80000081ULL | (corrected ? ((2ULL << 53) | (1ULL << 30) | 0x2000)
+                                         : ((1ULL << (record == 0 ? 51 : 50)) | 0x220));
+    }
+
+    void emit_ras_irq()
+    {
+        std::lock_guard<std::mutex> lock(m_ras_irq_lock);
+        if (fault_irq.size()) {
+            fault_irq->write(m_ras_fault_level);
+        }
+        if (error_irq.size()) {
+            error_irq->write(m_ras_error_level);
+        }
+        for (unsigned group = 0; group < m_group_irq_level.size(); ++group) {
+            if (fch_irq[group].size()) fch_irq[group]->write(m_group_irq_level[group]);
+        }
+        if (power_qacceptn.size()) power_qacceptn->write(m_power_levels[0]);
+        if (power_qdeny.size()) power_qdeny->write(m_power_levels[1]);
+    }
+
+    void update_power_outputs()
+    {
+        std::lock_guard<std::mutex> lock(m_ras_irq_lock);
+        m_power_levels = {{m_operational, m_power_denied}};
+        m_ras_irq_event.notify(sc_core::SC_ZERO_TIME);
+    }
+
+    void update_ras_irq()
+    {
+        bool fault = false, error = false;
+        for (const auto& record : m_ras) {
+            if (!(record.status & RAS_VALID)) {
+                continue;
+            }
+            const bool uncorrected = record.status & RAS_UE;
+            fault |= (record.control & 8) && (uncorrected ||
+                      (record.control & 0x1000) || (record.misc0 & (1ULL << 39)));
+            error |= uncorrected && (record.control & 4);
+        }
+        std::lock_guard<std::mutex> lock(m_ras_irq_lock);
+        // A guest ISR must observe deassertion before its W1C store returns.
+        if (!fault && m_ras_fault_level && fault_irq.size()) {
+            fault_irq->write(false);
+        }
+        if (!error && m_ras_error_level && error_irq.size()) {
+            error_irq->write(false);
+        }
+        m_ras_fault_level = fault;
+        m_ras_error_level = error;
+        m_ras_irq_event.notify(sc_core::SC_ZERO_TIME);
+    }
+
+    void record_error(unsigned index, bool uncorrected, uint64_t address,
+                      uint64_t misc0, uint64_t misc1, unsigned syndrome = 6)
+    {
+        if (!ras_present(index)) {
+            return;
+        }
+        auto& record = m_ras[index];
+        const bool valid = record.status & RAS_VALID;
+        if (!valid) {
+            record.status = RAS_VALID | (1ULL << 31) | (1ULL << 26) | syndrome |
+                (uncorrected ? RAS_UE | (uint64_t(index == 0 ? 2 : 3) << 20)
+                             : 2ULL << 24);
+            record.address = address;
+            record.misc0 = (record.misc0 & 0xff00000000ULL) | misc0;
+            record.misc1 = misc1;
+        } else if (uncorrected) {
+            record.status |= RAS_OF;
+        }
+        if (index >= 2) {
+            const unsigned count = (record.misc0 >> 32) & 0x7f;
+            record.misc0 = (record.misc0 & ~0x7f00000000ULL) |
+                           (uint64_t((count + 1) & 0x7f) << 32);
+            if (count == 0x7f) {
+                record.misc0 |= 1ULL << 39;
+                record.status |= RAS_OF;
+            }
+        }
+        update_ras_irq();
+    }
+
+    void record_bad_access(const tlm::tlm_generic_payload& trans)
+    {
+        if (!(m_ras[0].control & (1ULL << 32))) {
+            unsigned size = 0;
+            for (unsigned length = trans.get_data_length(); length > 1; length >>= 1) {
+                ++size;
+            }
+            record_error(0, true, trans.get_address(), 0,
+                         (trans.is_read() ? 1u << 11 : 0) | (size << 8), 0xe);
+        }
+    }
+
+    void reject_register_access(tlm::tlm_generic_payload& trans)
+    {
+        record_bad_access(trans);
+        const bool abort = !p_ras_enable.get_value() || (m_ras[0].control & 16);
+        if (abort && !(m_ras[0].control & (1ULL << 32)) &&
+            (m_ras[0].status & RAS_VALID)) {
+            m_ras[0].status |= 1ULL << 28; // ER: an in-band response was issued.
+        }
+        if (trans.is_read()) std::memset(trans.get_data_ptr(), 0, trans.get_data_length());
+        trans.set_response_status(abort ? tlm::TLM_ADDRESS_ERROR_RESPONSE : tlm::TLM_OK_RESPONSE);
+    }
+
+    static bool full_byte_enables(const tlm::tlm_generic_payload& trans)
+    {
+        const auto* enables = trans.get_byte_enable_ptr();
+        if (!enables) return true;
+        const unsigned length = trans.get_byte_enable_length();
+        if (!length) return false;
+        for (unsigned i = 0; i < trans.get_data_length(); ++i)
+            if (enables[i % length] != 0xff) return false;
+        return true;
+    }
+
+    uint64_t read_ras(uint64_t offset) const
+    {
+        const unsigned index = offset / 64;
+        if (index < m_ras.size() && ras_present(index)) {
+            const auto& record = m_ras[index];
+            switch (offset % 64) {
+            case 0: return ras_features(index);
+            case 8: return record.control;
+            case 16: return record.status;
+            case 24: return record.address;
+            case 32: return record.misc0;
+            case 40: return record.misc1;
+            default: return 0;
+            }
+        }
+        if (!p_ras_enable.get_value()) {
+            return 0;
+        }
+        switch (offset) {
+        case 0xe00: {
+            uint64_t status = 0;
+            for (unsigned i = 0; i < m_ras.size(); ++i) {
+                if (m_ras[i].status & RAS_VALID) status |= 1ULL << i;
+            }
+            return status;
+        }
+        case 0xe10: return 0x0f70043b;
+        case 0xfb8: return 0x47710a00ULL << 32;
+        case 0xfc8: return is_mbx() ? 10 : 4;
+        default: return 0;
+        }
+    }
+
+    void write_ras(uint64_t offset, uint64_t value, uint64_t mask)
+    {
+        const unsigned index = offset / 64;
+        if (index >= m_ras.size() || !ras_present(index)) {
+            return;
+        }
+        auto& record = m_ras[index];
+        const auto merge = [value, mask](uint64_t old) { return (old & ~mask) | (value & mask); };
+        switch (offset % 64) {
+        case 8:
+            record.control = merge(record.control) &
+                (index == 0 ? 0x10000001cULL : (index & 1 ? 0x1c : 0x1008));
+            break;
+        case 16:
+            record.status &= ~(value & mask & 0xff000000ULL);
+            break;
+        case 24: record.address = merge(record.address); break;
+        case 32: record.misc0 = merge(record.misc0) & 0xff00017fffULL; break;
+        case 40: record.misc1 = merge(record.misc1) & UINT32_MAX; break;
+        default: break;
+        }
+        update_ras_irq();
+    }
+
+    uint64_t errins_capabilities(bool fast) const
+    {
+        const unsigned count = fast ? p_fast_channel_count.get_value() : channel_count();
+        if (!is_mbx() || !p_ras_enable.get_value() || count == 0) return 0;
+        // Functional injection locations identify payload bits, not a physical ECC RAM layout.
+        return (1ULL << 60) | (uint64_t(count - 1) << 32) |
+               (fast ? p_fast_channel_word_bits.get_value() - 1 : 31);
+    }
+
+    void report_ram_fault(bool fast, unsigned kind)
+    {
+        if (!fmu_fault_socket.size()) return;
+        // Receiver protection IDs: DB SEC data/address/DED 17/18/19;
+        // fast-channel equivalents 20/21/22 (MHU-320AE TRM, table 0281).
+        uint32_t event = (1u << 28) | ((unsigned(fast ? 20 : 17) + kind - 1) << 8);
+        tlm::tlm_generic_payload trans;
+        trans.set_command(tlm::TLM_WRITE_COMMAND);
+        trans.set_address(0);
+        trans.set_data_ptr(reinterpret_cast<unsigned char*>(&event));
+        trans.set_data_length(4);
+        trans.set_streaming_width(4);
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        fmu_fault_socket->b_transport(trans, delay);
+        if (trans.is_response_error()) SC_REPORT_ERROR(name(), "FMU rejected RAM detector event");
+    }
+
+    bool detect_ram_error(bool fast, unsigned channel)
+    {
+        auto fault = m_ram_faults[fast][channel];
+        if (!fault.kind) return false;
+        m_ram_faults[fast][channel] = ram_fault{};
+        const bool uncorrected = fault.kind == 3;
+        const bool lost = fault.kind != 1;
+        const uint64_t impact = (1u << 13) | (fast ? 1u << 10 : 0) |
+            (lost ? 1u << 16 : 0) | channel;
+        record_error((fast ? 4 : 2) + uncorrected, uncorrected, channel,
+                     impact, uncorrected ? 0 : fault.bit);
+        if (lost) {
+            if (fast) {
+                m_fast_payload[channel] = 0;
+                m_fast_pending[channel / p_fast_channels_per_group.get_value()] &=
+                    ~(1u << (channel % p_fast_channels_per_group.get_value()));
+            } else {
+                m_frame.set_status(channel, 0);
+                m_frame.clear_mask_bits(channel, UINT32_MAX);
+                m_frame.set_ctrl(channel, 1);
+                if (auto peer = paired_pbx()) {
+                    peer->m_frame.set_status(channel, 0);
+                    peer->update_combined_irq();
+                }
+            }
+        }
+        if (uncorrected) {
+            if (auto peer = paired_pbx()) peer->record_error(1, true, channel, impact, 0);
+        }
+        report_ram_fault(fast, fault.kind);
+        update_combined_irq();
+        return uncorrected;
+    }
+
+    void scrub_step()
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        if (!(m_fctrl & (1u << 29)) || m_reset_asserted) return;
+        const unsigned doorbells = is_mbx() ? channel_count() : 0;
+        const unsigned total = doorbells + (is_mbx() ? p_fast_channel_count.get_value() : 0);
+        if (m_scrub_cursor < total) {
+            const bool fast = m_scrub_cursor >= doorbells;
+            detect_ram_error(fast, fast ? m_scrub_cursor - doorbells : m_scrub_cursor);
+            ++m_scrub_cursor;
+        }
+        if (m_scrub_cursor == total) m_fctrl &= ~(1u << 29);
+        else m_scrub_event.notify(sc_core::SC_ZERO_TIME);
+    }
+
+    void corrupted_read(tlm::tlm_generic_payload& trans, bool fast)
+    {
+        record_error(0, true, trans.get_address(), 0, 0, 6 | ((fast ? 2u : 1u) << 8));
+        if (m_ras[0].control & 16) {
+            m_ras[0].status |= 1ULL << 28;
+            trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+        }
+    }
+
+    void insert_ram_error(bool fast, uint64_t value)
+    {
+        if (!(value & (1ULL << 63))) return;
+        const uint64_t caps = errins_capabilities(fast);
+        if (!caps) return;
+        const unsigned address = (value >> 32) & 0xffff;
+        const unsigned bit1 = value & 0x1ff;
+        const unsigned bit2 = (value >> 16) & 0x1ff;
+        const bool first = value & (1u << 15), second = value & (1u << 31);
+        const bool bad = address > ((caps >> 32) & 0xffff) ||
+                         (first && bit1 > (caps & 0x1ff)) ||
+                         (second && bit2 > (caps & 0x1ff));
+        m_errins_result[fast] = bad ? 1ULL << 61 : 0;
+        if (bad) return;
+        if (m_ram_faults[fast][address].kind) {
+            m_errins_result[fast] = 2ULL << 61;
+            detect_ram_error(fast, address);
+            return;
+        }
+        const bool encoder_test = value & (1ULL << 60);
+        if (m_ecc_diagnostic_fault[fast] & (encoder_test ? 1u : 2u)) {
+            m_errins_result[fast] = 3ULL << 61;
+            return;
+        }
+        if ((!first && !second) || (first && second && bit1 == bit2)) return;
+        const bool uncorrected = first && second;
+        const unsigned record = (fast ? 4 : 2) + uncorrected;
+        record_error(record, uncorrected, address,
+                     (1u << 13) | (fast ? 1u << 10 : 0) | address,
+                     uncorrected ? 0 : (first ? bit1 : bit2));
+        // TRM RAM error simulation is non-destructive and must not lose a transfer.
+        if (uncorrected) {
+            if (auto peer = paired_pbx()) {
+                peer->record_error(1, true, address,
+                    (1u << 13) | (fast ? 1u << 10 : 0) | address, 0);
+            }
+        }
+    }
+
+    bool fast_ras_access(tlm::tlm_generic_payload& trans)
+    {
+        const uint64_t offset = trans.get_address();
+        const unsigned len = trans.get_data_length();
+        uint64_t value = 0;
+        if (trans.is_write()) std::memcpy(&value, trans.get_data_ptr(), len);
+        const unsigned count = p_fast_channel_count.get_value();
+        if (offset >= FCW0 && offset < FCW_END) {
+            const unsigned bytes = p_fast_channel_word_bits.get_value() / 8;
+            const unsigned channel = (offset - FCW0) / bytes;
+            if (!count || channel >= count) {
+                value = 0;
+            } else if ((len != 4 && len != 8) || len > bytes ||
+                       (offset % bytes) + len > bytes) {
+                reject_register_access(trans);
+                return true;
+            } else if (trans.is_read()) {
+                const bool corrupted = is_mbx() && detect_ram_error(true, channel);
+                value = m_fast_payload[channel] >> ((offset % bytes) * 8);
+                if (is_mbx()) {
+                    m_fast_pending[channel / p_fast_channels_per_group.get_value()] &=
+                        ~(1u << (channel % p_fast_channels_per_group.get_value()));
+                    update_combined_irq();
+                }
+                if (corrupted) {
+                    trans.set_response_status(tlm::TLM_OK_RESPONSE);
+                    corrupted_read(trans, true);
+                    std::memcpy(trans.get_data_ptr(), &value, len);
+                    return true;
+                }
+            } else {
+                const unsigned shift = (offset % bytes) * 8;
+                const uint64_t mask = (len == 8 ? UINT64_MAX : uint64_t(UINT32_MAX)) << shift;
+                m_fast_payload[channel] = (m_fast_payload[channel] & ~mask) | (value << shift);
+                if (!is_mbx()) {
+                    if (auto peer = paired_mbx()) {
+                        if (channel < peer->p_fast_channel_count.get_value() &&
+                            p_fast_channel_word_bits.get_value() == peer->p_fast_channel_word_bits.get_value()) {
+                            peer->m_fast_payload[channel] = m_fast_payload[channel];
+                            peer->m_fast_pending[channel / peer->p_fast_channels_per_group.get_value()] |=
+                                1u << (channel % peer->p_fast_channels_per_group.get_value());
+                            peer->detect_ram_error(true, channel);
+                            peer->update_combined_irq();
+                        }
+                    }
+                }
+            }
+        } else if (offset == 0xf000) {
+            if (len != 4) {
+                reject_register_access(trans);
+                return true;
+            }
+            if (trans.is_read()) value = m_fctrl;
+            else {
+                const bool starting = (value & (1u << 29)) && !(m_fctrl & (1u << 29));
+                // Clock and bus controls are retained, without claiming a physical clock model.
+                m_fctrl = uint32_t(value) & 0xe800000f;
+                if (starting) {
+                    m_scrub_cursor = 0;
+                    m_scrub_event.notify(sc_core::SC_ZERO_TIME);
+                }
+            }
+        } else if (offset >= RAS_BASE && offset < RAS_BASE + 0x10000) {
+            if (len != 4 && len != 8) {
+                reject_register_access(trans);
+                return true;
+            }
+            const uint64_t reg = (offset - RAS_BASE) & ~7ULL;
+            const unsigned shift = (offset & 7) * 8;
+            if (trans.is_read()) value = read_ras(reg) >> shift;
+            else write_ras(reg, value << shift, (len == 8 ? UINT64_MAX : UINT32_MAX) << shift);
+        } else if (offset >= DB_ERRINS && offset < FST_ERRINS + 8) {
+            const bool fast = offset >= FST_ERRINS;
+            const unsigned shift = (offset & 7) * 8;
+            if (trans.is_read()) value = (errins_capabilities(fast) | m_errins_result[fast]) >> shift;
+            else {
+                // Preserve low-word programming before the high-word VALID write.
+                const uint64_t base = offset & ~7ULL;
+                const uint64_t mask = (len == 8 ? UINT64_MAX : (1ULL << (len * 8)) - 1) << shift;
+                const uint64_t command = (load<uint64_t>(base) & ~mask) | (value << shift);
+                store<uint64_t>(base, command & ~(1ULL << 63));
+                insert_ram_error(fast, command);
+            }
+        } else if (offset == CTRL_FCH_CFG0 || offset == CTRL_FEAT_SPT0 ||
+                   offset == FCH_CTRL || offset == FCG_INT_EN || offset == FCG_INT_ST ||
+                   (offset >= FCH_GRP_INT_ST && offset < FCH_GRP_INT_ST + 128)) {
+            if (len != 4) {
+                reject_register_access(trans);
+                return true;
+            }
+            if (trans.is_read()) {
+                if (offset == CTRL_FEAT_SPT0) {
+                    value = 1u |
+                        (count ? 0x100 : 0) | (p_ras_enable.get_value() ? 0x300000 : 0);
+                } else if (!count) value = 0;
+                else if (offset == CTRL_FCH_CFG0) {
+                    value = (p_fast_channel_word_bits.get_value() << 21) |
+                        ((p_fast_channels_per_group.get_value() - 1) << 16) |
+                        ((fast_groups() - 1) << 11) | (is_mbx() ? 1u << 10 : 0) | (count - 1);
+                } else if (!is_mbx()) value = 0;
+                else if (offset == FCH_CTRL) value = m_fast_control;
+                else if (offset == FCG_INT_EN) value = m_fast_group_enable;
+                else if (offset == FCG_INT_ST) value = fast_group_status();
+                else value = m_fast_pending[(offset - FCH_GRP_INT_ST) / 4];
+            } else if (count && is_mbx()) {
+                if (offset == FCH_CTRL) m_fast_control = value & 4;
+                if (offset == FCG_INT_EN) m_fast_group_enable = value & fast_group_mask();
+                update_combined_irq();
+            }
+        } else return false;
+        if (trans.is_read()) std::memcpy(trans.get_data_ptr(), &value, len);
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+        return true;
+    }
+
     void b_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
     {
         std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
@@ -2917,15 +3453,81 @@ private:
         uint8_t* data = trans.get_data_ptr();
 
         trans.set_dmi_allowed(false);
-        if (offset + len > REG_SPACE_SIZE || (len != 1 && len != 2 && len != 4 && len != 8)) {
+        if (data == nullptr || offset >= REG_SPACE_SIZE || len > REG_SPACE_SIZE - offset ||
+            (len != 1 && len != 2 && len != 4 && len != 8)) {
+            record_bad_access(trans);
             trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+            return;
+        }
+        if (!full_byte_enables(trans) || trans.get_streaming_width() < len) {
+            record_bad_access(trans);
+            trans.set_response_status(!full_byte_enables(trans) ?
+                tlm::TLM_BYTE_ENABLE_ERROR_RESPONSE : tlm::TLM_BURST_ERROR_RESPONSE);
+            return;
+        }
+        if (trans.get_command() != tlm::TLM_READ_COMMAND &&
+            trans.get_command() != tlm::TLM_WRITE_COMMAND) {
+            trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+            return;
+        }
+        if (offset % len) {
+            reject_register_access(trans);
+            return;
+        }
+        if (m_reset_asserted && trans.is_write()) {
+            trans.set_response_status(tlm::TLM_OK_RESPONSE);
+            return;
+        }
+        bool peer_offline = false;
+        if (!is_mbx() && trans.is_write()) {
+            unsigned channel;
+            uint64_t reg;
+            const uint64_t fast_end = FCW0 + p_fast_channel_count.get_value() *
+                (p_fast_channel_word_bits.get_value() / 8);
+            const bool transfer = (offset >= FCW0 && offset < fast_end) ||
+                (decode_dbch_offset(offset, channel, reg) && reg == DBCW_SET);
+            if (transfer) {
+                if (auto peer = paired_mbx()) peer_offline = !peer->m_operational;
+            }
+        }
+        if (!m_operational || peer_offline) {
+            // A powered-down endpoint is unavailable. With Auto Op unadvertised,
+            // the requester must wake the domain and retry; never silently lose data.
+            if (trans.is_read()) std::memset(data, 0, len);
+            trans.set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
+            return;
+        }
+        // FIFO is not implemented. Its entire architectural window is RAZ/WI,
+        // including configuration, summary interrupts and diagnostic registers.
+        if ((offset >= 0x2000 && offset < 0x3000) ||
+            (offset >= 0x30 && offset < 0x34) ||
+            (offset >= 0x410 && offset < 0x418) ||
+            (offset >= 0xf020 && offset < 0xf030)) {
+            if (trans.is_read()) std::memset(data, 0, len);
+            trans.set_response_status(tlm::TLM_OK_RESPONSE);
+            return;
+        }
+        if (fast_ras_access(trans)) {
+            return;
+        }
+        if (len != 4) {
+            reject_register_access(trans);
             return;
         }
 
         if (trans.get_command() == tlm::TLM_READ_COMMAND) {
             if (len == 4) {
+                unsigned channel = 0;
+                uint64_t reg = 0;
+                const bool corrupted = is_mbx() && decode_dbch_offset(offset, channel, reg) &&
+                    (reg == DBCW_ST || reg == DBCW_ST_MSK) && detect_ram_error(false, channel);
                 const uint32_t value = read32(offset);
                 std::memcpy(data, &value, sizeof(value));
+                if (corrupted) {
+                    trans.set_response_status(tlm::TLM_OK_RESPONSE);
+                    corrupted_read(trans, false);
+                    return;
+                }
                 if (offset == CTRL_BLK_ID || offset == CTRL_FEAT_SPT0 ||
                     offset == CTRL_FEAT_SPT1 || offset == CTRL_DBCH_CFG0 ||
                     offset == CTRL_OP || offset == CTRL_IIDR ||
@@ -2965,8 +3567,17 @@ protected:
         const bool mbx = is_mbx();
 
         m_frame.configure(mbx, channel_count(), p_feat_spt0.get_value(),
-                          p_feat_spt1.get_value(), p_iidr.get_value(),
+                          0, p_iidr.get_value(),
                           p_aidr.get_value());
+        const unsigned count = p_fast_channel_count.get_value();
+        const unsigned bits = p_fast_channel_word_bits.get_value();
+        const unsigned per_group = p_fast_channels_per_group.get_value();
+        if ((bits != 32 && bits != 64) || count > 4096 / (bits / 8) ||
+            per_group == 0 || per_group > 32 ||
+            (count + per_group - 1) / per_group > 32) {
+            SC_REPORT_FATAL(name(), "invalid fast channel configuration");
+        }
+        reset_fast_ras();
         if (mbx) {
             s_mbx = this;
             s_mbx_by_pair[p_pair.get_value()] = this;
@@ -2979,6 +3590,13 @@ protected:
 
     void start_of_simulation() override
     {
+        if (p_fast_channel_count.get_value()) {
+            const auto peer = is_mbx() ? paired_pbx() : paired_mbx();
+            if (peer && (p_fast_channel_count.get_value() != peer->p_fast_channel_count.get_value() ||
+                         p_fast_channel_word_bits.get_value() != peer->p_fast_channel_word_bits.get_value())) {
+                SC_REPORT_FATAL(name(), "paired fast channel count/width mismatch");
+            }
+        }
         initialize_scmi_shared_memory();
         if (!is_mbx() && p_assert_power_on_reset.get_value()) {
             schedule_power_on_reset(true);
@@ -3014,12 +3632,90 @@ public:
         return m_runtime_doorbell_fault;
     }
 
+    // Functional detector stimulus, independent of architectural non-destructive ERRINS.
+    // kind: 0 SEC data, 1 SEC address, 2 DED. Detection occurs on RAM use or scrub.
+    bool runtime_inject_ram_fault(bool fast, unsigned channel, unsigned kind, unsigned bit = 0)
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        const unsigned count = fast ? p_fast_channel_count.get_value() : channel_count();
+        const unsigned width = fast ? p_fast_channel_word_bits.get_value() : 32;
+        if (!is_mbx() || !p_ras_enable.get_value() || m_reset_asserted || !m_operational ||
+            channel >= count || kind > 2 || bit >= width || m_ram_faults[fast][channel].kind) {
+            return false;
+        }
+        m_ram_faults[fast][channel] = {kind + 1, bit};
+        return true;
+    }
+
+    bool runtime_set_ecc_diagnostic_fault(bool fast, bool encoder, bool decoder)
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        if (!is_mbx() || !p_ras_enable.get_value() || m_reset_asserted || !m_operational ||
+            (fast && !p_fast_channel_count.get_value())) return false;
+        m_ecc_diagnostic_fault[fast] = (encoder ? 1u : 0u) | (decoder ? 2u : 0u);
+        return true;
+    }
+
+    // Functional power Q-channel. A denied request must be withdrawn before retry.
+    // Physical power sequencing and automatic peer wake-up are outside this model.
+    bool runtime_request_power_state(bool down)
+    {
+        std::lock_guard<std::recursive_mutex> pair_guard(*m_pair_lock);
+        if (m_reset_asserted) return false;
+        if (!down) {
+            m_power_requested = m_power_denied = false;
+            m_operational = true;
+        } else if (!m_power_requested) {
+            m_power_requested = true;
+            const auto control = load<uint32_t>(CTRL_OP);
+            bool busy = (control & 1) || (m_fctrl & (1u << 29)) ||
+                        !m_synthetic_postbox_completions.empty();
+            if (!(control & 2)) {
+                for (unsigned channel = 0; channel < channel_count(); ++channel)
+                    busy |= m_frame.status(channel) != 0;
+                if (is_mbx()) {
+                    for (auto pending : m_fast_pending) busy |= pending != 0;
+                }
+            }
+            m_power_denied = busy;
+            m_operational = busy;
+        }
+        update_power_outputs();
+        return down ? !m_operational : m_operational;
+    }
+
+    void ram_fault_transport(tlm::tlm_generic_payload& trans, sc_core::sc_time& delay)
+    {
+        (void)delay;
+        trans.set_dmi_allowed(false);
+        if (!trans.is_write() || trans.get_address() || !trans.get_data_ptr() ||
+            trans.get_data_length() != 4 || trans.get_streaming_width() < 4 ||
+            !full_byte_enables(trans)) {
+            trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+            return;
+        }
+        uint32_t value;
+        std::memcpy(&value, trans.get_data_ptr(), sizeof(value));
+        const bool accepted = !(value & 0x1fc00000u) &&
+            runtime_inject_ram_fault(value >> 31, value & 0xffff,
+                                     (value >> 29) & 3, (value >> 16) & 0x3f);
+        trans.set_response_status(accepted ? tlm::TLM_OK_RESPONSE : tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    }
+
     tlm_utils::simple_target_socket<mhu320ae, DEFAULT_TLM_BUSWIDTH> target_socket;
+    tlm_utils::simple_target_socket_optional<mhu320ae, DEFAULT_TLM_BUSWIDTH> ram_fault_socket;
+    tlm_utils::simple_initiator_socket_optional<mhu320ae, DEFAULT_TLM_BUSWIDTH> fmu_fault_socket;
     tlm_utils::simple_initiator_socket<mhu320ae, DEFAULT_TLM_BUSWIDTH> initiator_socket;
     InitiatorSignalSocket<bool> irq;
+    InitiatorSignalSocket<bool> fault_irq;
+    InitiatorSignalSocket<bool> error_irq;
+    sc_core::sc_vector<InitiatorSignalSocket<bool>> fch_irq;
     InitiatorSignalSocket<bool> power_on_reset;
     MultiInitiatorSignalSocket<> system_reset;
     TargetSignalSocket<bool> reset;
+    TargetSignalSocket<bool> power_qreqn;
+    InitiatorSignalSocket<bool> power_qacceptn;
+    InitiatorSignalSocket<bool> power_qdeny;
     sc_core::sc_vector<InitiatorSignalSocket<bool>> requester_hold;
     sc_core::sc_vector<InitiatorSignalSocket<bool>> power_domain_reset;
 
@@ -3029,6 +3725,10 @@ public:
         , p_protocol("protocol", std::string("scmi"))
         , p_frame("frame", std::string("pbx"))
         , p_channel_count("channel_count", DBCH_CHANNELS)
+        , p_fast_channel_count("fast_channel_count", 0)
+        , p_fast_channel_word_bits("fast_channel_word_bits", 32)
+        , p_fast_channels_per_group("fast_channels_per_group", 32)
+        , p_ras_enable("ras_enable", false)
         , p_feat_spt0("feat_spt0", 1)
         , p_feat_spt1("feat_spt1", 0)
         , p_iidr("iidr", 0x0000043b)
@@ -3079,15 +3779,26 @@ public:
         , p_trace("trace", false)
         , p_trace_limit("trace_limit", 256)
         , p_trace_file("trace_file", std::string(""))
+        , m_scrub_event(false)
+        , m_ras_irq_event(false)
         , m_pair_lock(pair_lock(p_pair.get_value()))
         , m_irq_update_event(false)
         , m_power_domain_reset_events("power_domain_reset_events")
         , target_socket("target_socket")
+        , ram_fault_socket("ram_fault_socket")
+        , fmu_fault_socket("fmu_fault_socket")
         , initiator_socket("initiator_socket")
         , irq("irq")
+        , fault_irq("fault_irq")
+        , error_irq("error_irq")
+        , fch_irq("fch_irq", 32,
+                  [](const char* n, size_t) { return new InitiatorSignalSocket<bool>(n); })
         , power_on_reset("power_on_reset")
         , system_reset("system_reset")
         , reset("reset")
+        , power_qreqn("power_qreqn")
+        , power_qacceptn("power_qacceptn")
+        , power_qdeny("power_qdeny")
         , requester_hold("requester_hold", p_scmi_channel_count.get_value(),
                          [](const char* n, size_t) { return new InitiatorSignalSocket<bool>(n); })
         , power_domain_reset("power_domain_reset", p_power_domain_reset_count.get_value(),
@@ -3096,6 +3807,16 @@ public:
         m_doorbell_ack_seed_words = load_doorbell_ack_seed_words();
         reset.register_value_changed_cb(
             [this](const bool& asserted) { apply_reset(asserted); });
+        power_qreqn.register_value_changed_cb(
+            [this](const bool& value) { runtime_request_power_state(!value); });
+
+        SC_METHOD(emit_ras_irq);
+        sensitive << m_ras_irq_event;
+        dont_initialize();
+
+        SC_METHOD(scrub_step);
+        sensitive << m_scrub_event;
+        dont_initialize();
 
         SC_METHOD(emit_combined_irq);
         sensitive << m_irq_update_event;
@@ -3113,6 +3834,7 @@ public:
         SC_THREAD(requester_hold_worker);
 
         target_socket.register_b_transport(this, &mhu320ae::b_transport);
+        ram_fault_socket.register_b_transport(this, &mhu320ae::ram_fault_transport);
     }
 };
 

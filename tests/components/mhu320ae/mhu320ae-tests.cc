@@ -187,6 +187,27 @@ public:
     }
 };
 
+class DetectorSink : public sc_core::sc_module
+{
+public:
+    std::vector<uint32_t> events;
+    tlm_utils::simple_target_socket<DetectorSink, DEFAULT_TLM_BUSWIDTH> socket;
+    explicit DetectorSink(sc_core::sc_module_name name) : sc_module(name), socket("socket")
+    {
+        socket.register_b_transport(this, &DetectorSink::transport);
+    }
+    void transport(tlm::tlm_generic_payload& trans, sc_core::sc_time&)
+    {
+        EXPECT_TRUE(trans.is_write());
+        EXPECT_EQ(trans.get_address(), 0u);
+        EXPECT_EQ(trans.get_data_length(), 4u);
+        uint32_t value;
+        std::memcpy(&value, trans.get_data_ptr(), sizeof(value));
+        events.push_back(value);
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+    }
+};
+
 class TestInitiator : public sc_core::sc_module
 {
 public:
@@ -331,6 +352,22 @@ uint32_t access32(TestInitiator& initiator, uint64_t offset, tlm::tlm_command co
 
     EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
     return data;
+}
+
+uint64_t access64(TestInitiator& initiator, uint64_t offset, tlm::tlm_command command,
+                  uint64_t value = 0)
+{
+    tlm::tlm_generic_payload trans;
+    trans.set_address(offset);
+    trans.set_command(command);
+    trans.set_data_length(sizeof(value));
+    trans.set_streaming_width(sizeof(value));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+    initiator.initiator_socket->b_transport(trans, delay);
+    EXPECT_EQ(trans.get_response_status(), tlm::TLM_OK_RESPONSE);
+    EXPECT_FALSE(trans.is_dmi_allowed());
+    return value;
 }
 
 uint32_t read32(TestInitiator& initiator, uint64_t offset)
@@ -791,6 +828,14 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     broker.set_preset_cci_value("reset_test_mbx.protocol",
                                 cci::cci_value(std::string("doorbell-bridge")));
 
+    for (const auto* endpoint : {"bridge_ap_pbx", "bridge_rse_mbx", "reset_test_pbx", "reset_test_mbx"}) {
+        broker.set_preset_cci_value(std::string(endpoint) + ".fast_channel_count", cci::cci_value(33u));
+        broker.set_preset_cci_value(std::string(endpoint) + ".ras_enable", cci::cci_value(true));
+    }
+    for (const auto* endpoint : {"reset_test_pbx", "reset_test_mbx"}) {
+        broker.set_preset_cci_value(std::string(endpoint) + ".fast_channel_word_bits", cci::cci_value(64u));
+    }
+
     TestMemory shmem("si_scmi_shmem");
     TestMemory unused("unused_shmem");
     TestMemory ap_pbx_unused("ap_pbx_unused_shmem");
@@ -861,6 +906,15 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     ResetSink ap_domain3_reset("ap_domain3_reset");
     ResetSink deferred_domain1_reset("deferred_domain1_reset");
     ResetSink bridge_rse_mbx_irq("bridge_rse_mbx_irq");
+    ResetSink mhu_fault_irq("mhu_fault_irq");
+    ResetSink mhu_error_irq("mhu_error_irq");
+    ResetSink mhu_group0_irq("mhu_group0_irq");
+    ResetSink mhu_group1_irq("mhu_group1_irq");
+    DetectorSink detector("mhu_detector");
+    TestInitiator ram_fault_bus("ram_fault_bus");
+    SignalSource mhu_power_request("mhu_power_request");
+    ResetSink mhu_power_acceptn("mhu_power_acceptn");
+    ResetSink mhu_power_deny("mhu_power_deny");
     SignalSource reset_test_pbx_reset("reset_test_pbx_reset");
     SignalSource reset_test_mbx_reset("reset_test_mbx_reset");
     SignalSource bridge_ap_pbx_reset("bridge_ap_pbx_reset");
@@ -938,6 +992,15 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     pbx.power_domain_reset[3].bind(ap_domain3_reset.reset);
     deferred_pbx.power_domain_reset[1].bind(deferred_domain1_reset.reset);
     bridge_rse_mbx.irq.bind(bridge_rse_mbx_irq.reset);
+    bridge_rse_mbx.fault_irq.bind(mhu_fault_irq.reset);
+    bridge_rse_mbx.error_irq.bind(mhu_error_irq.reset);
+    bridge_rse_mbx.fch_irq[0].bind(mhu_group0_irq.reset);
+    bridge_rse_mbx.fch_irq[1].bind(mhu_group1_irq.reset);
+    bridge_rse_mbx.fmu_fault_socket.bind(detector.socket);
+    ram_fault_bus.initiator_socket.bind(bridge_rse_mbx.ram_fault_socket);
+    mhu_power_request.signal.bind(bridge_rse_mbx.power_qreqn);
+    bridge_rse_mbx.power_qacceptn.bind(mhu_power_acceptn.reset);
+    bridge_rse_mbx.power_qdeny.bind(mhu_power_deny.reset);
     reset_test_pbx_reset.signal.bind(reset_test_pbx.reset);
     reset_test_mbx_reset.signal.bind(reset_test_mbx.reset);
     bridge_ap_pbx_reset.signal.bind(bridge_ap_pbx.reset);
@@ -963,8 +1026,8 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_GE(read32(ap_pbx_bus, DBCH_CFG0) + 1u, 2u);
     EXPECT_EQ(read32(ap_pbx_bus, DBCH_CFG0), read32(ap_mbx_bus, DBCH_CFG0));
     EXPECT_EQ(read32(limited_bus, DBCH_CFG0), 3u);
-    EXPECT_EQ(read32(limited_bus, CTRL_FEAT_SPT0), 0x55aau);
-    EXPECT_EQ(read32(limited_bus, CTRL_FEAT_SPT1), 0xaa55u);
+    EXPECT_EQ(read32(limited_bus, CTRL_FEAT_SPT0), 1u);
+    EXPECT_EQ(read32(limited_bus, CTRL_FEAT_SPT1), 0u);
     EXPECT_EQ(read32(limited_bus, CTRL_IIDR), 0x11223344u);
     EXPECT_EQ(read32(limited_bus, CTRL_AIDR), 0x55667788u);
     EXPECT_EQ(read32(si_cl1_pbx_bus, DBCH_CFG0), 31u);
@@ -1848,6 +1911,358 @@ TEST(Mhu320aeTest, RseBl2PowerDomainTransportRespondsAndSignalsAckBit)
     EXPECT_EQ(read32(reset_test_pbx_bus, DBCW_ST), 0u);
     EXPECT_FALSE(reset_test_requester_hold.reset.read());
     reset_test_pbx_reset.write(false);
+
+    // TRM FCE: group boundary, overwrite, mask, read acknowledgement, no TX ACK.
+    bridge_rse_mbx_reset.write(true);
+    bridge_rse_mbx_reset.write(false);
+    bridge_ap_pbx_reset.write(true);
+    bridge_ap_pbx_reset.write(false);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, 0x40), (32u << 21) | (31u << 16) | (1u << 11) | 32u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x40), read32(bridge_ap_pbx_bus, 0x40) | (1u << 10));
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, CTRL_FEAT_SPT0), 0x300101u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x140), 4u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x144), 3u);
+    write32(bridge_ap_pbx_bus, 0x3080, 0x12345678);
+    write32(bridge_ap_pbx_bus, 0x3080, 0x89abcdef);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x484), 1u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x470), 2u);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, CTRL_DBCH_INT_ST0), 0u);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(bridge_rse_mbx_irq.reset.read());
+    write32(bridge_rse_mbx_bus, 0x144, 1);
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
+    EXPECT_TRUE(mhu_group1_irq.reset.read()); // Combined mask does not mask group output.
+    EXPECT_FALSE(mhu_group0_irq.reset.read());
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x470), 0u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x484), 1u);
+    write32(bridge_ap_pbx_bus, 0x3000, 0xfeed);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(mhu_group0_irq.reset.read());
+    EXPECT_TRUE(mhu_group1_irq.reset.read());
+    EXPECT_TRUE(bridge_rse_mbx_irq.reset.read());
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3000), 0xfeedu);
+    EXPECT_FALSE(mhu_group0_irq.reset.read());
+    EXPECT_TRUE(mhu_group1_irq.reset.read());
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
+    write32(bridge_rse_mbx_bus, 0x144, 0xffffffff);
+    write32(bridge_rse_mbx_bus, 0x140, 0);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x470), 0u);
+    write32(bridge_rse_mbx_bus, 0x140, 4);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(bridge_rse_mbx_irq.reset.read());
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0x89abcdefu);
+    EXPECT_FALSE(bridge_rse_mbx_irq.reset.read());
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x484), 0u);
+    EXPECT_FALSE(mhu_group1_irq.reset.read());
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, 0x3080), 0x89abcdefu);
+    write32(bridge_rse_mbx_bus, 0x3080, 0x11111111);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x470), 0u);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, 0x3080), 0x89abcdefu);
+    write32(bridge_ap_pbx_bus, 0x3084, 0xffffffff);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, 0x3084), 0u);
+    write32(limited_bus, 0x3000, 0xffffffff);
+    EXPECT_EQ(read32(limited_bus, 0x3000), 0u);
+    write32(bridge_ap_pbx_bus, 0x40, 0);
+    EXPECT_NE(read32(bridge_ap_pbx_bus, 0x40), 0u);
+    // Unsupported FIFO registers never become backing memory, including 64-bit PAY.
+    for (auto* bus : {&bridge_ap_pbx_bus, &bridge_rse_mbx_bus}) {
+        for (uint64_t offset : {0x30u, 0x410u, 0x414u, 0x2010u, 0xf020u, 0xf028u}) {
+            write32(*bus, offset, UINT32_MAX);
+            EXPECT_EQ(read32(*bus, offset), 0u);
+        }
+        access64(*bus, 0x2000, tlm::TLM_WRITE_COMMAND, UINT64_MAX);
+        EXPECT_EQ(access64(*bus, 0x2000, tlm::TLM_READ_COMMAND), 0u);
+        write32(*bus, CTRL, UINT32_MAX);
+        EXPECT_EQ(read32(*bus, CTRL), 3u);
+    }
+    write32(bridge_ap_pbx_bus, DBCW_INT_EN, UINT32_MAX);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, DBCW_INT_EN), 1u);
+    const auto old_iidr = read32(bridge_ap_pbx_bus, CTRL_IIDR);
+    write32(bridge_ap_pbx_bus, CTRL_IIDR, ~old_iidr);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, CTRL_IIDR), old_iidr);
+
+    // The same transport supports atomic 64-bit and non-atomic split accesses.
+    const uint64_t fast64 = 0x123456789abcdef0ULL;
+    access64(reset_test_pbx_bus, 0x3100, tlm::TLM_WRITE_COMMAND, fast64);
+    EXPECT_EQ(read32(reset_test_mbx_bus, 0x484), 1u);
+    EXPECT_EQ(access64(reset_test_mbx_bus, 0x3100, tlm::TLM_READ_COMMAND), fast64);
+    EXPECT_EQ(read32(reset_test_mbx_bus, 0x484), 0u);
+    write32(reset_test_pbx_bus, 0x3104, 0xfedcba98);
+    EXPECT_EQ(access64(reset_test_mbx_bus, 0x3100, tlm::TLM_READ_COMMAND), 0xfedcba989abcdef0ULL);
+    reset_test_mbx_reset.write(true);
+    access64(reset_test_pbx_bus, 0x3100, tlm::TLM_WRITE_COMMAND, fast64);
+    EXPECT_EQ(access64(reset_test_mbx_bus, 0x3100, tlm::TLM_READ_COMMAND), 0u);
+    reset_test_mbx_reset.write(false);
+    access64(reset_test_pbx_bus, 0x3100, tlm::TLM_WRITE_COMMAND, fast64);
+    EXPECT_EQ(access64(reset_test_mbx_bus, 0x3100, tlm::TLM_READ_COMMAND), fast64);
+
+    // Architectural ECC simulation reports faults without modifying transfer data.
+    constexpr uint64_t ras = 0x10000;
+    constexpr uint64_t valid = 1ULL << 30;
+    constexpr uint64_t ue = 1ULL << 29;
+    const auto ras_read = [&](unsigned record, unsigned reg) {
+        return access64(bridge_rse_mbx_bus, ras + record * 64 + reg, tlm::TLM_READ_COMMAND);
+    };
+    const auto ras_write = [&](unsigned record, unsigned reg, uint64_t value) {
+        access64(bridge_rse_mbx_bus, ras + record * 64 + reg, tlm::TLM_WRITE_COMMAND, value);
+    };
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, ras + 0xfbc), 0x47710a00u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, ras + 0xfb8), 0u);
+    EXPECT_EQ(access64(bridge_rse_mbx_bus, ras + 0xfb8, tlm::TLM_READ_COMMAND), 0x47710a0000000000ULL);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, ras + 0xfc8), 10u);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, ras + 0xfc8), 4u);
+    write32(bridge_rse_mbx_bus, ras + 8, 0xffffffff);
+    write32(bridge_rse_mbx_bus, ras + 12, 0xffffffff);
+    EXPECT_EQ(ras_read(0, 8), 0x10000001cULL);
+    ras_write(0, 8, 0);
+    const uint64_t fst_caps = access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_READ_COMMAND);
+    EXPECT_EQ(fst_caps, (1ULL << 60) | (32ULL << 32) | 31);
+    write32(bridge_ap_pbx_bus, 0x3080, 0xabcd1234);
+    ras_write(4, 8, 0x1008); // CED: each corrected error requests the fault IRQ.
+    access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_WRITE_COMMAND,
+             (1ULL << 63) | (32ULL << 32) | (1ULL << 15) | 7);
+    EXPECT_EQ(ras_read(4, 16) & (valid | ue | (3ULL << 24)), valid | (2ULL << 24));
+    EXPECT_EQ(ras_read(4, 24), 32u);
+    EXPECT_EQ(ras_read(4, 40), 7u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x10e00), 1u << 4);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x484), 1u);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(mhu_fault_irq.reset.read());
+    EXPECT_FALSE(mhu_error_irq.reset.read());
+    ras_write(4, 16, valid);
+    EXPECT_FALSE(mhu_fault_irq.reset.read());
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0xabcd1234u);
+
+    ras_write(5, 8, 12); // Uncorrected errors can signal both fault and recovery.
+    access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_WRITE_COMMAND,
+             (1ULL << 63) | (32ULL << 32) | (1ULL << 31) | (8ULL << 16) | (1ULL << 15) | 7);
+    EXPECT_EQ(ras_read(5, 16) & (valid | ue), valid | ue);
+    EXPECT_EQ(ras_read(5, 32) & (1u << 16), 0u);
+    EXPECT_EQ(access64(bridge_ap_pbx_bus, ras + 64 + 16, tlm::TLM_READ_COMMAND) & (valid | ue), valid | ue);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(mhu_fault_irq.reset.read());
+    EXPECT_TRUE(mhu_error_irq.reset.read());
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0xabcd1234u);
+    ras_write(5, 16, valid);
+    EXPECT_FALSE(mhu_fault_irq.reset.read());
+    EXPECT_FALSE(mhu_error_irq.reset.read());
+    EXPECT_EQ(access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_READ_COMMAND), fst_caps);
+    access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_WRITE_COMMAND,
+             (1ULL << 63) | (33ULL << 32) | (1ULL << 15));
+    EXPECT_EQ(access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_READ_COMMAND), fst_caps | (1ULL << 61));
+
+    // Bad sizes and payload envelopes fail before touching memory or channel state.
+    const auto malformed = [&](uint64_t address, unsigned len, unsigned width,
+                               unsigned char* data, unsigned char* enables,
+                               tlm::tlm_response_status expected) {
+        tlm::tlm_generic_payload trans;
+        trans.set_address(address);
+        trans.set_command(tlm::TLM_READ_COMMAND);
+        trans.set_data_length(len);
+        trans.set_streaming_width(width);
+        trans.set_data_ptr(data);
+        trans.set_byte_enable_ptr(enables);
+        trans.set_byte_enable_length(enables ? 1 : 0);
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        bridge_rse_mbx_bus.initiator_socket->b_transport(trans, delay);
+        EXPECT_EQ(trans.get_response_status(), expected);
+    };
+    unsigned char bad_data[8] = {}, byte_enable = 0xff;
+    malformed(0x3001, 1, 1, bad_data, nullptr, tlm::TLM_OK_RESPONSE);
+    EXPECT_EQ(ras_read(0, 16) & (valid | ue | 0xff), valid | ue | 0xe);
+    EXPECT_EQ(ras_read(0, 16) & (1ULL << 28), 0u);
+    EXPECT_EQ(ras_read(0, 24), 0x3001u);
+    ras_write(0, 16, valid);
+    ras_write(0, 8, 16); // UE controls the architected in-band error response.
+    malformed(0x3001, 1, 1, bad_data, nullptr, tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    EXPECT_NE(ras_read(0, 16) & (1ULL << 28), 0u);
+    ras_write(0, 16, valid);
+    ras_write(0, 8, 1ULL << 32); // DAE suppresses recording, not the bus error.
+    malformed(UINT64_MAX, 4, 4, bad_data, nullptr, tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    malformed(0x3000, 4, 4, nullptr, nullptr, tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    malformed(0x3000, 4, 4, bad_data, &byte_enable, tlm::TLM_OK_RESPONSE);
+    byte_enable = 0;
+    malformed(0x3000, 4, 4, bad_data, &byte_enable, tlm::TLM_BYTE_ENABLE_ERROR_RESPONSE);
+    malformed(0x3000, 4, 1, bad_data, nullptr, tlm::TLM_BURST_ERROR_RESPONSE);
+    EXPECT_EQ(ras_read(0, 16) & valid, 0u);
+
+    // Corrected-error counters gate IRQs until overflow unless CED is enabled.
+    ras_write(2, 8, 8);
+    access64(bridge_rse_mbx_bus, 0xf010, tlm::TLM_WRITE_COMMAND,
+             (1ULL << 63) | (1ULL << 15) | 1);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_FALSE(mhu_fault_irq.reset.read());
+    EXPECT_EQ((ras_read(2, 32) >> 32) & 0x7f, 1u);
+    ras_write(2, 16, valid);
+    ras_write(2, 32, 0x7fULL << 32);
+    write32(bridge_rse_mbx_bus, 0xf010, (1u << 15) | 2);
+    write32(bridge_rse_mbx_bus, 0xf014, 1u << 31);
+    EXPECT_TRUE(ras_read(2, 32) & (1ULL << 39));
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(mhu_fault_irq.reset.read());
+    bridge_rse_mbx_reset.write(true);
+    EXPECT_FALSE(mhu_fault_irq.reset.read());
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x10e00), 0u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x470), 0u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x140), 4u);
+    bridge_rse_mbx_reset.write(false);
+    bridge_ap_pbx_reset.write(true);
+    bridge_ap_pbx_reset.write(false);
+
+    // Real RAM detector stimuli are consumed exactly once, separately from ERRINS.
+    EXPECT_FALSE(bridge_ap_pbx.runtime_inject_ram_fault(true, 0, 0));
+    EXPECT_FALSE(bridge_rse_mbx.runtime_inject_ram_fault(true, 33, 0));
+    EXPECT_FALSE(bridge_rse_mbx.runtime_inject_ram_fault(true, 0, 3));
+    EXPECT_FALSE(bridge_rse_mbx.runtime_inject_ram_fault(true, 0, 0, 32));
+    write32(bridge_ap_pbx_bus, 0x3080, 0x12345678);
+    write32(ram_fault_bus, 0, (1u << 31) | (7u << 16) | 32); // SEC data on fast channel 32.
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0x12345678u);
+    ASSERT_FALSE(detector.events.empty());
+    EXPECT_EQ(detector.events.back(), (1u << 28) | (20u << 8));
+    EXPECT_EQ(ras_read(4, 16) & (valid | ue), valid);
+    EXPECT_EQ(ras_read(4, 32) & (1u << 16), 0u);
+    const auto after_sec = detector.events.size();
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0x12345678u);
+    EXPECT_EQ(detector.events.size(), after_sec);
+    ras_write(4, 16, valid);
+
+    // Address SEC uses a distinct protection ID and requires channel recovery.
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(true, 32, 1, 3));
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0u);
+    EXPECT_EQ(detector.events.back(), (1u << 28) | (21u << 8));
+    EXPECT_NE(ras_read(4, 32) & (1u << 16), 0u);
+    ras_write(4, 16, valid);
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(true, 32, 2));
+    write32(bridge_ap_pbx_bus, 0x3080, 0xabcdef); // Receive detects DED and contains transfer.
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x484), 0u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0u);
+    EXPECT_EQ(detector.events.back(), (1u << 28) | (22u << 8));
+    EXPECT_EQ(ras_read(5, 16) & (valid | ue), valid | ue);
+    EXPECT_NE(ras_read(5, 32) & (1u << 16), 0u);
+    EXPECT_NE(access64(bridge_ap_pbx_bus, ras + 64 + 32, tlm::TLM_READ_COMMAND) & (1u << 16), 0u);
+    ras_write(5, 16, valid);
+
+    // Corruption found by a CPU read records SYN_REC_FST_CORRUPTED and honors UE.
+    write32(bridge_ap_pbx_bus, 0x3080, 0xabcd);
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(true, 32, 2));
+    ras_write(0, 8, 0);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0u);
+    EXPECT_EQ(ras_read(0, 16) & 0xffff, 0x206u);
+    ras_write(0, 16, valid);
+    ras_write(5, 16, valid);
+    write32(bridge_ap_pbx_bus, 0x3080, 0xbeef);
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(true, 32, 2));
+    ras_write(0, 8, 16);
+    malformed(0x3080, 4, 4, bad_data, nullptr, tlm::TLM_ADDRESS_ERROR_RESPONSE);
+    EXPECT_NE(ras_read(0, 16) & (1ULL << 28), 0u);
+    EXPECT_EQ(ras_read(0, 16) & 0xffff, 0x206u);
+    ras_write(0, 16, valid);
+    ras_write(0, 8, 0);
+    ras_write(5, 16, valid);
+
+    // Doorbell recovery clears affected payload/configuration without a spurious TX ACK.
+    write32(bridge_ap_pbx_bus, DBCW_SET + 3 * DBCW_STRIDE, 0x55);
+    write32(bridge_rse_mbx_bus, DBCW_INT_CLR + 3 * DBCW_STRIDE, UINT32_MAX);
+    write32(bridge_rse_mbx_bus, DBCW_CTRL + 3 * DBCW_STRIDE, 0);
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(false, 3, 2));
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_ST + 3 * DBCW_STRIDE), 0u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_INT_ST + 3 * DBCW_STRIDE), 0u);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, DBCW_CTRL + 3 * DBCW_STRIDE), 1u);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, DBCW_ST + 3 * DBCW_STRIDE), 0u);
+    EXPECT_EQ(detector.events.back(), (1u << 28) | (19u << 8));
+    ras_write(0, 16, valid);
+
+    // Abort scrub before scheduling; retry scans pending faults and clears SIP.
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(true, 32, 0, 2));
+    const auto before_scrub = detector.events.size();
+    write32(bridge_rse_mbx_bus, 0xf000, 1u << 29);
+    EXPECT_NE(read32(bridge_rse_mbx_bus, 0xf000) & (1u << 29), 0u);
+    write32(bridge_rse_mbx_bus, 0xf000, 0);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(detector.events.size(), before_scrub);
+    write32(bridge_rse_mbx_bus, 0xf000, 1u << 29);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0xf000) & (1u << 29), 0u);
+    EXPECT_EQ(detector.events.size(), before_scrub + 1);
+
+    // Actual fault wins over diagnostic injection; encoder/decoder tests are distinct.
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(true, 32, 2));
+    const uint64_t diagnostic = (1ULL << 63) | (32ULL << 32) | (1ULL << 15) | 7;
+    access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_WRITE_COMMAND, diagnostic);
+    EXPECT_EQ((access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_READ_COMMAND) >> 61) & 3, 2u);
+    EXPECT_TRUE(bridge_rse_mbx.runtime_set_ecc_diagnostic_fault(true, true, false));
+    access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_WRITE_COMMAND, diagnostic | (1ULL << 60));
+    EXPECT_EQ((access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_READ_COMMAND) >> 61) & 3, 3u);
+    access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_WRITE_COMMAND, diagnostic);
+    EXPECT_EQ((access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_READ_COMMAND) >> 61) & 3, 0u);
+    EXPECT_TRUE(bridge_rse_mbx.runtime_set_ecc_diagnostic_fault(true, false, true));
+    access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_WRITE_COMMAND, diagnostic);
+    EXPECT_EQ((access64(bridge_rse_mbx_bus, 0xf018, tlm::TLM_READ_COMMAND) >> 61) & 3, 3u);
+    EXPECT_TRUE(bridge_rse_mbx.runtime_inject_ram_fault(false, 0, 0));
+    const auto before_reset = detector.events.size();
+    write32(bridge_rse_mbx_bus, 0xf000, 1u << 29);
+    bridge_rse_mbx_reset.write(true);
+    EXPECT_FALSE(bridge_rse_mbx.runtime_inject_ram_fault(false, 0, 0));
+    bridge_rse_mbx_reset.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_EQ(detector.events.size(), before_reset);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0xf000), 0u);
+
+    // Functional Q-channel: OP_REQ, unread channels and scrub prevent power-down.
+    bridge_ap_pbx_reset.write(true);
+    bridge_ap_pbx_reset.write(false);
+    mhu_power_request.write(true);
+    write32(bridge_rse_mbx_bus, CTRL, 1);
+    mhu_power_request.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(mhu_power_acceptn.reset.read());
+    EXPECT_TRUE(mhu_power_deny.reset.read());
+    write32(bridge_rse_mbx_bus, CTRL, 0);
+    EXPECT_FALSE(bridge_rse_mbx.runtime_request_power_state(true)); // Withdraw denied request first.
+    mhu_power_request.write(true);
+    mhu_power_request.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_FALSE(mhu_power_acceptn.reset.read());
+    EXPECT_FALSE(mhu_power_deny.reset.read());
+    const auto unavailable = [](TestInitiator& bus, uint64_t offset, tlm::tlm_command command) {
+        uint32_t value = 0xdeadbeef;
+        tlm::tlm_generic_payload trans;
+        trans.set_command(command);
+        trans.set_address(offset);
+        trans.set_data_length(4);
+        trans.set_streaming_width(4);
+        trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        bus.initiator_socket->b_transport(trans, delay);
+        EXPECT_EQ(trans.get_response_status(), tlm::TLM_GENERIC_ERROR_RESPONSE);
+    };
+    unavailable(bridge_rse_mbx_bus, 0x40, tlm::TLM_READ_COMMAND);
+    unavailable(bridge_ap_pbx_bus, 0x3080, tlm::TLM_WRITE_COMMAND);
+    write32(bridge_ap_pbx_bus, 0x3084, UINT32_MAX); // Absent channel stays RAZ/WI with peer down.
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, 0x3084), 0u);
+    EXPECT_EQ(read32(bridge_ap_pbx_bus, 0x3080), 0u); // Rejected transfer has no side effects.
+    mhu_power_request.write(true);
+    write32(bridge_ap_pbx_bus, 0x3080, 0x31415926);
+    mhu_power_request.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(mhu_power_deny.reset.read());
+    mhu_power_request.write(true);
+    write32(bridge_rse_mbx_bus, CTRL, 2); // CH_OP_MSK permits retained unread data.
+    mhu_power_request.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_FALSE(mhu_power_acceptn.reset.read());
+    mhu_power_request.write(true);
+    EXPECT_EQ(read32(bridge_rse_mbx_bus, 0x3080), 0x31415926u);
+    write32(bridge_rse_mbx_bus, CTRL, 0);
+    write32(bridge_rse_mbx_bus, 0xf000, 1u << 29);
+    mhu_power_request.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_TRUE(mhu_power_deny.reset.read());
+    mhu_power_request.write(true);
+    mhu_power_request.write(false);
+    sc_core::sc_start(sc_core::sc_time(1, sc_core::SC_NS));
+    EXPECT_FALSE(mhu_power_acceptn.reset.read());
+    mhu_power_request.write(true);
 
     // Keep default SCMI behavior tested above; Linux-only discovery exposes
     // BASE and rejects other services with a completed error response.
