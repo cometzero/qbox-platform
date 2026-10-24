@@ -234,6 +234,14 @@ TEST(ZenaSsuTest, FaultInputsSetStatusAndSafetyOutput)
     ASSERT_FALSE(safety.observed.empty());
     EXPECT_TRUE(safety.observed.back());
 
+    write32_keyed(dut, ERR_IMPDEF, 0x73u);
+    non_critical.write(true);
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_PS));
+    EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_ERRC);
+    EXPECT_TRUE(safety.observed.back());
+    non_critical.write(false);
+    sc_core::sc_start(sc_core::sc_time(2, sc_core::SC_PS));
+
     write32_keyed(dut, ERR_STATUS, STATUS_V);
     EXPECT_EQ(read32(dut, SYS_STATUS), SYS_STATUS_SAFE);
     ASSERT_FALSE(safety.observed.empty());

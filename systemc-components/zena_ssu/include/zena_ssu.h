@@ -123,7 +123,9 @@ class zena_ssu : public sc_core::sc_module
         }
 
         m_err_status |= ERR_STATUS_V | ERR_STATUS_IERR_ERR_IN | ERR_STATUS_SERR_SW;
-        m_sys_status = critical ? SYS_STATUS_ERRC : SYS_STATUS_ERRN;
+        if (m_sys_status != SYS_STATUS_ERRC) {
+            m_sys_status = critical ? SYS_STATUS_ERRC : SYS_STATUS_ERRN;
+        }
         update_output();
         return true;
     }
