@@ -785,6 +785,151 @@ FMUs. Device faults use the configured System FMU parent bank and record, so
 the normal SCP-firmware root-first discovery and acknowledgement path is
 preserved.
 
+## System, Root and NI-710AE FMUs
+
+`zena_fmu` implements five System FMU banks; bank0 is the Root FMU.
+The `critical_records` and `corrected_records` CCI strings select fixed input
+classes as comma-separated `bank:record` pairs. Apollo names the known critical
+parent routes explicitly, including Root records 0/2/4/6. Feature registers,
+reserved control bits and FI with UE/CFI gating follow those classes.
+External input/parity and internal record383 APB parity/sequence/access causes
+have separate detection, injection and clear bits. Hardware events increment
+the saturating counter and can cross the upgrade threshold; acknowledging a
+held level does not create another counted event. Independent producers retain
+their levels until deassertion, and clearing a parent while its child is still
+active relatches the pending fault. Root detection enables apply to aggregation.
+
+System SYS_KEY accepts the full Secure 32-bit value `0x000000be` for one
+subsequent write, including unsuccessful writes. Incorrect sequences and
+malformed accesses produce enabled internal-record errors. This differs from
+the GIC/MHU/NI key byte contract. SBIST force-failure uses the external-input
+injection bit and preserves the existing enable, counter and threshold fields.
+
+`zena_ni710ae_fmu` models global CTLR0, per-node SMEN/SMINFO, RAS status
+priority/overflow and conditional W1C. ERI, FHI and CRI have independent enables
+and send level changes directly to the System FMU device input, including
+deassertion after ACK/reset. The six active instances advertise only their
+known FMU self-node; undescribed discovery slots remain reserved. The default
+critical vector is zero, and System-FMU threshold escalation is a separate
+policy. Optional `node_info` entries support explicit topology in component
+tests; they do not imply a complete Apollo interconnect topology.
+
+Cold reset clears configuration and error records. The separate functional
+reset preserves records and the record reset clears records independently.
+Full-system reset clears all six NI leaves before the System FMU. Independent
+physical reset-domain wiring, the full detector network, CRC/DLS/PING timing,
+and all physical input classifications remain outside this functional model.
+The new FHI positions between the existing ERI/CRI record pairs are an explicit
+QVP routing contract; their physical CSSFAULT pin assignment is not verified.
+
+## GIC-720AE and MHU-320AE functional AE support
+
+The GIC multiview component implements SPI and SGI/PPI error containment,
+view/group recovery, and functional FCTLR scrub completion. AP management
+View0 (`0x20000000`) and execution View1 (`0x20800000`) both pass through
+`ap_gic_multiview` to `ap_gic_backend_router`. The underlying `ap_gic` object
+and IRQ numbering remain unchanged. The wrapper suppresses QEMU MemoryRegion
+hints and DMI so later accesses cannot bypass error state or view ownership.
+Clearing an error leaves its interrupt disabled; software must restore its
+configuration and explicitly enable it. The active QVP SCP assigns AP SPIs
+32 through 991 to View1 without changing security groups or the SI view map.
+AP power reset preserves this SCP-owned view map; full system reset clears it.
+The Linux direct-boot payload configures View1 without SCP, after elaboration.
+
+All 15 live MHU pairs configure 64 32-bit fast channels in groups of 32.
+The reusable component also supports 64-bit payloads and split 32-bit access.
+Fast channels keep the latest payload, set group pending state, and clear
+that pending state on an MBX payload read. Group masks and combined IRQ
+enable apply independently of doorbells. Pair reset prevents delivery into
+an endpoint held in reset and does not replay discarded writes.
+This channel geometry is a QVP configuration, not a silicon synthesis claim.
+
+The four AP/SI0 non-secure MHU endpoints enable optional local RAS records.
+Doorbell/fast-channel ERRINS produces CE/UC records without corrupting the
+payload; error summaries, CE counts, overflow and W1C are modeled. Local
+RAS IRQ outputs are not wired in Apollo and are tested through polling.
+Software ERRINS does not fabricate a separate FMU protection event.
+
+`zena_device_fmu` distinguishes the twelve-record GIC and six-record MHU
+profiles. It models protection enable/criticality, software injection,
+Secure access, one-shot keys, record overflow, acknowledge and ERRUPDATE.
+The eleven SI0 leaf FMUs send fault levels to the System FMU, which relatches
+a cleared parent while a child remains asserted. Reset clears leaves before
+the parent. The container supports the optional multi-target binding used
+by this route.
+
+The active SCP MHU3 driver services the reserved AP/SI0 fast channel 32.
+`test mhu_fce` performs one transfer followed by three repeated transfers,
+replying with each payload's complement from its real ISR callback. It also
+checks masked channel 31 and drains unregistered channel 33. Handler entries,
+callbacks and accepted payloads are counted separately, with bounded timeout
+and cleanup. AP software masks the FCE response IRQ and polls the MBX;
+the Linux mailbox driver retains its doorbell interface. Hardware FCE is
+independent of `SCMI_PERF_FAST_CHANNELS`, which remains disabled.
+AP software accesses PBX `0x40020000` and MBX `0x40050000`; firmware-configured
+ATU regions translate these to the system addresses used by the Lua endpoints.
+
+The provider CTest suite includes `apollo-gic-ae-containment`, using a real
+A720AE/libqemu GIC to check INTID 105 before containment, spurious 1023 while
+contained, and 105 after recovery. The initial 2026-10-23 suite passed 70/70 tests.
+That AP4 full-system run passed Linux boot/post-login, one SSU and twenty FMU
+diagnostics, channel-32 FCE IRQ echo/read-clear, and local RAS CE/UC injection,
+acknowledge and payload preservation.
+The separate AP4 direct-boot run passed Linux login and CPU/disk smoke checks;
+its SI/RSE domains remain mocks.
+Full-system commands, results, TRM references and preserved failure logs are
+recorded in workspace `doc/qbox-ae-gic720-mhu320-validation-ko.md` and
+`build/qbox-apollo-qvp/ae-20261023/`.
+
+The follow-up fixes both reproduced FMU defects: all-enabled byte strobes
+are accepted, and different MHU mechanisms set OF without changing GIC's
+OF/OFB rules. FMU commands now have BUSY/completion/timeout/late-response
+states, independent wire/message inputs, and block-aware ERRUPDATE with
+sticky OFX. Active leaves use an 8 ns functional response clock; this is not
+a physical interconnect latency claim. The SCP driver drains bounded batches
+outside the ISR, preserves BLKID and INJ, and retains faults across partial
+ACK, refresh and notification-queue failures. `test ae` covers mixed faults,
+invalid identifiers and explicit recovery after timeout.
+Timed FMU MMIO consumes the incoming annotated delay in a wait-capable SystemC
+thread before observing completion; debug and detector inputs remain non-blocking.
+BUSY polling returns the sampled value after one FMU clock so zero-delay loops
+allow timed completion to progress.
+Batch continuation re-arms the level IRQ so pending SCMI ISR events can run.
+SSU critical state is preserved when a later noncritical fault arrives.
+
+The libqemu GIC now uses opt-in view ownership for actual SPI routing,
+1-of-N selection, SGI delivery and deactivation. AP raw frames are private
+at 0x60000000/0x61000000; public addresses are unchanged and ITS accesses pass
+through the wrapper. SI CL0/CL1 retain their two independent GIC backends,
+now connected through the shared wrapper. Functional GIC RAM ERRINS/GICT
+records and ERRIRQCR-routed IRQs are separate from actual corruption inputs.
+The ITS reserved page at relative 0x30000 is RAZ/WI, including the firmware
+ATU boundary probe; the vSGI page at relative 0x20000 remains unsupported.
+SGI RAM DED reports GICD protection ID 50 to the SI GIC leaf FMU.
+Focused native tests cover a real two-PE view-routing fixture, per-view
+SPI 105/106 containment and recovery with two separate GIC/QEMU backends,
+GICT IRQ 104 acknowledgement, and SGI DED propagation through the FMU tree.
+The split-backend fixture uses A720AE CPUs; it is not SI firmware coverage.
+
+MHU latent SEC-data, SEC-address and DED faults are detected on channel
+access, incoming transfer or scrub. Two active receiver-to-FMU bindings
+report hardware-origin errors independently of non-destructive ERRINS.
+`test ae_ram` waits for opt-in Monitor `inject-ram-fault` actions and checks
+local RAS, transfer loss, payload, SMID/severity/BLKID/INJ and FMU drain.
+Monitor completion `ram-fault-armed` is not detector or guest-handler success.
+The functional Q-channel and individual FCE group IRQ outputs are component
+interfaces; active power-controller and separate group-IRQ wiring is absent.
+
+Follow-up commands, current test results and preserved failures are in
+workspace `doc/qbox-ae-followup-validation-ko.md` and
+`build/qbox-apollo-qvp/ae-followup-20261023/`. The original audit and gap IDs
+remain in `doc/qbox-ae-trm-gap-analysis-ko.md`.
+CRC/PING protection pages, interrupt-protection BIST, vPE error recovery,
+all physical ECC/lockstep/parity detectors, MHU FIFO/security banking and
+local RAS guest interrupt handling remain unsupported. These tests establish
+functional behavior, not complete AE conformance, physical diagnostic
+coverage or FVP parity.
+
 ## Runtime actions
 
 Apollo runtime actions are disabled by default. Enable them only with the
