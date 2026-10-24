@@ -119,3 +119,40 @@ patch application instructions and qualification boundaries.
 - Root workspace guide: `../../../README.md`
 - Agent/source ownership guide: `../../../AGENTS.md`
 - Apollo platform guide: `platforms/apollo/README.md`
+
+### Standalone SI CL1 Zephyr
+
+`platforms/apollo/apollo-qvp-zephyr.lua` composes four Cortex-R82 functional
+CPUs, a direct GICv3 view, PL011 and 8 MiB CL1 LLRAM without AP/RSE/SCP/PPU
+boot dependencies. The dedicated `zephyr-si-cl1-bench` board uses a 100 MHz
+counter, CNTP PPI29 and CNTV PPI27; these overrides apply only to this profile.
+The full Apollo profile retains its production timer assignment and 125 MHz
+counter. MPIDRs are `0x10000 + cpu * 0x100`, GICD is `0x30200000`, GICR starts
+at `0x30260000`, and UART is `0x2a410000` (SPI7 / INTID39).
+
+From the workspace, run `./run_qbox_zephyr.sh` after building the QBox native
+provider and `zephyr-si-cl1-boot`. This separate boot-only firmware disables
+MPU setup because the current QEMU Cortex-R82 backend only implements the older
+EL2 PMSA interface; it is not a substitute for the gem5 MPU/TCM benchmark. The launcher validates the ELF64 AArch64
+image, obtains its entry point and PT_LOAD bytes, and writes a reproducible
+`run.json`. `--headless --timeout 120 --exit-after-pass` performs bounded boot
+validation using all four `SI_CL1_BOOT_CPU` records and the final
+`SI_CL1_BOOT_RESULT` with a 100 MHz counter; `result.json` explicitly limits
+PASS to boot. Interactive mode displays UART and platform logs in tmux; F12
+stops the session and its managed QBox process group. Logs are retained under
+`build/qbox-apollo-qvp/zephyr/`.
+
+QBox runtime throughput and latency are not cycle-accurate measurements.
+This composition provides benchmark MM/NC SRAM windows but does not emulate
+per-core private DTCM or certify the full benchmark result. Use the gem5 SI
+profile for the ported benchmark; retain failures if unsupported TCM accesses
+prevent further QBox execution.
+
+The 2026-10-24 integration run observed the Zephyr banner, all four distinct
+CPU affinities and the 100 MHz boot result using the deployed native provider.
+Actual F12 input to an attached tmux client removed the session and reaped the
+managed QBox process. Evidence: workspace
+`build/qbox-apollo-qvp/gem5/si-cl1-integration-20261024/qbox-boot-only/` and
+`qbox-boot-f12/cleanup.json`. The MPU-enabled benchmark ELF was separately
+observed failing the early `z_arm64_mm_init()` MPU capability check, and is not
+reported as a successful QBox benchmark.
