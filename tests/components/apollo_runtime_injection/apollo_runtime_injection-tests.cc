@@ -3,6 +3,8 @@
 #include <apollo_runtime_injection.h>
 
 #include <limits>
+#include <cstring>
+#include <luafile_tool.h>
 #include <qemu-instance.h>
 #include <test/test.h>
 #include <tlm_utils/simple_initiator_socket.h>
@@ -14,6 +16,12 @@ using gs::RuntimeActionState;
 using gs::RuntimeActionTrigger;
 using gs::RuntimeActionValue;
 using gs::RuntimeResourceType;
+
+class LuaTableFixture : public gs::LuaFile_Tool
+{
+public:
+    using gs::LuaFile_Tool::setParamsFromLuaTable;
+};
 
 RuntimeActionRequest request(const std::string& target,
                              const std::string& action)
@@ -65,6 +73,34 @@ uint64_t snapshot_u64(const gs::RuntimeTargetSnapshotReply& reply,
 
 class ApolloRuntimeInjectionTest : public TestBench
 {
+    static bool configure_mhus(const sc_core::sc_module_name& name)
+    {
+        auto broker = cci::cci_get_broker();
+        const std::string prefix = std::string(name) + ".";
+        for (const auto* instance : {"mhu_tx", "mhu_rx"}) {
+            const auto target = prefix + instance;
+            broker.set_preset_cci_value(target + ".frame", cci::cci_value(
+                std::string(std::string(instance) == "mhu_rx" ? "mbx" : "pbx")));
+            broker.set_preset_cci_value(target + ".pair", cci::cci_value(prefix + "ram_pair"));
+            broker.set_preset_cci_value(target + ".protocol", cci::cci_value(std::string("doorbell-bridge")));
+            broker.set_preset_cci_value(target + ".fast_channel_count", cci::cci_value(33u));
+            broker.set_preset_cci_value(target + ".ras_enable", cci::cci_value(true));
+            broker.set_preset_cci_value(target + ".init_shmem", cci::cci_value(false));
+        }
+        broker.set_preset_cci_value(prefix + "runtime.mhu_target", cci::cci_value(prefix + "mhu_tx"));
+        // Exercise the production Lua table -> indexed CCI preset path. A
+        // direct vector preset hides failures to consume Lua array children.
+        lua_State* lua = luaL_newstate();
+        TEST_ASSERT(lua != nullptr);
+        const std::string config = "return {[\"" + std::string(name) +
+            "\"] = {runtime = {mhu_ram_targets = {\"" + prefix + "mhu_rx\"}}}}";
+        TEST_ASSERT(luaL_dostring(lua, config.c_str()) == 0);
+        LuaTableFixture loader;
+        TEST_ASSERT(loader.setParamsFromLuaTable(broker, lua, lua_gettop(lua)) >= 0);
+        lua_close(lua);
+        return true;
+    }
+
     QemuInstanceManager m_inst_manager;
     QemuInstance m_inst;
     qemu_pl061 m_host_gpio;
@@ -73,25 +109,145 @@ class ApolloRuntimeInjectionTest : public TestBench
     gicx00_multiview m_gic;
     zena_ssu m_ssu;
     gs::arm_system_counter m_counter;
+    bool m_mhu_configured;
+    mhu320ae m_mhu_tx;
+    mhu320ae m_mhu_rx;
     apollo_runtime_injection m_service;
+    tlm_utils::simple_initiator_socket<ApolloRuntimeInjectionTest, DEFAULT_TLM_BUSWIDTH> m_mhu_tx_access;
+    tlm_utils::simple_initiator_socket<ApolloRuntimeInjectionTest, DEFAULT_TLM_BUSWIDTH> m_mhu_rx_access;
+    tlm_utils::simple_target_socket<ApolloRuntimeInjectionTest, DEFAULT_TLM_BUSWIDTH> m_mhu_tx_memory;
+    tlm_utils::simple_target_socket<ApolloRuntimeInjectionTest, DEFAULT_TLM_BUSWIDTH> m_mhu_rx_memory;
     tlm_utils::simple_initiator_socket<
         ApolloRuntimeInjectionTest, DEFAULT_TLM_BUSWIDTH> m_ssu_access;
     TargetSignalSocket<bool> m_gic_spi;
     TargetSignalSocket<bool> m_system_reset;
     TargetSignalSocket<bool> m_board_gpio;
 
+    void unused_memory(tlm::tlm_generic_payload& trans, sc_core::sc_time&)
+    {
+        if (trans.is_read()) std::memset(trans.get_data_ptr(), 0, trans.get_data_length());
+        trans.set_response_status(tlm::TLM_OK_RESPONSE);
+    }
+
+    uint32_t mhu_access(bool receiver, uint64_t address, bool write = false, uint32_t value = 0)
+    {
+        tlm::tlm_generic_payload trans;
+        trans.set_command(write ? tlm::TLM_WRITE_COMMAND : tlm::TLM_READ_COMMAND);
+        trans.set_address(address);
+        trans.set_data_length(4);
+        trans.set_streaming_width(4);
+        trans.set_data_ptr(reinterpret_cast<unsigned char*>(&value));
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        (receiver ? m_mhu_rx_access : m_mhu_tx_access)->b_transport(trans, delay);
+        TEST_ASSERT(trans.get_response_status() == tlm::TLM_OK_RESPONSE);
+        return value;
+    }
+
+    RuntimeActionRequest ram_request(uint64_t channel = 32, uint64_t kind = 2)
+    {
+        auto action = request(m_mhu_rx.name(), "inject-ram-fault");
+        action.reset_domain = "system";
+        set_bool(action, "fast", true);
+        set_u64(action, "channel", channel);
+        set_u64(action, "kind", kind);
+        set_u64(action, "bit", 7);
+        return action;
+    }
+
+    void test_mhu_actions()
+    {
+        TEST_ASSERT(m_mhu_configured);
+        auto drop = request(m_mhu_tx.name(), "drop-next-doorbell");
+        set_u64(drop, "channel", 1);
+        const auto dropped = m_service.submit(drop);
+        TEST_ASSERT(dropped.ok() && dropped.value.state == RuntimeActionState::ACTIVE);
+        mhu_access(false, 0x102c, true, 1);
+        TEST_ASSERT(mhu_access(true, 0x1020) == 0);
+        TEST_ASSERT(m_service.status(dropped.value.id).value.result == "consumed");
+        mhu_access(false, 0x102c, true, 2);
+        TEST_ASSERT(mhu_access(true, 0x1020) == 2);
+
+        auto invalid = ram_request();
+        invalid.target = "not-an-allowlisted-mhu";
+        TEST_ASSERT(m_service.submit(invalid).error_code == "target-not-found");
+        TEST_ASSERT(m_service.submit(ram_request(UINT64_MAX)).error_code == "invalid-request");
+        TEST_ASSERT(m_service.submit(ram_request(32, 3)).error_code == "invalid-request");
+        TEST_ASSERT(m_service.submit(ram_request(33)).error_code == "target-unavailable");
+        invalid = ram_request();
+        invalid.parameters["bit"] = RuntimeActionValue(uint64_t(32));
+        TEST_ASSERT(m_service.submit(invalid).error_code == "target-unavailable");
+        invalid.parameters["bit"] = RuntimeActionValue(UINT64_MAX);
+        TEST_ASSERT(m_service.submit(invalid).error_code == "invalid-request");
+        invalid = ram_request();
+        invalid.parameters["fast"] = RuntimeActionValue(uint64_t(1));
+        TEST_ASSERT(m_service.submit(invalid).error_code == "invalid-request");
+        invalid = ram_request();
+        invalid.parameters.erase("kind");
+        TEST_ASSERT(m_service.submit(invalid).error_code == "invalid-request");
+        invalid = ram_request();
+        set_u64(invalid, "unknown", 1);
+        TEST_ASSERT(m_service.submit(invalid).error_code == "invalid-request");
+        invalid = ram_request();
+        invalid.reset_domain = "ap";
+        TEST_ASSERT(m_service.submit(invalid).error_code == "invalid-request");
+
+        mhu_access(false, 0x3080, true, 0x12345678);
+        const auto armed = m_service.submit(ram_request());
+        TEST_ASSERT(armed.ok() && armed.value.state == RuntimeActionState::COMPLETED);
+        TEST_ASSERT(armed.value.result == "ram-fault-armed");
+        TEST_ASSERT(mhu_access(true, 0x10150) == 0); // Arm is not detection.
+        TEST_ASSERT(m_service.submit(ram_request()).error_code == "target-unavailable");
+        TEST_ASSERT(m_service.cancel(armed.value.id).error_code == "request-not-active");
+        TEST_ASSERT(mhu_access(true, 0x3080) == 0); // Real read detects and contains DED.
+        TEST_ASSERT((mhu_access(true, 0x10150) & 0x60000000) == 0x60000000);
+        TEST_ASSERT((mhu_access(false, 0x10050) & 0x60000000) == 0x60000000);
+
+        auto delayed = ram_request(32, 0);
+        delayed.trigger.type = RuntimeActionTrigger::Type::RELATIVE_SIMULATION_TIME;
+        delayed.trigger.delay_ns = 10;
+        mhu_access(false, 0x3080, true, 0xcafebabe);
+        const auto scheduled = m_service.submit(delayed);
+        TEST_ASSERT(scheduled.ok() && scheduled.value.state == RuntimeActionState::SCHEDULED);
+        wait(sc_core::sc_time(15, sc_core::SC_NS));
+        TEST_ASSERT(m_service.status(scheduled.value.id).value.result == "ram-fault-armed");
+        TEST_ASSERT(mhu_access(true, 0x3080) == 0xcafebabe);
+        TEST_ASSERT((mhu_access(true, 0x10110) & 0x60000000) == 0x40000000);
+
+        const auto generation = snapshot_u64(m_service.target_snapshot(m_mhu_rx.name()), "generation");
+        const auto cancelled = m_service.submit(delayed);
+        TEST_ASSERT(cancelled.ok());
+        m_service.reset->write(true);
+        m_mhu_rx.reset->write(true);
+        TEST_ASSERT(m_service.status(cancelled.value.id).value.state == RuntimeActionState::CANCELLED);
+        TEST_ASSERT(m_service.submit(ram_request()).error_code == "target-in-reset");
+        m_service.reset->write(false);
+        TEST_ASSERT(m_service.submit(ram_request()).error_code == "target-unavailable");
+        m_mhu_rx.reset->write(false);
+        invalid = ram_request();
+        invalid.has_expected_generation = true;
+        invalid.expected_generation = generation;
+        TEST_ASSERT(m_service.submit(invalid).error_code == "stale-generation");
+        wait(sc_core::sc_time(15, sc_core::SC_NS));
+        mhu_access(false, 0x3080, true, 0x55);
+        TEST_ASSERT(mhu_access(true, 0x3080) == 0x55);
+        TEST_ASSERT(mhu_access(true, 0x10e00) == 0); // Cancelled generation never arms later.
+    }
+
     void run_test()
     {
         wait(sc_core::SC_ZERO_TIME);
 
         const auto capabilities = m_service.capabilities();
-        TEST_ASSERT(capabilities.size() == 28);
+        TEST_ASSERT(capabilities.size() == 30);
         TEST_ASSERT(capabilities[0].resource_type ==
                     RuntimeResourceType::INTERRUPT);
         TEST_ASSERT(capabilities[1].resource_type == RuntimeResourceType::EVENT);
         TEST_ASSERT(capabilities[2].resource_type ==
                     RuntimeResourceType::CONTROL);
         TEST_ASSERT(capabilities[3].target == "apollo.control.system-reset");
+        TEST_ASSERT(capabilities[4].actions[0].name == "drop-next-doorbell");
+        TEST_ASSERT(capabilities[5].actions[0].name == "inject-ram-fault");
+        test_mhu_actions();
 
         auto no_reset = request("apollo.gpio.rse0.pin0", "drive-high");
         no_reset.clear_on_reset = false;
@@ -343,14 +499,27 @@ public:
         , m_gic("gic")
         , m_ssu("ssu")
         , m_counter("counter")
+        , m_mhu_configured(configure_mhus(name))
+        , m_mhu_tx("mhu_tx")
+        , m_mhu_rx("mhu_rx")
         , m_service("runtime", &m_gic, &m_ssu, &m_counter,
                     &m_host_gpio, &m_rse_gpio_0, &m_rse_gpio_1)
+        , m_mhu_tx_access("mhu_tx_access")
+        , m_mhu_rx_access("mhu_rx_access")
+        , m_mhu_tx_memory("mhu_tx_memory")
+        , m_mhu_rx_memory("mhu_rx_memory")
         , m_ssu_access("ssu_access")
         , m_gic_spi("gic_spi")
         , m_system_reset("system_reset")
         , m_board_gpio("board_gpio")
     {
         m_ssu_access.bind(m_ssu.target_socket);
+        m_mhu_tx_access.bind(m_mhu_tx.target_socket);
+        m_mhu_rx_access.bind(m_mhu_rx.target_socket);
+        m_mhu_tx.initiator_socket.bind(m_mhu_tx_memory);
+        m_mhu_rx.initiator_socket.bind(m_mhu_rx_memory);
+        m_mhu_tx_memory.register_b_transport(this, &ApolloRuntimeInjectionTest::unused_memory);
+        m_mhu_rx_memory.register_b_transport(this, &ApolloRuntimeInjectionTest::unused_memory);
         m_gic.spi_out[0].bind(m_gic_spi);
         m_service.system_reset.bind(m_system_reset);
         m_host_gpio.gpio_out[0].bind(m_board_gpio);

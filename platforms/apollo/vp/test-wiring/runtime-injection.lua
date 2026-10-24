@@ -10,6 +10,11 @@ return function(ctx, platform)
         platform.apollo_runtime_injection = {
             moduletype = "apollo_runtime_injection";
             mhu_target = "platform.host_ap_si_cl1_mhu_pbx";
+            -- Consumed as indexed CCI presets by the runtime adapter.
+            mhu_ram_targets = {
+                "platform.si_cl0_ap_ns_mhu_mbx";
+                "platform.host_ap_si_ns_scmi_mhu_mbx";
+            };
             signal_target = "platform.ap_i2c5_irq_fault";
             system_reset = {bind = "&apollo_system_reset_fanout.reset_in"};
             args = {

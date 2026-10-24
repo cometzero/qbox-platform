@@ -40,6 +40,7 @@ class apollo_runtime_injection : public sc_core::sc_module,
         GPIO_SET_DIRECTION,
         GPIO_WRITE_OUTPUT,
         MHU_DROP_DOORBELL,
+        MHU_RAM_FAULT,
         SIGNAL_FAULT,
         SIGNAL_CLEAR,
         SYSTEM_RESET_PULSE,
@@ -55,6 +56,8 @@ class apollo_runtime_injection : public sc_core::sc_module,
         uint64_t view = 0;
         uint64_t intid = 0;
         uint64_t channel = 0;
+        uint64_t ram_kind = 0;
+        uint64_t bit = 0;
         uint64_t duration_ns = 0;
         uint64_t match_count = 0;
     };
@@ -72,6 +75,7 @@ class apollo_runtime_injection : public sc_core::sc_module,
     gs::arm_system_counter& m_counter;
     std::array<qemu_pl061*, 3> m_gpio_controllers;
     mhu320ae* m_mhu = nullptr;
+    std::map<std::string, mhu320ae*> m_mhu_ram_targets;
     gs::signal_fault_injector* m_signal_fault = nullptr;
     std::vector<GpioTarget> m_gpio_targets;
     std::map<uint64_t, RequestRecord> m_requests;
@@ -89,6 +93,7 @@ class apollo_runtime_injection : public sc_core::sc_module,
     sc_core::sc_event m_reset_release_event;
 
     cci::cci_param<std::string> p_mhu_target;
+    cci::cci_param<std::vector<std::string>> p_mhu_ram_targets;
     cci::cci_param<std::string> p_signal_target;
 
     static gicx00_multiview& require_gic(sc_core::sc_object* object);

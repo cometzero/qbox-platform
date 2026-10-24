@@ -257,6 +257,7 @@ apollo_runtime_injection::apollo_runtime_injection(
               return new TargetSignalSocket<bool>(socket_name);
           })
     , p_mhu_target("mhu_target", std::string(""))
+    , p_mhu_ram_targets("mhu_ram_targets", std::vector<std::string>{})
     , p_signal_target("signal_target", std::string(""))
     , reset("reset")
     , system_reset("system_reset")
@@ -325,6 +326,19 @@ void apollo_runtime_injection::end_of_elaboration()
             sc_core::sc_find_object(p_signal_target.get_value().c_str()));
         if (m_signal_fault == nullptr) {
             SC_REPORT_FATAL(name(), "configured signal fault target is invalid");
+        }
+    }
+    auto ram_targets = p_mhu_ram_targets.get_value();
+    // Lua tables become indexed CCI presets, not a vector-valued preset.
+    // Keep direct CCI vector configuration available for native consumers.
+    const auto indexed_targets = gs::cci_get_vector<std::string>(
+        cci::cci_get_broker(), std::string(name()) + ".mhu_ram_targets");
+    ram_targets.insert(ram_targets.end(), indexed_targets.begin(), indexed_targets.end());
+    for (const auto& target : ram_targets) {
+        auto* mhu = dynamic_cast<mhu320ae*>(sc_core::sc_find_object(target.c_str()));
+        if (mhu == nullptr || target == p_mhu_target.get_value() ||
+            !m_mhu_ram_targets.emplace(target, mhu).second) {
+            SC_REPORT_FATAL(name(), "configured MHU RAM target is invalid or duplicated");
         }
     }
 }
@@ -521,6 +535,17 @@ apollo_runtime_injection::capabilities() const
         result.push_back(std::move(mhu));
     }
 
+    for (const auto& target : m_mhu_ram_targets) {
+        RuntimeTargetCapability mhu;
+        mhu.target = target.first;
+        mhu.resource_type = RuntimeResourceType::EVENT;
+        mhu.actions = {schema("inject-ram-fault", {"fast", "channel", "kind", "bit"})};
+        mhu.attributes.emplace("reset_domain", RuntimeActionValue(std::string("system")));
+        mhu.attributes.emplace("completion", RuntimeActionValue(std::string("ram-fault-armed")));
+        mhu.attributes.emplace("kind_encoding", RuntimeActionValue(std::string("0=SEC-data,1=SEC-address,2=DED")));
+        result.push_back(std::move(mhu));
+    }
+
     if (m_signal_fault != nullptr) {
         RuntimeTargetCapability signal;
         signal.target = "apollo.irq.i2c5";
@@ -614,6 +639,13 @@ gs::RuntimeTargetSnapshotReply apollo_runtime_injection::target_snapshot(
             "match_count", RuntimeActionValue(state.match_count));
         reply.value.values.emplace(
             "generation", RuntimeActionValue(m_generation));
+        return reply;
+    }
+    if (m_mhu_ram_targets.count(target)) {
+        reply.value.resource_type = RuntimeResourceType::EVENT;
+        reply.value.values.emplace("generation", RuntimeActionValue(m_generation));
+        reply.value.values.emplace("reset_asserted", RuntimeActionValue(m_reset_asserted));
+        reply.value.values.emplace("completion", RuntimeActionValue(std::string("arm-only")));
         return reply;
     }
     if (m_signal_fault != nullptr && target == "apollo.irq.i2c5") {
@@ -766,6 +798,22 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::validate_request(
                 "drop-next-doorbell requires reset_domain ap and channel");
         }
         record.kind = ActionKind::MHU_DROP_DOORBELL;
+        return {};
+    }
+
+    if (m_mhu_ram_targets.count(request.target)) {
+        if ((!request.reset_domain.empty() && request.reset_domain != "system") ||
+            request.action != "inject-ram-fault" || request.parameters.size() != 4 ||
+            !boolean_parameter(request, "fast", record.bool_value) ||
+            !unsigned_parameter(request, "channel", record.channel) ||
+            !unsigned_parameter(request, "kind", record.ram_kind) ||
+            !unsigned_parameter(request, "bit", record.bit) ||
+            record.channel >= (record.bool_value ? 1024u : 128u) ||
+            record.ram_kind > 2 || record.bit >= (record.bool_value ? 64u : 32u)) {
+            return error_reply(400, "invalid-request",
+                "inject-ram-fault requires reset_domain system, fast:boolean, channel, kind:0..2 and bit");
+        }
+        record.kind = ActionKind::MHU_RAM_FAULT;
         return {};
     }
 
@@ -959,6 +1007,21 @@ gs::RuntimeActionStatusReply apollo_runtime_injection::apply(
         record.status.state = RuntimeActionState::ACTIVE;
         record.status.result = "active";
         m_active_targets[record.request.target] = record.status.id;
+    } else if (record.kind == ActionKind::MHU_RAM_FAULT) {
+        auto* target = m_mhu_ram_targets.at(record.request.target);
+        if (!target->runtime_inject_ram_fault(record.bool_value,
+                static_cast<unsigned>(record.channel), static_cast<unsigned>(record.ram_kind),
+                static_cast<unsigned>(record.bit))) {
+            record.status.state = RuntimeActionState::FAILED;
+            record.status.result = "target-unavailable";
+            audit(record, "injection_failed");
+            auto reply = error_reply(409, "target-unavailable",
+                "MHU RAM fault was not armed: check geometry, reset/power state or an existing fault");
+            reply.value = record.status;
+            return reply;
+        }
+        record.status.state = RuntimeActionState::COMPLETED;
+        record.status.result = "ram-fault-armed";
     } else if (record.kind == ActionKind::SIGNAL_FAULT) {
         const auto state = m_signal_fault->snapshot();
         record.match_count = state.match_count;
