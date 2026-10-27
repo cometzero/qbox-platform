@@ -427,6 +427,43 @@ Idle `detach` followed by `start` is supported via resource-table `DRIVER_OK`
 polling. Stop traffic before detaching: cancellation of an in-flight DMA batch
 during concurrent detach/reset is outside this model's contract.
 
+### Direct boot of the integrated SI CL1 Zephyr image
+
+The workspace `./run_qbox_zephyr.sh` now uses the same deployed
+`zephyr-demos-cl1.bin` and matching `.elf` as the integrated Apollo QVP
+platform. No dedicated standalone recipe or runtime compilation is required.
+`apollo-qvp-zephyr.lua` composes four CL1 CPUs, GIC, PL011, LLRAM and the
+integrated mailbox/shared-memory windows. The original binary is loaded at
+`0x140000000`; each CPU's RVBAR comes from the validated ELF entry. Unlike
+direct Linux, Zephyr already has a reset entry and SMP rendezvous, so a
+separate assembly boot stub is unnecessary.
+
+The runner reuses the full-system ELF/allocated-section and post-build CRC
+validator. Do not recreate the binary from the ELF: its `.image_crc` retains
+the placeholder, while the deployed binary contains the final CRC. The
+counter is 125 MHz and CNTP is connected to PPI29 for this board.
+
+AP, RSE and SCP CPUs are absent. The existing `mhu320ae` synthetic SCMI
+`pfdi-monitor` responder supplies startup discovery/status replies with
+requester holds disabled. This permits the unmodified firmware to complete
+its POST_KERNEL initialization. The HIPC window at `0xe0130000` has local
+RAM but no AP RPMsg peer; an initialized network interface is not an active
+network connection. The full-system mailbox configuration is unchanged.
+
+Interactive runs provide UART, platform log and shell panes, and F12 stops
+the session's QBox process. Interactive timeout defaults to zero; headless
+timeout defaults to 120 seconds. `--exit-after-pass` requires all four OoR
+CPU markers, the Zephyr banner and shell prompt. `--elf` and `--image`
+select a matching custom pair; `--dry-run` still validates the image.
+
+On 2026-10-27, the existing Yocto provider booted the integrated image and
+executed `kernel version` and `kernel uptime` over UART. Evidence is under
+`build/qbox-apollo-qvp/zephyr-integrated-shell-20261027/` in the workspace.
+This is boot/shell evidence, not SCP execution, AP/SI integration, or PMSA
+qualification. The current integrated build has assertions disabled and
+skips MPU initialization when the QEMU CPU's memory-system feature value
+is rejected by Zephyr; no binary or Kconfig was patched by this launcher.
+
 ### DW_apb_i2s audio pair
 
 I2S0 at `0x30200000` (SPI 356) and I2S1 at `0x30210000` (SPI 357)
