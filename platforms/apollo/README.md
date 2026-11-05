@@ -112,6 +112,50 @@ constants belong to consumers. The public HIPC window query delegates to
 `interconnect.lua`. Four-core topology, IRQ bindings, reset order and
 VP firmware loading are unchanged.
 
+## PSCI 종료 시 AP 전원 정책
+
+Apollo QVP TF-A는 system-off/reset/reset2의 primary CPU와 종료 SGI를 받은
+secondary CPU에서 `plat_css_prepare_cpu_shutdown()`을 호출한다. 이 hook은
+SCMI core OFF를 요청하고 cluster는 RUN으로 유지한다. SCP의
+`graceful_core_off`가 먼저 PPU OFF_LOCK을 준비하고, CPU의 최종 powerdown
+WFI 후 static OFF로 완료한다. primary는 SCMI 응답을 받은 뒤 system request를
+보낼 수 있으므로 RSE 종료 알림 및 reset 경로가 유지된다.
+SCMI core OFF는 비동기 요청이므로 PD event enqueue만으로 준비 완료를 판단하지
+않는다. enqueue 성공 후 Apollo의 `scmi_pd_prepare_async_response()`가 secure
+PSCI/AP core/core-only OFF 요청을 arm하고 나서 성공 응답을 보낸다. enqueue
+실패 시 PPU를 변경하지 않으며 CPU_ON, suspend, cluster/system OFF와 다른
+agent의 요청은 기존 처리를 유지한다.
+AP cluster/core PPU의 INTID 260–279는 SCP의 SI GIC View1 소유권 목록에
+포함되어야 한다. 이 매핑이 없으면 PPU ISR의 DYNAMIC_MIN이 발생해도 View1의
+GIC enable/routing 설정이 적용되지 않아 OFF 완료 및 후속 CPU_ON이 막힌다.
+SCP는 해당 IRQ에서 기존 OFF 완료 처리를 수행하며 polling 우회는 사용하지 않는다.
+현재 TF-A의 `HW_ASSISTED_COHERENCY=1`에서는 core CPU_SUSPEND가 SCMI core
+OFF를 전송하지 않는다. 비-HAC 구성의 suspend 인코딩도 SLEEP(2)이므로
+terminal OFF(0) hook과 구분된다. `cpuidle.off=1` 이미지에서의 부팅/hotplug는
+깊은 CPU idle의 guest runtime 검증을 대신하지 않는다.
+
+종료에 dynamic idle OFF만 사용하면 남아 있는 GIC wake가 cold loader 없이
+CPU reset을 해제할 수 있다. trusted mailbox가 이미 0이면 BL2가 재진입하여
+`mmap_add_region_ctx` ASSERT를 일으킨다. 검증 시 Linux `Power down` 및 RSE
+`System shutdown complete`뿐 아니라 AP PPU OFF와 이후 `warm-resume` 부재를
+확인해야 한다. 이 계약은 AP 코어의 기능적 종료이며 PMIC rail-off 또는
+전체 SoC의 물리적 전원 차단을 입증하지 않는다.
+
+2026-11-05 AutoSD full-system 검증에서 4 CPU 부팅, 기본 health, CPU1
+offline/online 및 정상 poweroff가 통과했다. AP0–3 각각 OFF_LOCK → powerdown →
+reset assert → DYNAMIC_MIN IRQ ack → static OFF readback → unlock 순서를
+확인했고 이후 warm-resume/reset release와 BL2 ASSERT는 없었다. platform
+manifest SHA256은 `7857c89c81361bcac7996430fd6e3f1bca3f3a9a8550abcf75fa07aea510c1a0`이다.
+workspace의 `build/qbox-apollo-qvp/autosd-yocto-rpm-validation/` 아래
+`poweroff-final-ppu-review.json`에 CPU별 원본 trace 행과 판정을 기록했다.
+같은 firmware로 WD04도 통과했다. 실제 WS0 → WS1 → reset-clear 후 AP boot
+epoch가 1에서 2로 바뀌고 새 Linux `boot_id`, health 및 HIPC 3/3 복구를
+확인했다. host process와 RSE/SI boot epoch는 유지됐으며 SI0 watchdog IRQ도
+다시 활성화됐다. 결과는 workspace의
+`build/qbox-apollo-qvp/autosd-yocto-rpm-validation-checks/watchdog-wd04-704d6a0da9d441dc86b7dd61c9aed7b1.json`이다.
+일반 Reboot도 새 boot epoch 3 및 readiness PASS를 확인했다
+(job `4cd92aca15e741538fc6baae0956e038`). 깊은 idle runtime 검증은 `NOT_RUN`이다.
+
 ## Optional external TC397 UART
 
 Set `QBOX_APOLLO_VMCU_UART_ENDPOINT=127.0.0.1:44001` to connect AP DW UART2
